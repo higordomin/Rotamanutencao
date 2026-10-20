@@ -5,7 +5,7 @@ import {brazilianDate, monthGrid, pageFromDate, shiftMonth, tomorrow} from './ca
 
 const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-const WEEKDAYS = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'];
+const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 const C = {
   panel: '#111E31', bg: '#08101E', surface: '#16273D', border: '#24394F',
   text: '#EFF6FF', muted: '#9CB0C8', accent: '#47B7F6',
