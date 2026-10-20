@@ -1,13 +1,15 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable,
-  SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Image,
+  ActivityIndicator, Alert, AppState, KeyboardAvoidingView, Modal, Platform, Pressable,
+  SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Image, FlatList,
 } from 'react-native';
 import {
   initializeDatabase, listAssets, listExecutions, listOrders, localDate,
   completeOrder, removeAsset, removeOrder, saveAsset, saveOrder, validDate, listAllPhotos,
+  setImpediment, releaseImpediment, listRecentEvents,
 } from './src/db';
-import type {Asset, AssetDraft, Category, Execution, ExecutionPhoto, PhotoDraft, OrderDraft, Priority, WorkOrder} from './src/types';
+import type {Asset, AssetDraft, Category, Execution, ExecutionPhoto, PhotoDraft, OrderDraft, Priority, WorkOrder, OrderEvent} from './src/types';
+import {taskState, taskSummary} from './src/logic';
 import {evidenceUri, selectPhoto, MAX_PHOTOS_PER_EXECUTION} from './src/evidence';
 import {exportExecutionPdf} from './src/report';
 import {exportBackup, pickBackupFile, restoreBackup} from './src/backup';
@@ -18,7 +20,8 @@ const COLORS = {
   red: '#FF7D8B', yellow: '#FFD075',
 };
 type Tab = 'Início' | 'Atividades' | 'Ativos' | 'Histórico' | 'Dados';
-type ModalType = 'asset' | 'order' | 'complete' | null;
+type ModalType = 'asset' | 'order' | 'complete' | 'block' | null;
+type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Concluídas';
 const categories: Category[] = ['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção'];
 const priorities: Priority[] = ['Baixa', 'Média', 'Alta'];
 const initialOrder = (): OrderDraft => ({
@@ -79,7 +82,11 @@ export default function App() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [evidence, setEvidence] = useState<ExecutionPhoto[]>([]);
+  const [events, setEvents] = useState<OrderEvent[]>([]);
+  const [search, setSearch] = useState('');
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>('Todas');
   const [ready, setReady] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<ModalType>(null);
   const [assetDraft, setAssetDraft] = useState<AssetDraft>(initialAsset());
@@ -89,26 +96,53 @@ export default function App() {
   const [editingOrder, setEditingOrder] = useState<string | undefined>();
   const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
+  const [blockReason, setBlockReason] = useState('');
   const [draftPhotos, setDraftPhotos] = useState<PhotoDraft[]>([]);
 
   const refresh = useCallback(async () => {
-    const [a, o, e, p] = await Promise.all([listAssets(), listOrders(), listExecutions(), listAllPhotos()]);
-    setAssets(a); setOrders(o); setExecutions(e); setEvidence(p);
+    const [a, o, e, p, ev] = await Promise.all([listAssets(), listOrders(), listExecutions(), listAllPhotos(), listRecentEvents()]);
+    setAssets(a); setOrders(o); setExecutions(e); setEvidence(p); setEvents(ev);
   }, []);
 
   useEffect(() => {
     (async () => {
       try { await initializeDatabase(); await refresh(); }
-      catch (e) { Alert.alert('Erro no banco de dados', String(e)); }
+      catch (e) { setInitError(String(e)); }
       finally { setReady(true); }
     })();
   }, [refresh]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active' && ready) void refresh().catch(err => {
+        Alert.alert('Erro ao atualizar', String(err));
+      });
+    });
+    return () => subscription.remove();
+  }, [ready, refresh]);
 
   const today = localDate();
-  const pending = useMemo(() => orders.filter(o => o.status === 'pending'), [orders]);
-  const overdue = pending.filter(o => o.due_date < today);
-  const todayTasks = pending.filter(o => o.due_date === today);
-  const upcoming = pending.filter(o => o.due_date > today);
+  const stateOf = (order: WorkOrder) => taskState(order, today);
+  const counts = useMemo(() => taskSummary(orders, today), [orders, today]);
+  const overdue = orders.filter(o => stateOf(o) === 'overdue');
+  const todayTasks = orders.filter(o => stateOf(o) === 'today');
+  const upcoming = orders.filter(o => stateOf(o) === 'upcoming');
+  const blocked = orders.filter(o => stateOf(o) === 'blocked');
+  const evidenceByExecution = useMemo(() => {
+    const grouped = new Map<string, ExecutionPhoto[]>();
+    for (const photo of evidence) grouped.set(photo.execution_id, [...(grouped.get(photo.execution_id) ?? []), photo]);
+    return grouped;
+  }, [evidence]);
+  const visibleOrders = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase('pt-BR');
+    return orders.filter(order => {
+      const state = taskState(order, today);
+      if (orderFilter === 'Pendentes' && ['completed', 'blocked'].includes(state)) return false;
+      if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
+      if (orderFilter === 'Concluídas' && state !== 'completed') return false;
+      return !term || [order.title, order.description, order.asset_name || '', order.category, order.block_reason]
+        .some(value => value.toLocaleLowerCase('pt-BR').includes(term));
+    });
+  }, [orders, search, orderFilter, today]);
 
   const handle = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -138,6 +172,11 @@ export default function App() {
     setCompletionNotes('');
     setDraftPhotos([]);
     setDialog('complete');
+  };
+  const openBlock = (order: WorkOrder) => {
+    setCompletingOrder(order);
+    setBlockReason(order.block_reason || '');
+    setDialog('block');
   };
   const addPhoto = async (camera: boolean) => {
     if (busy || draftPhotos.length >= MAX_PHOTOS_PER_EXECUTION) return;
@@ -180,25 +219,31 @@ export default function App() {
   );
 
   function orderCard(order: WorkOrder) {
-    const overdueOrder = order.status === 'pending' && order.due_date < today;
-    const done = order.status === 'completed';
+    const state = stateOf(order);
+    const overdueOrder = state === 'overdue';
+    const done = state === 'completed';
+    const isBlocked = state === 'blocked';
     return <View key={order.id} style={styles.card}>
       <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
         <View style={{flex: 1}}>
           <Text style={styles.cardTitle}>{order.title}</Text>
           <Text style={styles.detail}>{order.asset_name || 'Sem equipamento'} · {order.category}</Text>
         </View>
-        <Pill text={done ? 'Concluída' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
-          tone={done ? 'green' : overdueOrder ? 'red' : order.due_date === today ? 'yellow' : 'blue'}/>
+        <Pill text={done ? 'Concluída' : isBlocked ? 'Impedida' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
+          tone={done ? 'green' : isBlocked || overdueOrder ? 'red' : order.due_date === today ? 'yellow' : 'blue'}/>
       </View>
       {!!order.description && <Text style={styles.description}>{order.description}</Text>}
+      {isBlocked && <View style={styles.blockAlert}><Text style={{color: COLORS.yellow, fontWeight: '800'}}>⚠ IMPEDIMENTO</Text><Text style={{color: COLORS.text, marginTop: 4}}>{order.block_reason}</Text></View>}
       <View style={styles.chips}>
         <Pill text={`📅 ${order.due_date}`}/>
         <Pill text={order.recurrence_days === 0 ? 'Avulsa' : `A cada ${order.recurrence_days} dias`}/>
         <Pill text={`Prioridade ${order.priority}`} tone={order.priority === 'Alta' ? 'red' : 'blue'}/>
       </View>
       <View style={styles.cardActions}>
-        {!done && <Action label="✓ Executar" onPress={() => openComplete(order)}/>}
+        {!done && !isBlocked && <Action label="✓ Executar" onPress={() => openComplete(order)}/>}
+        {!done && (isBlocked
+          ? <Action label="Liberar" secondary disabled={busy} onPress={() => { void handle(() => releaseImpediment(order.id)); }}/>
+          : <Action label="⚠ Impedimento" secondary disabled={busy} onPress={() => openBlock(order)}/>)}
         <Action label="Editar" secondary onPress={() => openOrder(order)}/>
         <Pressable accessibilityRole="button" onPress={() => confirmDeleteOrder(order)} style={{padding: 11}}>
           <Text style={{color: COLORS.red, fontWeight: '700'}}>Excluir</Text>
@@ -234,24 +279,20 @@ export default function App() {
         <Text style={styles.heroTitle}>Sua rotina, sob controle.</Text>
         <Text style={styles.heroSub}>Rotas e serviços organizados, mesmo sem internet.</Text>
         <View style={styles.metrics}>
-          <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.red}]}>{overdue.length}</Text><Text style={styles.metricLabel}>Atrasadas</Text></View>
-          <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.yellow}]}>{todayTasks.length}</Text><Text style={styles.metricLabel}>Hoje</Text></View>
-          <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.green}]}>{executions.length}</Text><Text style={styles.metricLabel}>Execuções*</Text></View>
+          <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.red}]}>{counts.overdue}</Text><Text style={styles.metricLabel}>Atrasadas</Text></View>
+          <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.yellow}]}>{counts.blocked}</Text><Text style={styles.metricLabel}>Impedidas</Text></View>
+          <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.green}]}>{counts.today}</Text><Text style={styles.metricLabel}>Hoje</Text></View>
         </View>
       </View>
       <View style={styles.quickActions}>
         <Action label="+ Nova atividade" onPress={() => openOrder()}/>
         <Action label="+ Equipamento" secondary onPress={() => openAsset()}/>
       </View>
+      {section('Impedidas / aguardando liberação', blocked, 'Nenhuma atividade impedida.')}
       {section('Atrasadas', overdue, 'Nenhuma atividade atrasada.')}
       {section('Para hoje', todayTasks, 'Nenhuma atividade programada para hoje.')}
       {section('Próximas', upcoming.slice(0, 5), 'Sem atividades futuras.')}
-      <Text style={styles.hint}>* Mostradas até as 500 execuções mais recentes.</Text>
-    </>;
-    if (tab === 'Atividades') return <>
-      <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Rotas e atividades</Text><Text style={styles.detail}>{orders.length} cadastradas</Text></View>
-        <Action label="+ Nova" onPress={() => openOrder()}/></View>
-      {orders.length === 0 ? <Text style={styles.empty}>Crie uma atividade para iniciar sua rota.</Text> : orders.map(orderCard)}
+      <Text style={styles.hint}>Atividades impedidas continuam registradas e não desaparecem do planejamento. O histórico fica armazenado neste aparelho.</Text>
     </>;
     if (tab === 'Ativos') return <>
       <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Equipamentos</Text><Text style={styles.detail}>{assets.length} cadastrados</Text></View>
@@ -275,7 +316,7 @@ export default function App() {
         <Text style={styles.description}>Substitui TODOS os registros existentes, depois de sua confirmação. Antes disso, exporte uma cópia do estado atual.</Text>
         <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
       </View>
-      <Text style={styles.hint}>Formato local versão 2 · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+      <Text style={styles.hint}>Formato local versão 3 (restaura também versão 2) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
@@ -293,15 +334,23 @@ export default function App() {
           {!!execution.asset_label && <Text style={styles.detail}>Equipamento: {execution.asset_label}</Text>}
           <Text style={styles.detail}>{execution.photo_count} foto(s) no registro</Text>
           <View style={styles.photoRow}>
-            {evidence.filter(p => p.execution_id === execution.id).map(photo =>
+            {(evidenceByExecution.get(execution.id) ?? []).map(photo =>
               <Image key={photo.id} source={{uri: evidenceUri(photo.filename)}} style={styles.thumb}/>)}
           </View>
           <View style={styles.cardActions}>
             <Action disabled={busy} label={busy ? 'Processando...' : 'Gerar PDF'} secondary
               onPress={() => { void runExtra(() => exportExecutionPdf(execution,
-                evidence.filter(p => p.execution_id === execution.id))); }}/>
+                evidenceByExecution.get(execution.id) ?? [])); }}/>
           </View>
         </View>)}
+      {events.length > 0 && <>
+        <Text style={[styles.sectionTitle, {marginTop: 26}]}>Ocorrências / impedimentos</Text>
+        <Text style={styles.detail}>Registros de bloqueio, liberação e execução (últimos 250 eventos).</Text>
+        {events.slice(0, 25).map(ev => <View key={ev.id} style={styles.eventRow}>
+          <Text style={{color: ev.event_type === 'blocked' ? COLORS.yellow : COLORS.muted, fontWeight: '700'}}>{ev.event_type === 'blocked' ? 'Impedimento' : ev.event_type === 'released' ? 'Liberado' : 'Executado'}</Text>
+          <Text style={styles.detail}>{new Date(ev.created_at).toLocaleString('pt-BR')}{ev.reason ? ` • ${ev.reason}` : ''}</Text>
+        </View>)}
+      </>}
     </>;
   };
 
@@ -314,6 +363,42 @@ export default function App() {
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
+      : initError ? <View style={styles.scroll}>
+          <Text style={styles.sectionTitle}>Não foi possível abrir seus dados</Text>
+          <Text style={styles.description}>Os registros existentes não foram apagados. Evite reinstalar o aplicativo até recuperar o banco.</Text>
+          <Text style={styles.description}>{initError}</Text>
+          <Action label="Tentar novamente" onPress={() => { void (async () => {
+            setReady(false);
+            try { await initializeDatabase(); await refresh(); setInitError(null); }
+            catch (err) { setInitError(String(err)); }
+            finally { setReady(true); }
+          })(); }}/>
+        </View>
+      : tab === 'Atividades' ? <FlatList
+          data={visibleOrders}
+          keyExtractor={item => item.id}
+          renderItem={({item}) => orderCard(item)}
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={7}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.scroll}
+          ListHeaderComponent={<>
+            <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Rotas e atividades</Text>
+              <Text style={styles.detail}>{orders.length} cadastradas</Text></View>
+              <Action label="+ Nova" onPress={() => openOrder()}/></View>
+            <TextInput accessibilityLabel="Buscar atividades" placeholder="Buscar por TAG, equipamento ou atividade..."
+              placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch} style={styles.searchField}/>
+            <View style={styles.filters}>
+              {(['Todas', 'Pendentes', 'Impedidas', 'Concluídas'] as const).map(filter =>
+                <Pressable key={filter} accessibilityRole="button" accessibilityState={{selected: orderFilter === filter}}
+                  onPress={() => setOrderFilter(filter)} style={[styles.choice, orderFilter === filter && styles.choiceActive]}>
+                  <Text style={{color: orderFilter === filter ? COLORS.bg : COLORS.text, fontWeight: '700', fontSize: 12}}>{filter}</Text>
+                </Pressable>)}
+            </View>
+          </>}
+          ListEmptyComponent={<Text style={styles.empty}>Nenhuma atividade encontrada. Ajuste a busca ou crie uma atividade.</Text>}
+        />
       : <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content()}</ScrollView>}
     <View style={styles.nav}>
       {([{label: 'Início', icon: '⌂'}, {label: 'Atividades', icon: '☑'},
@@ -329,7 +414,8 @@ export default function App() {
         <SafeAreaView style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <Text style={styles.sectionTitle}>{dialog === 'asset' ? (editingAsset ? 'Editar equipamento' : 'Novo equipamento')
-              : dialog === 'order' ? (editingOrder ? 'Editar atividade' : 'Nova atividade') : 'Registrar execução'}</Text>
+              : dialog === 'order' ? (editingOrder ? 'Editar atividade' : 'Nova atividade')
+              : dialog === 'block' ? 'Registrar impedimento' : 'Registrar execução'}</Text>
             <Pressable onPress={() => setDialog(null)}><Text style={{color: COLORS.muted, fontSize: 24}}>×</Text></Pressable>
           </View>
           <ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight: '85%'}}>
@@ -371,6 +457,23 @@ export default function App() {
               <Text style={[styles.hint, {marginBottom: 15}]}>Ao executar uma atividade recorrente, a próxima data será calculada a partir do dia da execução.</Text>
               <Action disabled={busy || !validDate(orderDraft.due_date) || !/^\d+$/.test(recurrenceInput)} label={busy ? 'Salvando...' : 'Salvar atividade'}
                 onPress={() => { void handle(() => saveOrder({...orderDraft, recurrence_days: Number(recurrenceInput)}, editingOrder)); }}/>
+            </>}
+            {dialog === 'block' && completingOrder && <>
+              <Text style={[styles.cardTitle, {marginBottom: 10}]}>{completingOrder.title}</Text>
+              <Text style={styles.description}>Identifique por que esta atividade não pode ser executada agora. Isso ajuda a organizar prioridades e comunicar necessidades ao PCM.</Text>
+              <Text style={styles.fieldLabel}>Motivos frequentes</Text>
+              <View style={styles.filters}>
+                {['Aguardando peças', 'Equipamento em produção', 'Aguardando parada', 'Condição insegura', 'Falta de recurso'].map(reason =>
+                  <Pressable key={reason} accessibilityRole="button" onPress={() => setBlockReason(reason)}
+                    style={[styles.choice, blockReason === reason && styles.choiceActive]}>
+                    <Text style={{color: blockReason === reason ? COLORS.bg : COLORS.text, fontSize: 12}}>{reason}</Text>
+                  </Pressable>)}
+              </View>
+              <FormField label="Motivo do impedimento *" placeholder="Ex.: aguardando vedação para troca do mancal"
+                multiline value={blockReason} onChangeText={setBlockReason}/>
+              <Action disabled={busy || !blockReason.trim() || blockReason.length > 500}
+                label={busy ? 'Registrando...' : 'Salvar impedimento'}
+                onPress={() => { void handle(() => setImpediment(completingOrder.id, blockReason)); }}/>
             </>}
             {dialog === 'complete' && completingOrder && <>
               <Text style={[styles.cardTitle, {marginBottom: 8}]}>{completingOrder.title}</Text>
@@ -442,7 +545,7 @@ const styles = StyleSheet.create({
   hint: {fontSize: 11, color: COLORS.muted, lineHeight: 16, marginTop: 13},
   nav: {flexDirection: 'row', borderTopWidth: 1, borderTopColor: COLORS.border, paddingBottom: 9,
     backgroundColor: COLORS.bg},
-  navItem: {flex: 1, alignItems: 'center', paddingTop: 8},
+  navItem: {flex: 1, alignItems: 'center', paddingTop: 8, minHeight: 52, justifyContent: 'center'},
   navIcon: {fontSize: 21, color: COLORS.muted},
   navLabel: {fontSize: 10, color: COLORS.muted, fontWeight: '700', marginTop: 2},
   modalBackdrop: {flex: 1, justifyContent: 'flex-end', backgroundColor: '#02060EBB'},
@@ -456,4 +559,8 @@ const styles = StyleSheet.create({
   choiceActive: {backgroundColor: COLORS.accent, borderColor: COLORS.accent},
   photoRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12},
   thumb: {width: 76, height: 76, borderRadius: 9, backgroundColor: COLORS.panel2},
+  blockAlert: {padding: 12, backgroundColor: '#42351E', borderRadius: 10, marginTop: 12, borderWidth: 1, borderColor: '#8D7040'},
+  searchField: {borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12, color: COLORS.text, backgroundColor: COLORS.panel2, marginTop: 14, fontSize: 14},
+  filters: {flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12, marginBottom: 8},
+  eventRow: {padding: 12, borderBottomWidth: 1, borderColor: COLORS.border},
 });
