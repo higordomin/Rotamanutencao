@@ -12,5 +12,6 @@ export function inspectBackup(data: unknown) {
     photos: data.photos.length,
     events: data.order_events?.length ?? 0,
     impediments: data.work_orders.filter(order => !!order.block_reason?.trim()).length,
+    partials: data.work_orders.filter(order => !!order.partial_reason?.trim()).length,
   };
 }
