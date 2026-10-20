@@ -14,7 +14,7 @@ No chão de fábrica, urgências interrompem rotas; parte das OS fica sem evidê
 - Execução com descrição e até seis fotos; relatório PDF por execução; histórico local.
 - Backup JSON v3 com histórico de impedimentos; restauração de backups v2 e v3 com validação prévia e transação SQLite.
 - Estado básico de erro de abertura do banco: nenhum reset automático.
-- Testes de regras/calendário e validação dos backups, teste de migração SQLite, pipeline GitHub Actions (a executar no GitHub).
+- 14 testes Node de regras/calendário e validação dos backups, teste de migração SQLite, pipeline GitHub Actions (a executar no GitHub).
 
 ## Não implementado; não prometer ao cliente
 
