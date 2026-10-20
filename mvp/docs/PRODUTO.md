@@ -1,53 +1,36 @@
-# RotaManutenção — definição do produto
+# RotaManutenção — produto local-first, evolução SaaS
 
-**Posicionamento:** aplicativo simples para executar e documentar rotinas de manutenção industrial. Primeiro para técnicos; depois para equipes com um painel compartilhado.
+## Problema de base: PCM x execução
 
-## Público-alvo inicial
+No chão de fábrica, urgências interrompem rotas; parte das OS fica sem evidência, algumas dependem da liberação da produção e outras aguardam peças. Sem um registro simples, o PCM não consegue diferenciar **esquecida**, **impedida** e **concluída**, nem replanejar corretamente. O MVP foca no técnico e no registro rápido, antes de adicionar hierarquia corporativa.
 
-Profissionais autônomos de manutenção, lubrificadores, mecânicos, eletricistas, pequenas indústrias e prestadores com até 5 técnicos. Validar com entrevistas antes de definir preço.
+## MVP 0.3 — implementado em código (sem APK validado)
 
-## Princípios não negociáveis
+- Cadastro de equipamentos com TAG e área.
+- Registro de atividades avulsas ou preventivas por periodicidade em dias, com prioridade e especialidade.
+- Indicadores separados: atrasadas, impedidas e hoje.
+- Registro e liberação de impedimentos ('aguardando peça', 'produção', 'parada', 'segurança', 'recursos', motivo livre), com log de eventos.
+- Busca por TAG/equipamento, filtros e lista virtualizada de OS.
+- Execução com descrição e até seis fotos; relatório PDF por execução; histórico local.
+- Backup JSON v3 com histórico de impedimentos; restauração de backups v2 e v3 com validação prévia e transação SQLite.
+- Estado básico de erro de abertura do banco: nenhum reset automático.
+- Testes de regras/calendário e validação dos backups, teste de migração SQLite, pipeline GitHub Actions (a executar no GitHub).
 
-1. O plano gratuito individual funciona sem login, internet, equipe ou supervisão.
-2. Dados de trabalho ficam no aparelho; a sincronização exige opt-in e conta empresarial.
-3. O SaaS não deve bloquear o acesso aos dados locais do técnico após o fim de uma assinatura.
-4. Atividades de segurança são decididas e confirmadas por profissionais, não por IA automaticamente.
-5. Cada empresa só acessa suas próprias informações; toda operação de nuvem exige autorização por organização e auditoria.
+## Não implementado; não prometer ao cliente
 
-## Telas do MVP local
+- APK compilado/testado, PDF validado em celular, restauração validada em celular.
+- Checklists multipontos e rotas ordenadas, temporizador, horas homem, material consumido, QR Codes, notificações locais.
+- Relatórios consolidados do período, MTTR/MTBF com dados confiáveis, SLA real, dashboard de PCM.
+- Sincronização e autorização multiempresa, pagamentos, assinatura, monetização, API, audit trail imutável.
 
-- **Início:** vencidos, hoje, próximos, quantidade de execuções recentes.
-- **Atividades:** lista, edição, prioridade, tipo, vencimento, periodicidade, execução.
-- **Equipamentos:** TAG, nome, área e vínculo com atividades.
-- **Histórico:** data da execução, atividade, observações e próxima data.
+## Próximos incrementos em ordem de valor
 
-## MVP 0.2 (implementação inicial, ainda não validada em Android)
+1. **Gate Android:** `npm install`, Expo check, TypeScript, teste físico em celular e APK preview com EAS.
+2. **Fluxo técnico industrial:** rotas com vários pontos, checklist com estado de cada ponto, consumo real de lubrificante e registro de anomalia que gera OS corretiva.
+3. **Controle do PCM:** fila de impedimentos, motivo, responsável, reserva de peça, janela de parada, custo real e indicadores de cumprimento.
+4. **Confiabilidade:** backup robusto criptografado com arquivos de imagem, exportação CSV e recuperação validada.
+5. **SaaS multiempresa:** isolar dados por `tenant_id`, RLS, autenticação, RBAC, trilha de auditoria, consentimento para sincronização e integração de pagamentos. Implantar apenas após revisão de segurança.
 
-- Captura/seleção de até 6 fotos JPEG/PNG por execução.
-- PDF técnico por execução e menu de compartilhamento.
-- Backup JSON v2 exportável, importação validada com confirmação destrutiva.
-- Migração SQLite da base anterior.
+## Estratégia comercial
 
-## Próxima iteração local
-
-- Rota com múltiplos itens e posições ordenadas; ponto de lubrificação com produto, quantidade, frequência e instrução.
-- Otimizar fotos, relatórios consolidados por rota e assinatura técnica opcional.
-- Criptografar backups e permitir arquivos grandes com exportação em streaming.
-- Notificação local de vencimento e filtros por setor, tipo e prioridade.
-- Testes automatizados para cálculo de periodicidade, integridade do histórico e migração de banco.
-
-## Expansão SaaS
-
-Organização (empresa), membros (papéis: admin, supervisor, técnico), inventário de ativos, modelos de rota, atividades atribuídas, execução com evidências, histórico, painel web, exportação PDF, faturamento. Sincronização offline-first exige política de conflitos e IDs imutáveis.
-
-## Métricas de validação
-
-- Quantos profissionais usam o app 2+ vezes por semana.
-- Quantas atividades concluídas são registradas por usuário.
-- Percentual que gera ou compartilha relatório.
-- Quantas pequenas equipes pedem acesso multiusuário.
-- Quantas aceitam pagar após 30 dias de teste.
-
-## Preços para hipótese, não ainda validados
-
-Gratuito individual, Profissional R$29,90/mês, Equipe (até 5) R$149,90/mês. Testar disposição a pagar antes de integrar cobrança.
+Começar com equipes pequenas e manutenção preventiva/lubrificação. Validar demanda com profissionais externos, não utilizar dados reais de empregadores sem autorização. A assinatura empresa é uma hipótese; preço e funcionalidades devem ser testados com clientes, não tratados como receita garantida.
