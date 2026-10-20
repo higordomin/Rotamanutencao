@@ -1,0 +1,9 @@
+# Dependências e arquivos nativos gerados
+mvp/mobile/node_modules/
+mvp/mobile/dist/
+mvp/mobile/android/
+mvp/mobile/.expo/
+
+# PNGs de marca são recriados a partir dos SVGs no pós-install
+mvp/mobile/assets/icon.png
+mvp/mobile/assets/adaptive-icon.png
