@@ -422,7 +422,7 @@ export default function App() {
   return <SafeAreaView style={styles.safe}>
     <StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/>
     <View style={styles.topbar}>
-      <View style={styles.logo}><Text style={{fontWeight: '900', color: COLORS.bg, fontSize: 20}}>R</Text></View>
+      <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
         <Text style={styles.brandSub}>MVP OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
