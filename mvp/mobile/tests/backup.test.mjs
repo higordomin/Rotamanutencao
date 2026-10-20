@@ -42,3 +42,13 @@ test('não permite identificadores duplicados', () => {
 test('impedimento não pode superar 500 caracteres', () => {
   const data = fixture(); data.order_events[0].reason = 'x'.repeat(501); rejects(data, /Evento/);
 });
+
+test('backup v3 rejeita motivo sem data de impedimento', () => {
+  const data = fixture(); data.work_orders[0].blocked_at = null; rejects(data, /Atividade/);
+});
+test('backup v3 rejeita OS concluída com impedimento', () => {
+  const data = fixture(); data.work_orders[0].status = 'completed'; rejects(data, /Atividade/);
+});
+test('backup v3 rejeita evento de bloqueio sem motivo', () => {
+  const data = fixture(); data.order_events[0].reason = ''; rejects(data, /Evento/);
+});
