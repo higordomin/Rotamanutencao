@@ -1,8 +1,8 @@
 import * as SQLite from 'expo-sqlite';
-import type {Asset, AssetDraft, BackupData, Execution, ExecutionPhoto, OrderDraft, PhotoDraft, WorkOrder, OrderEvent} from './types';
+import type {Asset, AssetDraft, BackupData, Execution, ExecutionPhoto, OrderDraft, PhotoDraft, WorkOrder, OrderEvent, ExecutionResult} from './types';
 import {deletePhotoFile, persistPhoto, MAX_PHOTOS_PER_EXECUTION} from './evidence';
 import {localDate, addDays, validDate} from './logic';
-import {completionPlan} from './operations';
+import {completionPlan, executionDecision} from './operations';
 export {localDate, addDays, validDate} from './logic';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -79,6 +79,12 @@ export async function initializeDatabase(): Promise<void> {
     await db.execAsync("ALTER TABLE work_orders ADD COLUMN block_reason TEXT NOT NULL DEFAULT ''");
   if (!orderFields.some(f => f.name === 'blocked_at'))
     await db.execAsync('ALTER TABLE work_orders ADD COLUMN blocked_at TEXT');
+  if (!orderFields.some(f => f.name === 'partial_reason'))
+    await db.execAsync("ALTER TABLE work_orders ADD COLUMN partial_reason TEXT NOT NULL DEFAULT ''");
+  if (!orderFields.some(f => f.name === 'partial_at'))
+    await db.execAsync('ALTER TABLE work_orders ADD COLUMN partial_at TEXT');
+  if (!fields.some(f => f.name === 'result'))
+    await db.execAsync("ALTER TABLE executions ADD COLUMN result TEXT NOT NULL DEFAULT 'completed' CHECK(result IN ('completed','partial'))");
 }
 
 export async function listAssets(): Promise<Asset[]> {
@@ -186,9 +192,8 @@ export async function listAllPhotos(): Promise<ExecutionPhoto[]> {
   );
 }
 
-export async function completeOrder(order: WorkOrder, notes: string, photos: PhotoDraft[] = []): Promise<void> {
+export async function completeOrder(order: WorkOrder, notes: string, photos: PhotoDraft[] = [], result: ExecutionResult = 'completed'): Promise<void> {
   if (photos.length > MAX_PHOTOS_PER_EXECUTION) throw new Error('Limite de 6 fotos por execução.');
-  if (notes.length > 10000) throw new Error('Observação grande demais. Resuma o registro.');
   const db = await database();
   const now = new Date().toISOString();
   const today = localDate();
@@ -196,7 +201,8 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
   const savedFiles: string[] = [];
   // Evita gastar espaço copiando imagens se a OS já foi alterada ou impedida.
   const initial = await db.getFirstAsync<WorkOrder>('SELECT * FROM work_orders WHERE id=?', order.id);
-  completionPlan(order, initial, today);
+  const initialPlan = completionPlan(order, initial, today);
+  executionDecision(result, notes, initialPlan.nextDue);
   try {
     for (const photo of photos) savedFiles.push(await persistPhoto(photo));
     await db.withExclusiveTransactionAsync(async (tx) => {
@@ -205,20 +211,25 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
         `SELECT o.*, a.name AS asset_name, a.code AS asset_code, a.area AS asset_area
          FROM work_orders o LEFT JOIN assets a ON a.id=o.asset_id WHERE o.id=?`, order.id);
       const plan = completionPlan(order, current, today);
-      const changed = await tx.runAsync(`UPDATE work_orders SET status=?,due_date=?,updated_at=?
+      const decision = executionDecision(result, notes, plan.nextDue);
+      const changed = await tx.runAsync(`UPDATE work_orders
+        SET status=?,due_date=?,partial_reason=?,partial_at=?,updated_at=?
         WHERE id=? AND status='pending' AND block_reason='' AND updated_at=?`,
-        plan.nextDue ? 'pending' : 'completed', plan.nextDue ?? current!.due_date,
+        decision.orderStatus, decision.nextDue ?? current!.due_date,
+        decision.partialReason, result === 'partial' ? now : null,
         now, order.id, order.updated_at);
       if (changed.changes !== 1) throw new Error('Atividade alterada. Atualize a tela.');
       const assetLabel = [current!.asset_code, current!.asset_name, current!.asset_area]
         .filter(Boolean).join(' · ').slice(0, 300);
       await tx.runAsync(`INSERT INTO executions
-        (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category)
-        VALUES (?,?,?,?,?,?,?,?,?)`,
-        executionId, order.id, current!.title, notes.trim(), now, current!.due_date, plan.nextDue,
-        assetLabel, current!.category);
-      await tx.runAsync('INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES(?,?,?,?,?)',
-        makeId(), order.id, 'executed', '', now);
+        (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category,result)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        executionId, order.id, current!.title, decision.notes, now, current!.due_date, decision.nextDue,
+        assetLabel, current!.category, result);
+      if (result === 'completed') {
+        await tx.runAsync('INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES(?,?,?,?,?)',
+          makeId(), order.id, 'executed', '', now);
+      }
       for (let i = 0; i < savedFiles.length; i++) {
         await tx.runAsync(`INSERT INTO execution_photos
           (id,execution_id,filename,mime_type,created_at) VALUES (?,?,?,?,?)`,
@@ -262,15 +273,16 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
     }
     for (const o of data.work_orders) {
       await tx.runAsync(`INSERT INTO work_orders
-        (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at,block_reason,blocked_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
-        o.recurrence_days,o.due_date,o.status,o.created_at,o.updated_at, o.block_reason ?? '', o.blocked_at ?? null);
+        (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at,block_reason,blocked_at,partial_reason,partial_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
+        o.recurrence_days,o.due_date,o.status,o.created_at,o.updated_at, o.block_reason ?? '', o.blocked_at ?? null,
+        o.partial_reason ?? '', o.partial_at ?? null);
     }
     for (const e of data.executions) {
       await tx.runAsync(`INSERT INTO executions
-        (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category)
-        VALUES (?,?,?,?,?,?,?,?,?)`, e.id,e.order_id,e.order_title,e.notes,e.executed_at,
-        e.previous_due_date,e.next_due_date,e.asset_label,e.category);
+        (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category,result)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`, e.id,e.order_id,e.order_title,e.notes,e.executed_at,
+        e.previous_due_date,e.next_due_date,e.asset_label,e.category, e.result ?? 'completed');
     }
     for (const event of data.order_events ?? []) {
       await tx.runAsync('INSERT INTO order_events (id,order_id,event_type,reason,created_at) VALUES (?,?,?,?,?)',
