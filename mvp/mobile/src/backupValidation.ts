@@ -19,7 +19,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
   if (!Array.isArray(data.photos) || data.photos.length > MAX_RECORDS) throw new Error('Fotos inválidas.');
   if (!iso(data.exported_at)) throw new Error('Data do backup inválida.');
-  if (data.version >= 3 && (!Array.isArray(data.order_events) || data.order_events.length > MAX_RECORDS))
+  if ((data.version as number) >= 3 && (!Array.isArray(data.order_events) || data.order_events.length > MAX_RECORDS))
     throw new Error('Eventos do backup ausentes ou inválidos.');
   if (data.order_events !== undefined && (!Array.isArray(data.order_events) || data.order_events.length > MAX_RECORDS))
     throw new Error('Eventos inválidos.');
@@ -49,7 +49,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       || !iso(o.created_at) || !iso(o.updated_at)
       || (o.block_reason !== undefined && !str(o.block_reason, 500))
       || (o.blocked_at !== undefined && o.blocked_at !== null && !iso(o.blocked_at))
-      || (data.version >= 3 && (!str(o.block_reason, 500) || (o.blocked_at !== null && !iso(o.blocked_at))
+      || ((data.version as number) >= 3 && (!str(o.block_reason, 500) || (o.blocked_at !== null && !iso(o.blocked_at))
         || (!!o.block_reason !== !!o.blocked_at)
         || (o.status === 'completed' && !!o.block_reason)))
       || (data.version === 4 && (
