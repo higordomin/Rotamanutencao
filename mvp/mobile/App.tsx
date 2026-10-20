@@ -8,7 +8,7 @@ import {
   completeOrder, removeAsset, removeOrder, saveAsset, saveOrder, validDate, listAllPhotos,
   setImpediment, releaseImpediment, listRecentEvents,
 } from './src/db';
-import type {Asset, AssetDraft, Category, Execution, ExecutionPhoto, PhotoDraft, OrderDraft, Priority, WorkOrder, OrderEvent} from './src/types';
+import type {Asset, AssetDraft, Category, Execution, ExecutionPhoto, PhotoDraft, OrderDraft, Priority, WorkOrder, OrderEvent, ExecutionResult} from './src/types';
 import {taskState, taskSummary} from './src/logic';
 import {evidenceUri, selectPhoto, MAX_PHOTOS_PER_EXECUTION} from './src/evidence';
 import {exportExecutionPdf} from './src/report';
@@ -105,6 +105,7 @@ export default function App() {
   const [editingOrder, setEditingOrder] = useState<string | undefined>();
   const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
+  const [completionResult, setCompletionResult] = useState<ExecutionResult>('completed');
   const [blockReason, setBlockReason] = useState('');
   const [draftPhotos, setDraftPhotos] = useState<PhotoDraft[]>([]);
 
@@ -153,6 +154,8 @@ export default function App() {
   const todayTasks = orders.filter(o => stateOf(o) === 'today');
   const upcoming = orders.filter(o => stateOf(o) === 'upcoming');
   const blocked = orders.filter(o => stateOf(o) === 'blocked');
+  const partialOrders = orders.filter(o => o.status === 'pending' && !!o.partial_reason?.trim());
+  const partialAvailable = partialOrders.filter(o => stateOf(o) !== 'blocked');
   const evidenceByExecution = useMemo(() => {
     const grouped = new Map<string, ExecutionPhoto[]>();
     for (const photo of evidence) grouped.set(photo.execution_id, [...(grouped.get(photo.execution_id) ?? []), photo]);
@@ -165,7 +168,7 @@ export default function App() {
       if (orderFilter === 'Pendentes' && ['completed', 'blocked'].includes(state)) return false;
       if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
       if (orderFilter === 'Concluídas' && state !== 'completed') return false;
-      return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason]
+      return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason, order.partial_reason]
         .some(value => value.toLocaleLowerCase('pt-BR').includes(term));
     });
   }, [orders, search, orderFilter, today]);
@@ -197,6 +200,7 @@ export default function App() {
   const openComplete = (order: WorkOrder) => {
     setCompletingOrder(order);
     setCompletionNotes('');
+    setCompletionResult('completed');
     setDraftPhotos([]);
     setDialog('complete');
   };
@@ -250,16 +254,21 @@ export default function App() {
     const overdueOrder = state === 'overdue';
     const done = state === 'completed';
     const isBlocked = state === 'blocked';
+    const isPartial = !done && !!order.partial_reason?.trim();
     return <View key={order.id} style={styles.card}>
       <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
         <View style={{flex: 1}}>
           <Text style={styles.cardTitle}>{order.title}</Text>
           <Text style={styles.detail}>{[order.asset_code, order.asset_name].filter(Boolean).join(' · ') || 'Sem equipamento'} · {order.category}</Text>
         </View>
-        <Pill text={done ? 'Concluída' : isBlocked ? 'Impedida' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
-          tone={done ? 'green' : isBlocked || overdueOrder ? 'red' : order.due_date === today ? 'yellow' : 'blue'}/>
+        <Pill text={done ? 'Concluída' : isBlocked ? 'Impedida' : isPartial ? 'Parcial' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
+          tone={done ? 'green' : isBlocked || overdueOrder ? 'red' : isPartial || order.due_date === today ? 'yellow' : 'blue'}/>
       </View>
       {!!order.description && <Text style={styles.description}>{order.description}</Text>}
+      {isPartial && <View style={[styles.blockAlert, {backgroundColor: '#2B2B3B'}]}>
+        <Text style={{color: COLORS.yellow, fontWeight: '800'}}>↻ EXECUÇÃO PARCIAL — PENDÊNCIA ABERTA</Text>
+        <Text style={{color: COLORS.text, marginTop: 4}}>{order.partial_reason}</Text>
+      </View>}
       {isBlocked && <View style={styles.blockAlert}><Text style={{color: COLORS.yellow, fontWeight: '800'}}>⚠ IMPEDIMENTO</Text><Text style={{color: COLORS.text, marginTop: 4}}>{order.block_reason}</Text></View>}
       <View style={styles.chips}>
         <Pill text={`📅 ${order.due_date}`}/>
@@ -317,11 +326,15 @@ export default function App() {
           <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.green}]}>{counts.today}</Text><Text style={styles.metricLabel}>Hoje</Text></View>
         </View>
       </View>
+      {partialOrders.length > 0 && <Text style={[styles.detail, {color: COLORS.yellow, marginTop: 8}]}>
+        {partialOrders.length} atividade(s) com execução parcial e pendência registrada.
+      </Text>}
       <View style={styles.quickActions}>
         <Action label="+ Nova atividade" onPress={() => openOrder()}/>
         <Action label="+ Equipamento" secondary onPress={() => openAsset()}/>
       </View>
       {section('Impedidas / aguardando liberação', blocked, 'Nenhuma atividade impedida.')}
+      {partialAvailable.length > 0 && section('Execuções parciais / pendências', partialAvailable, '')}
       {section('Atrasadas', overdue, 'Nenhuma atividade atrasada.')}
       {section('Para hoje', todayTasks, 'Nenhuma atividade programada para hoje.')}
       {section('Próximas', upcoming.slice(0, 5), 'Sem atividades futuras.')}
@@ -365,7 +378,7 @@ export default function App() {
         <Text style={styles.description}>Substitui TODOS os registros existentes, depois de sua confirmação. Antes disso, exporte uma cópia do estado atual.</Text>
         <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
       </View>
-      <Text style={styles.hint}>Formato local versão 3 (restaura também versão 2) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+      <Text style={styles.hint}>Formato local versão 4 (restaura também versões 2 e 3) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
@@ -374,12 +387,14 @@ export default function App() {
         : executions.slice(0, historyPageSize).map(execution => <View key={execution.id} style={styles.card}>
           <View style={{flexDirection: 'row', justifyContent: 'space-between', gap: 12}}>
             <Text style={[styles.cardTitle, {flex: 1}]}>{execution.order_title}</Text>
-            <Pill text="Executada" tone="green"/>
+            <Pill text={execution.result === 'partial' ? 'Parcial' : 'Concluída'} tone={execution.result === 'partial' ? 'yellow' : 'green'}/>
           </View>
           <Text style={styles.detail}>{new Date(execution.executed_at).toLocaleString('pt-BR')}</Text>
           {!!execution.notes && <Text style={styles.description}>{execution.notes}</Text>}
           <Text style={styles.description}>Prazo anterior: {execution.previous_due_date}</Text>
-          {!!execution.next_due_date && <Text style={styles.detail}>Próxima execução: {execution.next_due_date}</Text>}
+          {execution.result === 'partial'
+            ? <Text style={[styles.detail, {color: COLORS.yellow}]}>OS continua pendente. Data não reagendada.</Text>
+            : !!execution.next_due_date && <Text style={styles.detail}>Próxima execução: {execution.next_due_date}</Text>}
           {!!execution.asset_label && <Text style={styles.detail}>Equipamento: {execution.asset_label}</Text>}
           <Text style={styles.detail}>{execution.photo_count} foto(s) no registro</Text>
           <View style={styles.photoRow}>
@@ -539,18 +554,39 @@ export default function App() {
             </>}
             {dialog === 'complete' && completingOrder && <>
               <Text style={[styles.cardTitle, {marginBottom: 8}]}>{completingOrder.title}</Text>
-              <Text style={[styles.detail, {marginBottom: 20}]}>
-                {completingOrder.recurrence_days ? `Reagendamento automático a cada ${completingOrder.recurrence_days} dias` : 'Atividade avulsa: será concluída'}
+              <Text style={styles.fieldLabel}>Resultado do serviço *</Text>
+              <View style={[styles.filters, {marginTop: 2, marginBottom: 8}]}>
+                <Pressable accessibilityRole="button"
+                  accessibilityState={{selected: completionResult === 'completed'}}
+                  style={[styles.choice, completionResult === 'completed' && styles.choiceActive]}
+                  onPress={() => setCompletionResult('completed')}>
+                  <Text style={{color: completionResult === 'completed' ? COLORS.bg : COLORS.text, fontWeight: '800'}}>✓ Concluída</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button"
+                  accessibilityState={{selected: completionResult === 'partial'}}
+                  style={[styles.choice, completionResult === 'partial' && styles.choiceActive]}
+                  onPress={() => setCompletionResult('partial')}>
+                  <Text style={{color: completionResult === 'partial' ? COLORS.bg : COLORS.text, fontWeight: '800'}}>◐ Parcial</Text>
+                </Pressable>
+              </View>
+              <Text style={[styles.hint, {color: completionResult === 'partial' ? COLORS.yellow : COLORS.muted, marginBottom: 16}]}>
+                {completionResult === 'partial'
+                  ? 'PARCIAL: a OS ficará pendente, sem adiantar a próxima data. Descreva o que falta fazer.'
+                  : completingOrder.recurrence_days
+                    ? `CONCLUÍDA: próxima programação a cada ${completingOrder.recurrence_days} dias a partir de hoje.`
+                    : 'CONCLUÍDA: atividade avulsa será encerrada.'}
               </Text>
-              <FormField label="O que foi realizado?" placeholder="Descreva o serviço executado e anomalias encontradas..."
+              <FormField label={completionResult === 'partial' ? 'O que foi feito e o que falta executar? *' : 'O que foi realizado?'}  placeholder="Descreva o serviço executado e anomalias encontradas..."
                 multiline value={completionNotes} onChangeText={setCompletionNotes}/>
               <Text style={styles.fieldLabel}>Anotação rápida (opcional)</Text>
               <View style={styles.filters}>
                 {['Executado conforme programação, sem anomalias observadas.',
                   'Executado parcialmente: há pendências a detalhar.',
                   'Anomalia identificada: detalhar causa e ação necessária.'].map(message =>
-                  <Pressable key={message} accessibilityRole="button" onPress={() =>
-                    setCompletionNotes(prev => prev.trim() ? `${prev.trim()}\n${message}` : message)}
+                  <Pressable key={message} accessibilityRole="button" onPress={() => {
+                    if (message.startsWith('Executado parcialmente')) setCompletionResult('partial');
+                    setCompletionNotes(prev => prev.trim() ? `${prev.trim()}\n${message}` : message);
+                  }}
                     style={styles.choice}><Text style={{fontSize: 12, color: COLORS.text}}>{message}</Text></Pressable>)}
               </View>
               <Text style={styles.fieldLabel}>Evidências fotográficas ({draftPhotos.length}/{MAX_PHOTOS_PER_EXECUTION})</Text>
@@ -569,8 +605,10 @@ export default function App() {
               </View>
               <Text style={styles.hint}>Fotos ficam no armazenamento do aplicativo e serão incluídas no PDF e no backup.</Text>
               <View style={{height:14}}/>
-              <Action disabled={busy} label={busy ? 'Registrando...' : 'Confirmar execução'}
-                onPress={() => { void handle(() => completeOrder(completingOrder, completionNotes, draftPhotos)); }}/>
+              <Action disabled={busy || (completionResult === 'partial' &&
+                  (completionNotes.trim().length < 10 || completionNotes.trim().length > 1000))}
+                label={busy ? 'Registrando...' : completionResult === 'partial' ? 'Registrar parcial (manter OS aberta)' : 'Confirmar conclusão'}
+                onPress={() => { void handle(() => completeOrder(completingOrder, completionNotes, draftPhotos, completionResult)); }}/>
             </>}
             <View style={{height: 30}}/>
           </ScrollView>}
