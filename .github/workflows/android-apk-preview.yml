@@ -1,0 +1,45 @@
+name: Android APK de teste
+on:
+  pull_request:
+    paths:
+      - 'mvp/mobile/**'
+      - '.github/workflows/android-apk-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mvp/mobile
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Instalar dependências
+        run: npm install --no-audit --no-fund
+      - name: Gerar projeto nativo Android
+        run: npx expo prebuild --platform android --no-install
+      - name: Compilar APK release com assinatura de desenvolvimento
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:assembleRelease --no-daemon
+      - name: Publicar artefato instalável de teste
+        uses: actions/upload-artifact@v4
+        with:
+          name: RotaManutencao-preview-APK
+          path: mvp/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7

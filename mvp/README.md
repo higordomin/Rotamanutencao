@@ -1,50 +1,26 @@
-# RotaManutenção — MVP 0.3
+# RotaManutenção — MVP 0.4 (revisão de segurança, estabilidade e uso offline)
 
-Aplicativo Android (Expo + SQLite) **local e individual**, voltado para lubrificação, mecânica, elétrica e inspeção de equipamentos. Sem login, nuvem ou supervisão.
+Aplicativo Android local para técnicos de manutenção e lubrificação, mecânica, elétrica e inspeção. **Sem login, nuvem, sincronização ou supervisão** nesta etapa.
 
-## Recursos presentes no código
+### O que funciona no código
 
-- Ativos com TAG/área e atividades por periodicidade.
-- Listagem virtualizada com busca e filtros.
-- Priorização de atrasadas, impedidas e para hoje.
-- Impedimentos com motivo, liberação e histórico de eventos (auditoria local básica).
-- Execuções, fotos, relatório PDF e exportação/recuperação por backup JSON (v3, compatível com v2).
-- Banco SQLite persistente e migração sem descarte intencional de dados legados.
+- Equipamentos com TAG e área, atividades recorrentes, prioridades, calendário implícito (prazo por OS) e histórico.
+- Motivos de impedimento, liberação e trilha de eventos.
+- Busca por título, descrição, TAG, área e equipamento.
+- Registro de execução, anotações rápidas, fotos, relatório PDF e backup/restauração local.
+- Proteção contra gravação sobre uma OS modificada, migrações SQLite e rollback em falhas.
+- Painel reduzido e histórico paginado na interface para reduzir renderizações.
 
-**Estado real:** código-fonte atualizado e 14 testes automatizados Node e testes de migração SQLite concluídos no ambiente local. **Ainda falta instalar as dependências Expo, compilar um APK e testar no Android físico.** Não anunciar como versão estável para produção.
+### Estado de qualidade
 
-## Rodar e verificar
+- 21 testes automatizados Node e smoke test SQLite passaram localmente; parser TS/TSX sem erros.
+- **Não há APK compilado nem teste real em Android.** A instalação das dependências Expo não pôde ser feita neste ambiente. O CI tenta validar a exportação do bundle Android.
+- Backup JSON com fotos não é criptografado. Não inserir dados industriais confidenciais sem autorização.
 
-```bash
-cd mobile
-npm install
-npx expo install --check
-npm run check
-npm test
-python3 tests/sqlite_smoke.py
-npx expo start
-```
+### Próximas etapas
 
-Um APK de preview depende de autenticação e build remoto do Expo (EAS). Após cadastrar/entrar em uma conta Expo:
+1. Verificar GitHub Actions e concluir typecheck/bundle Android com dependências reais.
+2. Compilar APK preview pelo EAS, executar a matriz manual em `mobile/docs/QA_ACCEPTANCE.md` e corrigir eventuais falhas reais.
+3. Implementar rotas multipontos/checklists e, só após estabilização, plataforma SaaS de equipes e PCM.
 
-```bash
-npm install -g eas-cli
-eas login
-eas build --platform android --profile preview
-```
-
-Veja `mobile/docs/QA_ACCEPTANCE.md` antes de instalar em uso real.
-
-## Organização do repositório
-
-- `mobile/App.tsx`: interface, listagem e fluxos do técnico.
-- `mobile/src/db.ts`: SQL, OS, migração, logs e operações transacionais.
-- `mobile/src/logic.ts`: regras puras de calendário e classificação.
-- `mobile/src/backupValidation.ts`: validação de backups v2/v3.
-- `mobile/src/evidence.ts`, `backup.ts`, `report.ts`: evidências, backup e relatório.
-- `mobile/tests/`: testes automatizados locais.
-- `docs/PRODUTO.md`: visão, lacunas e evolução comercial.
-
-## Segurança e privacidade
-
-As imagens e dados ficam no dispositivo, mas a cópia JSON com fotos **não é criptografada**. Faça exportação para local seguro antes de desinstalar ou restaurar. Use somente dados autorizados de suas próprias atividades ou dados sintéticos. O aplicativo não substitui procedimentos de segurança industrial.
+Veja `mobile/docs/CHANGELOG_0_4.md` e `mobile/README.md`.

@@ -27,6 +27,8 @@ export type WorkOrder = {
   priority: Priority;
   asset_id: string | null;
   asset_name: string | null;
+  asset_code: string | null;
+  asset_area: string | null;
   recurrence_days: number;
   due_date: string;
   status: OrderStatus;
@@ -68,7 +70,7 @@ export type BackupData = {
   version: 2 | 3;
   exported_at: string;
   assets: Asset[];
-  work_orders: Omit<WorkOrder, 'asset_name'>[];
+  work_orders: Omit<WorkOrder, 'asset_name' | 'asset_code' | 'asset_area'>[];
   executions: Omit<Execution, 'photo_count'>[];
   photos: Array<ExecutionPhoto & {base64: string}>;
   order_events?: OrderEvent[];

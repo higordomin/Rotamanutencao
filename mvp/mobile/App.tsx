@@ -85,6 +85,7 @@ export default function App() {
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [search, setSearch] = useState('');
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('Todas');
+  const [historyPageSize, setHistoryPageSize] = useState(40);
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -139,7 +140,7 @@ export default function App() {
       if (orderFilter === 'Pendentes' && ['completed', 'blocked'].includes(state)) return false;
       if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
       if (orderFilter === 'Concluídas' && state !== 'completed') return false;
-      return !term || [order.title, order.description, order.asset_name || '', order.category, order.block_reason]
+      return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason]
         .some(value => value.toLocaleLowerCase('pt-BR').includes(term));
     });
   }, [orders, search, orderFilter, today]);
@@ -227,7 +228,7 @@ export default function App() {
       <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
         <View style={{flex: 1}}>
           <Text style={styles.cardTitle}>{order.title}</Text>
-          <Text style={styles.detail}>{order.asset_name || 'Sem equipamento'} · {order.category}</Text>
+          <Text style={styles.detail}>{[order.asset_code, order.asset_name].filter(Boolean).join(' · ') || 'Sem equipamento'} · {order.category}</Text>
         </View>
         <Pill text={done ? 'Concluída' : isBlocked ? 'Impedida' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
           tone={done ? 'green' : isBlocked || overdueOrder ? 'red' : order.due_date === today ? 'yellow' : 'blue'}/>
@@ -269,7 +270,10 @@ export default function App() {
 
   const section = (name: string, items: WorkOrder[], empty: string) => <View style={{marginTop: 21}}>
     <Text style={styles.sectionTitle}>{name} <Text style={{color: COLORS.muted}}>({items.length})</Text></Text>
-    {items.length === 0 ? <Text style={styles.empty}>{empty}</Text> : items.map(orderCard)}
+    {items.length === 0 ? <Text style={styles.empty}>{empty}</Text> : items.slice(0, 8).map(orderCard)}
+    {items.length > 8 && <Action secondary label={`Ver outras ${items.length - 8} atividades`} onPress={() => {
+      setOrderFilter(name.startsWith('Impedidas') ? 'Impedidas' : 'Pendentes'); setTab('Atividades');
+    }}/>}
   </View>;
 
   const content = () => {
@@ -278,6 +282,9 @@ export default function App() {
         <Text style={styles.heroEyebrow}>RESUMO DA SUA MANUTENÇÃO</Text>
         <Text style={styles.heroTitle}>Sua rotina, sob controle.</Text>
         <Text style={styles.heroSub}>Rotas e serviços organizados, mesmo sem internet.</Text>
+        {blocked.some(o => o.due_date < today) && <Text style={[styles.detail, {color: COLORS.yellow, marginBottom: 9}]}>
+          {blocked.filter(o => o.due_date < today).length} atividade(s) impedida(s) também estão vencidas.
+        </Text>}
         <View style={styles.metrics}>
           <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.red}]}>{counts.overdue}</Text><Text style={styles.metricLabel}>Atrasadas</Text></View>
           <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.yellow}]}>{counts.blocked}</Text><Text style={styles.metricLabel}>Impedidas</Text></View>
@@ -322,7 +329,7 @@ export default function App() {
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
       <Text style={[styles.detail, {marginBottom: 16}]}>Cada execução fica registrada no aparelho.</Text>
       {executions.length === 0 ? <Text style={styles.empty}>Nenhum serviço executado ainda.</Text>
-        : executions.map(execution => <View key={execution.id} style={styles.card}>
+        : executions.slice(0, historyPageSize).map(execution => <View key={execution.id} style={styles.card}>
           <View style={{flexDirection: 'row', justifyContent: 'space-between', gap: 12}}>
             <Text style={[styles.cardTitle, {flex: 1}]}>{execution.order_title}</Text>
             <Pill text="Executada" tone="green"/>
@@ -343,6 +350,7 @@ export default function App() {
                 evidenceByExecution.get(execution.id) ?? [])); }}/>
           </View>
         </View>)}
+      {executions.length > historyPageSize && <Action secondary label={`Carregar mais registros (${executions.length - historyPageSize} restantes)`} onPress={() => setHistoryPageSize(n => n + 40)}/> }
       {events.length > 0 && <>
         <Text style={[styles.sectionTitle, {marginTop: 26}]}>Ocorrências / impedimentos</Text>
         <Text style={styles.detail}>Registros de bloqueio, liberação e execução (últimos 250 eventos).</Text>
@@ -482,6 +490,15 @@ export default function App() {
               </Text>
               <FormField label="O que foi realizado?" placeholder="Descreva o serviço executado e anomalias encontradas..."
                 multiline value={completionNotes} onChangeText={setCompletionNotes}/>
+              <Text style={styles.fieldLabel}>Anotação rápida (opcional)</Text>
+              <View style={styles.filters}>
+                {['Executado conforme programação, sem anomalias observadas.',
+                  'Executado parcialmente: há pendências a detalhar.',
+                  'Anomalia identificada: detalhar causa e ação necessária.'].map(message =>
+                  <Pressable key={message} accessibilityRole="button" onPress={() =>
+                    setCompletionNotes(prev => prev.trim() ? `${prev.trim()}\n${message}` : message)}
+                    style={styles.choice}><Text style={{fontSize: 12, color: COLORS.text}}>{message}</Text></Pressable>)}
+              </View>
               <Text style={styles.fieldLabel}>Evidências fotográficas ({draftPhotos.length}/{MAX_PHOTOS_PER_EXECUTION})</Text>
               <View style={styles.cardActions}>
                 <Action label="📷 Tirar foto" secondary disabled={busy || draftPhotos.length >= MAX_PHOTOS_PER_EXECUTION}

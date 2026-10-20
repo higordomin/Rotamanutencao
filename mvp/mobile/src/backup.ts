@@ -4,6 +4,7 @@ import * as Sharing from 'expo-sharing';
 import {deletePhotoFile, evidenceUri, makeEvidenceDirectory, newFilename} from './evidence';
 import {exportDatabaseRows, restoreDatabaseRows} from './db';
 import {MAX_BACKUP_BYTES, MAX_RECORDS, validateBackup} from './backupValidation';
+import {stagePhotos} from './restoreFiles';
 import type {BackupData} from './types';
 
 async function shareFile(uri: string, mimeType: string, title: string) {
@@ -60,20 +61,17 @@ export async function restoreBackup(data: BackupData): Promise<void> {
   validateBackup(data);
   await makeEvidenceDirectory();
   const oldPhotos = (await exportDatabaseRows()).photos;
-  const newFilenames = new Map<string, string>();
-  const createdFiles: string[] = [];
+  const {filenames, created} = await stagePhotos(
+    data.photos, newFilename,
+    (filename, base64) => FileSystem.writeAsStringAsync(evidenceUri(filename), base64, {
+      encoding: FileSystem.EncodingType.Base64,
+    }),
+    deletePhotoFile,
+  );
   try {
-    for (const photo of data.photos) {
-      const filename = newFilename(photo.mime_type);
-      await FileSystem.writeAsStringAsync(evidenceUri(filename), photo.base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      newFilenames.set(photo.id, filename);
-      createdFiles.push(filename);
-    }
-    await restoreDatabaseRows(data, newFilenames);
+    await restoreDatabaseRows(data, filenames);
   } catch (error) {
-    await Promise.allSettled(createdFiles.map(deletePhotoFile));
+    await Promise.allSettled(created.map(deletePhotoFile));
     throw error;
   }
   // Nunca apagamos as fotos antigas antes da transação bem-sucedida.

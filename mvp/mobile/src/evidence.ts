@@ -33,7 +33,13 @@ export async function persistPhoto(input: PhotoDraft): Promise<string> {
     throw new Error('Somente fotos JPEG ou PNG são aceitas.');
   await makeEvidenceDirectory();
   const filename = newFilename(input.mime_type);
-  await FileSystem.copyAsync({from: input.uri, to: evidenceUri(filename)});
+  try {
+    await FileSystem.copyAsync({from: input.uri, to: evidenceUri(filename)});
+  } catch (error) {
+    // Mesmo uma cópia incompleta pode deixar um arquivo órfão no dispositivo.
+    await FileSystem.deleteAsync(evidenceUri(filename), {idempotent: true}).catch(() => {});
+    throw error;
+  }
   return filename;
 }
 

@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import type {Asset, AssetDraft, BackupData, Execution, ExecutionPhoto, OrderDraft, PhotoDraft, WorkOrder, OrderEvent} from './types';
 import {deletePhotoFile, persistPhoto, MAX_PHOTOS_PER_EXECUTION} from './evidence';
 import {localDate, addDays, validDate} from './logic';
+import {completionPlan} from './operations';
 export {localDate, addDays, validDate} from './logic';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -86,7 +87,7 @@ export async function listAssets(): Promise<Asset[]> {
 
 export async function listOrders(): Promise<WorkOrder[]> {
   return (await database()).getAllAsync<WorkOrder>(`
-    SELECT o.*, a.name AS asset_name FROM work_orders o
+    SELECT o.*, a.name AS asset_name, a.code AS asset_code, a.area AS asset_area FROM work_orders o
     LEFT JOIN assets a ON a.id = o.asset_id
     ORDER BY CASE WHEN o.status = 'completed' THEN 2 WHEN o.block_reason != '' THEN 1 ELSE 0 END,
              o.due_date ASC, o.created_at DESC
@@ -107,8 +108,9 @@ export async function saveAsset(input: AssetDraft, existingId?: string): Promise
   if (name.length > 300 || input.code.length > 200 || input.area.length > 200)
     throw new Error('Um dos campos do equipamento é longo demais.');
   if (existingId) {
-    await db.runAsync('UPDATE assets SET name=?, code=?, area=? WHERE id=?',
+    const result = await db.runAsync('UPDATE assets SET name=?, code=?, area=? WHERE id=?',
       name, input.code.trim(), input.area.trim(), existingId);
+    if (result.changes !== 1) throw new Error('Equipamento excluído ou desatualizado. Atualize a tela.');
   } else {
     await db.runAsync('INSERT INTO assets (id, code, name, area, created_at) VALUES (?, ?, ?, ?, ?)',
       makeId(), input.code.trim(), name, input.area.trim(), new Date().toISOString());
@@ -126,10 +128,11 @@ export async function saveOrder(input: OrderDraft, existingId?: string): Promise
     throw new Error('A periodicidade precisa ser 0 ou um número inteiro de dias.');
   const now = new Date().toISOString();
   if (existingId) {
-    await db.runAsync(`UPDATE work_orders SET title=?,description=?,category=?,priority=?,asset_id=?,
+    const result = await db.runAsync(`UPDATE work_orders SET title=?,description=?,category=?,priority=?,asset_id=?,
       recurrence_days=?,due_date=?,updated_at=? WHERE id=?`,
       title, input.description.trim(), input.category, input.priority,
       input.asset_id, input.recurrence_days, input.due_date, now, existingId);
+    if (result.changes !== 1) throw new Error('Atividade excluída ou desatualizada. Atualize a tela.');
   } else {
     await db.runAsync(`INSERT INTO work_orders
       (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at)
@@ -154,7 +157,7 @@ export async function setImpediment(orderId: string, reason: string): Promise<vo
   await db.withExclusiveTransactionAsync(async tx => {
     const changed = await tx.runAsync(
       `UPDATE work_orders SET block_reason=?, blocked_at=?, updated_at=?
-       WHERE id=? AND status='pending'`, clean, now, now, orderId
+       WHERE id=? AND status='pending' AND block_reason=''`, clean, now, now, orderId
     );
     if (changed.changes !== 1) throw new Error('Atividade indisponível. Atualize os dados.');
     await tx.runAsync('INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES(?,?,?,?,?)',
@@ -184,36 +187,42 @@ export async function listAllPhotos(): Promise<ExecutionPhoto[]> {
 }
 
 export async function completeOrder(order: WorkOrder, notes: string, photos: PhotoDraft[] = []): Promise<void> {
-  if (order.status !== 'pending') throw new Error('Esta atividade já foi concluída.');
-  if (order.block_reason?.trim()) throw new Error('Libere o impedimento antes de executar.');
   if (photos.length > MAX_PHOTOS_PER_EXECUTION) throw new Error('Limite de 6 fotos por execução.');
   if (notes.length > 10000) throw new Error('Observação grande demais. Resuma o registro.');
   const db = await database();
-  const nextDue = order.recurrence_days > 0
-    ? addDays(localDate(), order.recurrence_days) : null;
   const now = new Date().toISOString();
+  const today = localDate();
   const executionId = makeId();
   const savedFiles: string[] = [];
+  // Evita gastar espaço copiando imagens se a OS já foi alterada ou impedida.
+  const initial = await db.getFirstAsync<WorkOrder>('SELECT * FROM work_orders WHERE id=?', order.id);
+  completionPlan(order, initial, today);
   try {
-    // Copiamos os anexos ANTES da transação, nunca em cache temporário.
     for (const photo of photos) savedFiles.push(await persistPhoto(photo));
     await db.withExclusiveTransactionAsync(async (tx) => {
+      // Revalidação dentro da transação: alteração entre a abertura do formulário e o clique.
+      const current = await tx.getFirstAsync<WorkOrder & {asset_name: string | null; asset_code: string | null; asset_area: string | null}>(
+        `SELECT o.*, a.name AS asset_name, a.code AS asset_code, a.area AS asset_area
+         FROM work_orders o LEFT JOIN assets a ON a.id=o.asset_id WHERE o.id=?`, order.id);
+      const plan = completionPlan(order, current, today);
       const changed = await tx.runAsync(`UPDATE work_orders SET status=?,due_date=?,updated_at=?
-        WHERE id=? AND status='pending' AND block_reason=''`, nextDue ? 'pending' : 'completed',
-        nextDue ?? order.due_date, now, order.id);
+        WHERE id=? AND status='pending' AND block_reason='' AND updated_at=?`,
+        plan.nextDue ? 'pending' : 'completed', plan.nextDue ?? current!.due_date,
+        now, order.id, order.updated_at);
       if (changed.changes !== 1) throw new Error('Atividade alterada. Atualize a tela.');
+      const assetLabel = [current!.asset_code, current!.asset_name, current!.asset_area]
+        .filter(Boolean).join(' · ').slice(0, 300);
       await tx.runAsync(`INSERT INTO executions
         (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category)
         VALUES (?,?,?,?,?,?,?,?,?)`,
-        executionId, order.id, order.title, notes.trim(), now, order.due_date, nextDue,
-        order.asset_name ?? '', order.category);
+        executionId, order.id, current!.title, notes.trim(), now, current!.due_date, plan.nextDue,
+        assetLabel, current!.category);
       await tx.runAsync('INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES(?,?,?,?,?)',
         makeId(), order.id, 'executed', '', now);
       for (let i = 0; i < savedFiles.length; i++) {
-        const mime = photos[i].mime_type;
         await tx.runAsync(`INSERT INTO execution_photos
           (id,execution_id,filename,mime_type,created_at) VALUES (?,?,?,?,?)`,
-          makeId(), executionId, savedFiles[i], mime, now);
+          makeId(), executionId, savedFiles[i], photos[i].mime_type, now);
       }
     });
   } catch (error) {
@@ -225,13 +234,19 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
 export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 'version' | 'exported_at' | 'photos'> & {photos: ExecutionPhoto[]}> {
   const db = await database();
   // A exportação usa todo o histórico, não apenas as 500 execuções da tela.
-  const [assets, work_orders, executions, photos, order_events] = await Promise.all([
-    db.getAllAsync<Asset>('SELECT * FROM assets'),
-    db.getAllAsync<Omit<WorkOrder, 'asset_name'>>('SELECT * FROM work_orders'),
-    db.getAllAsync<Omit<Execution, 'photo_count'>>('SELECT * FROM executions'),
-    db.getAllAsync<ExecutionPhoto>('SELECT * FROM execution_photos'),
-    db.getAllAsync<OrderEvent>('SELECT * FROM order_events'),
-  ]);
+  // Snapshot consistente. Leituras concorrentes soltas poderiam misturar versões diferentes.
+  let assets: Asset[] = [];
+  let work_orders: BackupData['work_orders'] = [];
+  let executions: BackupData['executions'] = [];
+  let photos: ExecutionPhoto[] = [];
+  let order_events: OrderEvent[] = [];
+  await db.withExclusiveTransactionAsync(async tx => {
+    assets = await tx.getAllAsync<Asset>('SELECT * FROM assets');
+    work_orders = await tx.getAllAsync<BackupData['work_orders'][number]>('SELECT * FROM work_orders');
+    executions = await tx.getAllAsync<BackupData['executions'][number]>('SELECT * FROM executions');
+    photos = await tx.getAllAsync<ExecutionPhoto>('SELECT * FROM execution_photos');
+    order_events = await tx.getAllAsync<OrderEvent>('SELECT * FROM order_events');
+  });
   return {assets, work_orders, executions, photos, order_events};
 }
 
