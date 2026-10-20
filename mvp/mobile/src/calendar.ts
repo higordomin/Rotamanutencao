@@ -1,4 +1,4 @@
-import {addDays, localDate, validDate} from './logic';
+import {addDays, localDate, validDate} from './logic.ts';
 
 export type CalendarPage = {year: number; month: number};
 
