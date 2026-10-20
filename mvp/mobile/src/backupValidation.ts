@@ -12,15 +12,15 @@ const ident = (v: unknown): v is string => str(v, 100) && v.length > 0;
 const iso = (v: unknown): v is string => str(v, 50) && !Number.isNaN(Date.parse(v));
 
 export function validateBackup(data: unknown): asserts data is BackupData {
-  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3].includes(data.version as number))
-    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2 ou v3.');
+  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4].includes(data.version as number))
+    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3 ou v4.');
   if (!Array.isArray(data.assets) || data.assets.length > MAX_RECORDS) throw new Error('Equipamentos inválidos.');
   if (!Array.isArray(data.work_orders) || data.work_orders.length > MAX_RECORDS) throw new Error('Atividades inválidas.');
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
   if (!Array.isArray(data.photos) || data.photos.length > MAX_RECORDS) throw new Error('Fotos inválidas.');
   if (!iso(data.exported_at)) throw new Error('Data do backup inválida.');
-  if (data.version === 3 && (!Array.isArray(data.order_events) || data.order_events.length > MAX_RECORDS))
-    throw new Error('Eventos da versão 3 ausentes ou inválidos.');
+  if (data.version >= 3 && (!Array.isArray(data.order_events) || data.order_events.length > MAX_RECORDS))
+    throw new Error('Eventos do backup ausentes ou inválidos.');
   if (data.order_events !== undefined && (!Array.isArray(data.order_events) || data.order_events.length > MAX_RECORDS))
     throw new Error('Eventos inválidos.');
   const ids = (items: unknown[], name: string) => {
@@ -49,16 +49,24 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       || !iso(o.created_at) || !iso(o.updated_at)
       || (o.block_reason !== undefined && !str(o.block_reason, 500))
       || (o.blocked_at !== undefined && o.blocked_at !== null && !iso(o.blocked_at))
-      || (data.version === 3 && (!str(o.block_reason, 500) || (o.blocked_at !== null && !iso(o.blocked_at))
+      || (data.version >= 3 && (!str(o.block_reason, 500) || (o.blocked_at !== null && !iso(o.blocked_at))
         || (!!o.block_reason !== !!o.blocked_at)
-        || (o.status === 'completed' && !!o.block_reason))))
+        || (o.status === 'completed' && !!o.block_reason)))
+      || (data.version === 4 && (
+        !str(o.partial_reason, 1000)
+        || (o.partial_at !== null && !iso(o.partial_at))
+        || (!!o.partial_reason !== !!o.partial_at)
+        || (o.status === 'completed' && !!o.partial_reason))))
       throw new Error('Atividade com dados ou vínculos inválidos.');
   }
   for (const e of data.executions) {
     if (!ident(e.order_id) || !oIds.has(e.order_id) || !str(e.order_title, 300)
       || !str(e.notes, 10000) || !iso(e.executed_at) || !validDate(e.previous_due_date)
       || (e.next_due_date !== null && !validDate(e.next_due_date))
-      || !str(e.asset_label, 300) || !str(e.category, 100))
+      || !str(e.asset_label, 300) || !str(e.category, 100)
+      || (data.version === 4 && (!['partial','completed'].includes(e.result)
+        || (e.result === 'partial' && (e.notes.trim().length < 10 || e.notes.trim().length > 1000
+          || e.next_due_date !== null)))))
       throw new Error('Execução com dados ou vínculos inválidos.');
   }
   if (data.order_events) {
