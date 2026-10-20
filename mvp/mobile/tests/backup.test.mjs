@@ -52,3 +52,35 @@ test('backup v3 rejeita OS concluída com impedimento', () => {
 test('backup v3 rejeita evento de bloqueio sem motivo', () => {
   const data = fixture(); data.order_events[0].reason = ''; rejects(data, /Evento/);
 });
+
+test('backup v4 com execução parcial e pendência aberta é válido', () => {
+  const data = fixture();
+  data.version = 4;
+  data.work_orders[0].partial_reason = 'Aguardando motor de reposição';
+  data.work_orders[0].partial_at = stamp;
+  data.executions = [{
+    id:'x-partial',order_id:'ord1',order_title:'Lubrificar motor',
+    notes:'Aguardando motor de reposição',executed_at:stamp,
+    previous_due_date:'2026-10-20',next_due_date:null,
+    asset_label:'MC-01',category:'Lubrificação',result:'partial'
+  }];
+  check(data);
+  data.executions[0].next_due_date = '2026-11-19';
+  rejects(data, /Execução/);
+  data.executions[0].next_due_date = null;
+  data.work_orders[0].status='completed';
+  rejects(data, /Atividade/);
+});
+test('backup v4 exige campo de resultado e dados da pendência', () => {
+  const data = fixture(); data.version = 4;
+  data.work_orders[0].partial_reason = '';
+  data.work_orders[0].partial_at = null;
+  check(data);
+  delete data.work_orders[0].partial_reason;
+  rejects(data, /Atividade/);
+  data.work_orders[0].partial_reason='';
+  data.executions.push({id:'exec',order_id:'ord1',order_title:'Lubrificar motor',
+    notes:'Registro completo',executed_at:stamp,previous_due_date:'2026-10-20',
+    next_due_date:null,asset_label:'MC-01',category:'Lubrificação'});
+  rejects(data, /Execução/);
+});
