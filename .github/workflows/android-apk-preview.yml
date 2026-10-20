@@ -27,7 +27,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - name: Instalar dependências
         run: npm install --no-audit --no-fund
       - name: Gerar projeto nativo Android
