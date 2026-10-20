@@ -1,6 +1,6 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  ActivityIndicator, Alert, AppState, KeyboardAvoidingView, Modal, Platform, Pressable,
+  ActivityIndicator, Alert, AppState, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable,
   SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Image, FlatList,
 } from 'react-native';
 import {
@@ -14,6 +14,8 @@ import {evidenceUri, selectPhoto, MAX_PHOTOS_PER_EXECUTION} from './src/evidence
 import {exportExecutionPdf} from './src/report';
 import {exportBackup, pickBackupFile, restoreBackup} from './src/backup';
 import {inspectBackup} from './src/backupInspection';
+import {CalendarPicker} from './src/CalendarPicker';
+import {brazilianDate} from './src/calendar';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -49,15 +51,17 @@ function Action({label, onPress, secondary = false, dangerous = false, disabled 
   </Pressable>;
 }
 
-function FormField({label, value, onChangeText, placeholder, multiline = false, keyboardType}: {
+function FormField({label, value, onChangeText, placeholder, multiline = false, keyboardType, onFocus}: {
   label: string; value: string; onChangeText: (v: string) => void; placeholder?: string;
-  multiline?: boolean; keyboardType?: 'default' | 'numeric';
+  multiline?: boolean; keyboardType?: 'default' | 'numeric'; onFocus?: () => void;
 }) {
   return <View style={{marginBottom: 16}}>
     <Text style={styles.fieldLabel}>{label}</Text>
     <TextInput accessibilityLabel={label} placeholder={placeholder}
       placeholderTextColor={COLORS.muted} selectionColor={COLORS.accent}
       multiline={multiline} keyboardType={keyboardType} value={value} onChangeText={onChangeText}
+      onFocus={onFocus} returnKeyType={multiline ? 'default' : 'done'}
+      onSubmitEditing={multiline ? undefined : () => Keyboard.dismiss()}
       style={[styles.field, multiline && {height: 84, textAlignVertical: 'top'}]}/>
   </View>;
 }
@@ -91,6 +95,9 @@ export default function App() {
   const [initError, setInitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<ModalType>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const modalScrollRef = useRef<ScrollView>(null);
   const [assetDraft, setAssetDraft] = useState<AssetDraft>(initialAsset());
   const [orderDraft, setOrderDraft] = useState<OrderDraft>(initialOrder());
   const [recurrenceInput, setRecurrenceInput] = useState('30');
@@ -100,6 +107,23 @@ export default function App() {
   const [completionNotes, setCompletionNotes] = useState('');
   const [blockReason, setBlockReason] = useState('');
   const [draftPhotos, setDraftPhotos] = useState<PhotoDraft[]>([]);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {show.remove(); hide.remove();};
+  }, []);
+
+  const focusLastField = () => {
+    // Em alguns teclados Android a janela só termina de redimensionar após o foco.
+    setTimeout(() => modalScrollRef.current?.scrollToEnd({animated: true}), 260);
+  };
+
+  const closeDialog = () => {
+    Keyboard.dismiss();
+    if (calendarOpen) setCalendarOpen(false);
+    else setDialog(null);
+  };
 
   const refresh = useCallback(async () => {
     const [a, o, e, p, ev] = await Promise.all([listAssets(), listOrders(), listExecutions(), listAllPhotos(), listRecentEvents()]);
@@ -160,6 +184,7 @@ export default function App() {
     setDialog('asset');
   };
   const openOrder = (order?: WorkOrder) => {
+    setCalendarOpen(false);
     setEditingOrder(order?.id);
     setRecurrenceInput(String(order?.recurrence_days ?? 30));
     setOrderDraft(order ? {
@@ -434,16 +459,25 @@ export default function App() {
           <Text style={[styles.navLabel, tab === item.label && {color: COLORS.accent}]}>{item.label}</Text>
         </Pressable>)}
     </View>
-    <Modal animationType="slide" visible={dialog !== null} transparent onRequestClose={() => setDialog(null)}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
+    <Modal animationType="slide" visible={dialog !== null} transparent onRequestClose={closeDialog}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBackdrop}>
         <SafeAreaView style={styles.modalCard}>
           <View style={styles.modalHeader}>
-            <Text style={styles.sectionTitle}>{dialog === 'asset' ? (editingAsset ? 'Editar equipamento' : 'Novo equipamento')
+            <Text style={styles.sectionTitle}>{calendarOpen ? 'Selecionar data' : dialog === 'asset' ? (editingAsset ? 'Editar equipamento' : 'Novo equipamento')
               : dialog === 'order' ? (editingOrder ? 'Editar atividade' : 'Nova atividade')
               : dialog === 'block' ? 'Registrar impedimento' : 'Registrar execução'}</Text>
-            <Pressable onPress={() => setDialog(null)}><Text style={{color: COLORS.muted, fontSize: 24}}>×</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={calendarOpen ? 'Voltar ao formulário' : 'Fechar formulário'}
+              onPress={closeDialog}><Text style={{color: COLORS.muted, fontSize: 24}}>{calendarOpen ? '‹' : '×'}</Text></Pressable>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight: '85%'}}>
+          {calendarOpen ? <CalendarPicker value={orderDraft.due_date}
+            onSelect={date => {
+              setOrderDraft(current => ({...current, due_date: date}));
+              setCalendarOpen(false);
+            }}
+            onCancel={() => setCalendarOpen(false)}/>
+          : <ScrollView ref={modalScrollRef} keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              style={{flexShrink: 1}} contentContainerStyle={{paddingBottom: keyboardVisible ? 38 : 18}}>
             {dialog === 'asset' && <>
               <FormField label="Nome *" placeholder="Ex.: Esteira transportadora" value={assetDraft.name}
                 onChangeText={v => setAssetDraft({...assetDraft, name: v})}/>
@@ -474,11 +508,14 @@ export default function App() {
                   <Text style={{color: orderDraft.asset_id === a.id ? COLORS.bg : COLORS.text}}>{a.name}</Text>
                 </Pressable>)}
               </View>
-              <FormField label="Data programada * (AAAA-MM-DD)" placeholder="2026-10-20"
-                value={orderDraft.due_date} onChangeText={v => setOrderDraft({...orderDraft, due_date: v})}/>
-              {!validDate(orderDraft.due_date) && <Text style={{color: COLORS.red, marginBottom: 14}}>Digite uma data válida.</Text>}
+              <Text style={styles.fieldLabel}>Data programada *</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Abrir calendário para escolher data"
+                style={styles.dateField} onPress={() => {Keyboard.dismiss(); setCalendarOpen(true);}}>
+                <Text style={styles.dateFieldText}>📅  {brazilianDate(orderDraft.due_date)}</Text>
+                <Text style={styles.dateFieldHint}>Alterar  ›</Text>
+              </Pressable>
               <FormField label="Repetir a cada quantos dias? (0 = avulsa)" keyboardType="numeric"
-                value={recurrenceInput} onChangeText={setRecurrenceInput}/>
+                value={recurrenceInput} onChangeText={setRecurrenceInput} onFocus={focusLastField}/>
               <Text style={[styles.hint, {marginBottom: 15}]}>Ao executar uma atividade recorrente, a próxima data será calculada a partir do dia da execução.</Text>
               <Action disabled={busy || !validDate(orderDraft.due_date) || !/^\d+$/.test(recurrenceInput)} label={busy ? 'Salvando...' : 'Salvar atividade'}
                 onPress={() => { void handle(() => saveOrder({...orderDraft, recurrence_days: Number(recurrenceInput)}, editingOrder)); }}/>
@@ -536,7 +573,7 @@ export default function App() {
                 onPress={() => { void handle(() => completeOrder(completingOrder, completionNotes, draftPhotos)); }}/>
             </>}
             <View style={{height: 30}}/>
-          </ScrollView>
+          </ScrollView>}
         </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
@@ -544,7 +581,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  safe: {flex: 1, backgroundColor: COLORS.bg},
+  safe: {flex: 1, backgroundColor: COLORS.bg,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0},
   topbar: {paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 11,
     borderBottomWidth: 1, borderBottomColor: COLORS.border},
   logo: {width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.accent},
@@ -584,9 +622,14 @@ const styles = StyleSheet.create({
   navLabel: {fontSize: 10, color: COLORS.muted, fontWeight: '700', marginTop: 2},
   modalBackdrop: {flex: 1, justifyContent: 'flex-end', backgroundColor: '#02060EBB'},
   modalCard: {padding: 20, paddingTop: 19, backgroundColor: COLORS.panel, borderTopLeftRadius: 24,
-    borderTopRightRadius: 24, maxHeight: '93%', borderWidth: 1, borderColor: COLORS.border},
+    borderTopRightRadius: 24, height: '92%', width: '100%', maxHeight: '93%', borderWidth: 1, borderColor: COLORS.border},
   modalHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 21},
   fieldLabel: {color: COLORS.text, fontSize: 12, fontWeight: '700', marginBottom: 8},
+  dateField: {backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 10, minHeight: 55, paddingHorizontal: 13, alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'space-between', marginBottom: 18},
+  dateFieldText: {color: COLORS.text, fontSize: 16, fontWeight: '700'},
+  dateFieldHint: {color: COLORS.accent, fontSize: 12, fontWeight: '700'},
   field: {borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
     backgroundColor: COLORS.bg, paddingHorizontal: 13, paddingVertical: 11, color: COLORS.text, fontSize: 14},
   choice: {borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingVertical: 9, paddingHorizontal: 12},
