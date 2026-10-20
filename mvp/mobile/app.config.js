@@ -6,10 +6,10 @@ module.exports = ({config}) => {
   if (process.env.ROTA_PREVIEW !== '1') return config;
   return {
     ...config,
-    name: 'RotaManutenção QA 0.4.2',
+    name: 'RotaManutenção QA 0.5',
     android: {
       ...(config.android || {}),
-      package: 'br.com.rotamanutencao.preview042',
+      package: 'br.com.rotamanutencao.preview05',
     },
   };
 };
