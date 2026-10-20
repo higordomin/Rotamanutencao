@@ -21,12 +21,18 @@ Profissionais autônomos de manutenção, lubrificadores, mecânicos, eletricist
 - **Equipamentos:** TAG, nome, área e vínculo com atividades.
 - **Histórico:** data da execução, atividade, observações e próxima data.
 
+## MVP 0.2 (implementação inicial, ainda não validada em Android)
+
+- Captura/seleção de até 6 fotos JPEG/PNG por execução.
+- PDF técnico por execução e menu de compartilhamento.
+- Backup JSON v2 exportável, importação validada com confirmação destrutiva.
+- Migração SQLite da base anterior.
+
 ## Próxima iteração local
 
 - Rota com múltiplos itens e posições ordenadas; ponto de lubrificação com produto, quantidade, frequência e instrução.
-- Evidências fotográficas locais com limite de armazenamento e limpeza controlada.
-- PDF de serviço com dados da execução e imagens, identidade visual e autoria.
-- Backup local exportável/importável validado; cuidado com perda/desinstalação.
+- Otimizar fotos, relatórios consolidados por rota e assinatura técnica opcional.
+- Criptografar backups e permitir arquivos grandes com exportação em streaming.
 - Notificação local de vencimento e filtros por setor, tipo e prioridade.
 - Testes automatizados para cálculo de periodicidade, integridade do histórico e migração de banco.
 

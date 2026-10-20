@@ -2,12 +2,22 @@
   "expo": {
     "name": "RotaManutenção",
     "slug": "rotamanutencao",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "android": {
       "package": "br.com.rotamanutencao.app"
     },
-    "plugins": ["expo-sqlite"]
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Selecionar fotos para anexar aos registros de manutenção.",
+          "cameraPermission": "Fotografar evidências dos serviços de manutenção.",
+          "microphonePermission": false
+        }
+      ]
+    ]
   }
 }
