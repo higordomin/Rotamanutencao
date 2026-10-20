@@ -21,3 +21,9 @@
 ## Limitação de assinatura
 
 A assinatura da versão 0.4 foi feita na compilação de teste. Uma futura compilação pode usar outra chave e o Android recusar a atualização in-place. É necessário implementar uma **chave estável** fora do repositório para versões seguintes. Não desinstalar para contornar o problema até verificar backups.
+
+## QA em instalação separada
+
+O workflow de APK define `ROTA_PREVIEW=1` e gera o aplicativo `RotaManutenção QA` com pacote Android `br.com.rotamanutencao.preview`. Ele deve ser instalado **ao lado** do `RotaManutenção` 0.4, sem compartilhar o banco. Exportar JSON na versão 0.4 e selecionar Restaurar na QA somente para teste em base vazia, após guardar cópia.
+
+A versão principal mantém `br.com.rotamanutencao.app`. Não confundir os dois ícones. A restauração em QA substitui somente os dados do aplicativo QA.
