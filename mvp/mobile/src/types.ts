@@ -33,9 +33,31 @@ export type Execution = {
   executed_at: string;
   previous_due_date: string;
   next_due_date: string | null;
+  asset_label: string;
+  category: string;
+  photo_count: number;
 };
 
+export type ExecutionPhoto = {
+  id: string;
+  execution_id: string;
+  filename: string;
+  mime_type: 'image/jpeg' | 'image/png';
+  created_at: string;
+};
+
+export type PhotoDraft = {uri: string; mime_type: string};
 export type AssetDraft = Pick<Asset, 'name' | 'code' | 'area'>;
 export type OrderDraft = Pick<WorkOrder,
   'title' | 'description' | 'category' | 'priority' | 'asset_id' | 'recurrence_days' | 'due_date'
 >;
+
+export type BackupData = {
+  format: 'rotamanutencao-offline';
+  version: 2;
+  exported_at: string;
+  assets: Asset[];
+  work_orders: Omit<WorkOrder, 'asset_name'>[];
+  executions: Omit<Execution, 'photo_count'>[];
+  photos: Array<ExecutionPhoto & {base64: string}>;
+};
