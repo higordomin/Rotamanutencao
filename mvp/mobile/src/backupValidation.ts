@@ -49,7 +49,9 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       || !iso(o.created_at) || !iso(o.updated_at)
       || (o.block_reason !== undefined && !str(o.block_reason, 500))
       || (o.blocked_at !== undefined && o.blocked_at !== null && !iso(o.blocked_at))
-      || (data.version === 3 && (!str(o.block_reason, 500) || (o.blocked_at !== null && !iso(o.blocked_at)))))
+      || (data.version === 3 && (!str(o.block_reason, 500) || (o.blocked_at !== null && !iso(o.blocked_at))
+        || (!!o.block_reason !== !!o.blocked_at)
+        || (o.status === 'completed' && !!o.block_reason))))
       throw new Error('Atividade com dados ou vínculos inválidos.');
   }
   for (const e of data.executions) {
@@ -64,7 +66,8 @@ export function validateBackup(data: unknown): asserts data is BackupData {
     for (const ev of data.order_events) {
       if (!ident(ev.order_id) || !oIds.has(ev.order_id)
         || !['blocked', 'released', 'executed'].includes(ev.event_type)
-        || !str(ev.reason, 500) || !iso(ev.created_at))
+        || !str(ev.reason, 500) || !iso(ev.created_at)
+        || (ev.event_type === 'blocked' && !ev.reason.trim()))
         throw new Error('Evento de impedimento inválido.');
     }
   }
