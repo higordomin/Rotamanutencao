@@ -1,20 +1,23 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable,
-  SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View,
+  SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Image,
 } from 'react-native';
 import {
   initializeDatabase, listAssets, listExecutions, listOrders, localDate,
-  completeOrder, removeAsset, removeOrder, saveAsset, saveOrder, validDate,
+  completeOrder, removeAsset, removeOrder, saveAsset, saveOrder, validDate, listAllPhotos,
 } from './src/db';
-import type {Asset, AssetDraft, Category, Execution, OrderDraft, Priority, WorkOrder} from './src/types';
+import type {Asset, AssetDraft, Category, Execution, ExecutionPhoto, PhotoDraft, OrderDraft, Priority, WorkOrder} from './src/types';
+import {evidenceUri, selectPhoto, MAX_PHOTOS_PER_EXECUTION} from './src/evidence';
+import {exportExecutionPdf} from './src/report';
+import {exportBackup, pickBackupFile, restoreBackup} from './src/backup';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
   text: '#EFF6FF', muted: '#9CB0C8', accent: '#47B7F6', green: '#5DD7AC',
   red: '#FF7D8B', yellow: '#FFD075',
 };
-type Tab = 'Início' | 'Atividades' | 'Ativos' | 'Histórico';
+type Tab = 'Início' | 'Atividades' | 'Ativos' | 'Histórico' | 'Dados';
 type ModalType = 'asset' | 'order' | 'complete' | null;
 const categories: Category[] = ['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção'];
 const priorities: Priority[] = ['Baixa', 'Média', 'Alta'];
@@ -75,6 +78,7 @@ export default function App() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [executions, setExecutions] = useState<Execution[]>([]);
+  const [evidence, setEvidence] = useState<ExecutionPhoto[]>([]);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<ModalType>(null);
@@ -85,10 +89,11 @@ export default function App() {
   const [editingOrder, setEditingOrder] = useState<string | undefined>();
   const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
+  const [draftPhotos, setDraftPhotos] = useState<PhotoDraft[]>([]);
 
   const refresh = useCallback(async () => {
-    const [a, o, e] = await Promise.all([listAssets(), listOrders(), listExecutions()]);
-    setAssets(a); setOrders(o); setExecutions(e);
+    const [a, o, e, p] = await Promise.all([listAssets(), listOrders(), listExecutions(), listAllPhotos()]);
+    setAssets(a); setOrders(o); setExecutions(e); setEvidence(p);
   }, []);
 
   useEffect(() => {
@@ -131,8 +136,38 @@ export default function App() {
   const openComplete = (order: WorkOrder) => {
     setCompletingOrder(order);
     setCompletionNotes('');
+    setDraftPhotos([]);
     setDialog('complete');
   };
+  const addPhoto = async (camera: boolean) => {
+    if (busy || draftPhotos.length >= MAX_PHOTOS_PER_EXECUTION) return;
+    try {
+      const picked = await selectPhoto(camera);
+      if (picked) setDraftPhotos(prev => prev.length < MAX_PHOTOS_PER_EXECUTION ? [...prev, picked] : prev);
+    } catch (e) { Alert.alert('Foto não adicionada', e instanceof Error ? e.message : String(e)); }
+  };
+  const runExtra = async (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    try { await action(); }
+    catch (e) { Alert.alert('Não foi possível concluir', e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  const requestRestore = () => { void runExtra(async () => {
+    const data = await pickBackupFile();
+    if (!data) return;
+    Alert.alert('Restaurar backup?',
+      `Este backup tem ${data.assets.length} equipamento(s), ${data.work_orders.length} atividade(s), ` +
+      `${data.executions.length} execução(ões) e ${data.photos.length} foto(s). ` +
+      'TODOS os dados atuais deste aparelho serão substituídos. Exporte um backup antes de continuar.',
+      [{text: 'Cancelar', style: 'cancel'}, {text: 'Substituir dados', style: 'destructive',
+        onPress: () => { void handle(async () => {
+          await restoreBackup(data);
+          Alert.alert('Restauração concluída', 'Dados substituídos pelo backup selecionado.');
+        }); }}]
+    );
+  }); };
+
   const confirmDeleteOrder = (order: WorkOrder) => Alert.alert(
     'Excluir atividade?', 'A atividade e todo o seu histórico de execução serão apagados do aparelho.',
     [{text: 'Cancelar', style: 'cancel'}, {text: 'Excluir', style: 'destructive',
@@ -223,6 +258,25 @@ export default function App() {
         <Action label="+ Novo" onPress={() => openAsset()}/></View>
       {assets.length === 0 ? <Text style={styles.empty}>Cadastre seu primeiro equipamento.</Text> : assets.map(assetCard)}
     </>;
+    if (tab === 'Dados') return <>
+      <Text style={styles.sectionTitle}>Seus dados</Text>
+      <Text style={styles.description}>Todas as informações ficam neste aparelho. Não existe login, nuvem nem sincronização nesta versão.</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Exportar backup completo</Text>
+        <Text style={styles.description}>Inclui equipamentos, atividades, execuções e fotos. Salve o JSON em local seguro fora do aplicativo, por exemplo em uma pasta privada.</Text>
+        <View style={styles.cardActions}><Action disabled={busy} label={busy ? 'Preparando...' : 'Exportar backup'}
+          onPress={() => { void runExtra(async () => {
+            await exportBackup();
+            Alert.alert('Arquivo gerado', 'Verifique se o backup foi realmente salvo em um local seguro.');
+          }); }}/></View>
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Restaurar um backup</Text>
+        <Text style={styles.description}>Substitui TODOS os registros existentes, depois de sua confirmação. Antes disso, exporte uma cópia do estado atual.</Text>
+        <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
+      </View>
+      <Text style={styles.hint}>Formato local versão 2 · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+    </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
       <Text style={[styles.detail, {marginBottom: 16}]}>Cada execução fica registrada no aparelho.</Text>
@@ -236,6 +290,17 @@ export default function App() {
           {!!execution.notes && <Text style={styles.description}>{execution.notes}</Text>}
           <Text style={styles.description}>Prazo anterior: {execution.previous_due_date}</Text>
           {!!execution.next_due_date && <Text style={styles.detail}>Próxima execução: {execution.next_due_date}</Text>}
+          {!!execution.asset_label && <Text style={styles.detail}>Equipamento: {execution.asset_label}</Text>}
+          <Text style={styles.detail}>{execution.photo_count} foto(s) no registro</Text>
+          <View style={styles.photoRow}>
+            {evidence.filter(p => p.execution_id === execution.id).map(photo =>
+              <Image key={photo.id} source={{uri: evidenceUri(photo.filename)}} style={styles.thumb}/>)}
+          </View>
+          <View style={styles.cardActions}>
+            <Action disabled={busy} label={busy ? 'Processando...' : 'Gerar PDF'} secondary
+              onPress={() => { void runExtra(() => exportExecutionPdf(execution,
+                evidence.filter(p => p.execution_id === execution.id))); }}/>
+          </View>
         </View>)}
     </>;
   };
@@ -252,7 +317,7 @@ export default function App() {
       : <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content()}</ScrollView>}
     <View style={styles.nav}>
       {([{label: 'Início', icon: '⌂'}, {label: 'Atividades', icon: '☑'},
-        {label: 'Ativos', icon: '⚙'}, {label: 'Histórico', icon: '◷'}] as const).map(item =>
+        {label: 'Ativos', icon: '⚙'}, {label: 'Histórico', icon: '◷'}, {label:'Dados',icon:'▣'}] as const).map(item =>
         <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{selected: tab === item.label}}
           onPress={() => setTab(item.label)} style={styles.navItem}>
           <Text style={[styles.navIcon, tab === item.label && {color: COLORS.accent}]}>{item.icon}</Text>
@@ -314,8 +379,24 @@ export default function App() {
               </Text>
               <FormField label="O que foi realizado?" placeholder="Descreva o serviço executado e anomalias encontradas..."
                 multiline value={completionNotes} onChangeText={setCompletionNotes}/>
+              <Text style={styles.fieldLabel}>Evidências fotográficas ({draftPhotos.length}/{MAX_PHOTOS_PER_EXECUTION})</Text>
+              <View style={styles.cardActions}>
+                <Action label="📷 Tirar foto" secondary disabled={busy || draftPhotos.length >= MAX_PHOTOS_PER_EXECUTION}
+                  onPress={() => { void addPhoto(true); }}/>
+                <Action label="Adicionar da galeria" secondary disabled={busy || draftPhotos.length >= MAX_PHOTOS_PER_EXECUTION}
+                  onPress={() => { void addPhoto(false); }}/>
+              </View>
+              <View style={styles.photoRow}>
+                {draftPhotos.map((photo, index) => <Pressable key={`${photo.uri}-${index}`}
+                  accessibilityLabel={`Remover foto ${index + 1}`} onPress={() => setDraftPhotos(prev => prev.filter((_, i) => i !== index))}>
+                  <Image source={{uri: photo.uri}} style={styles.thumb}/>
+                  <Text style={{color:COLORS.red,fontSize:10,textAlign:'center'}}>Remover</Text>
+                </Pressable>)}
+              </View>
+              <Text style={styles.hint}>Fotos ficam no armazenamento do aplicativo e serão incluídas no PDF e no backup.</Text>
+              <View style={{height:14}}/>
               <Action disabled={busy} label={busy ? 'Registrando...' : 'Confirmar execução'}
-                onPress={() => { void handle(() => completeOrder(completingOrder, completionNotes)); }}/>
+                onPress={() => { void handle(() => completeOrder(completingOrder, completionNotes, draftPhotos)); }}/>
             </>}
             <View style={{height: 30}}/>
           </ScrollView>
@@ -373,4 +454,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg, paddingHorizontal: 13, paddingVertical: 11, color: COLORS.text, fontSize: 14},
   choice: {borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingVertical: 9, paddingHorizontal: 12},
   choiceActive: {backgroundColor: COLORS.accent, borderColor: COLORS.accent},
+  photoRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12},
+  thumb: {width: 76, height: 76, borderRadius: 9, backgroundColor: COLORS.panel2},
 });
