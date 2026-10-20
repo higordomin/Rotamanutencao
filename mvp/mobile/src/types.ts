@@ -1,6 +1,7 @@
 export type Category = 'Lubrificação' | 'Mecânica' | 'Elétrica' | 'Inspeção';
 export type Priority = 'Baixa' | 'Média' | 'Alta';
 export type OrderStatus = 'pending' | 'completed';
+export type ExecutionResult = 'completed' | 'partial';
 
 export type Asset = {
   id: string;
@@ -34,12 +35,15 @@ export type WorkOrder = {
   status: OrderStatus;
   block_reason: string;
   blocked_at: string | null;
+  partial_reason: string;
+  partial_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export type Execution = {
   id: string;
+  result: ExecutionResult;
   order_id: string;
   order_title: string;
   notes: string;
@@ -67,7 +71,7 @@ export type OrderDraft = Pick<WorkOrder,
 
 export type BackupData = {
   format: 'rotamanutencao-offline';
-  version: 2 | 3;
+  version: 2 | 3 | 4;
   exported_at: string;
   assets: Asset[];
   work_orders: Omit<WorkOrder, 'asset_name' | 'asset_code' | 'asset_area'>[];

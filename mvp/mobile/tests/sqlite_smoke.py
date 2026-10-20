@@ -41,13 +41,20 @@ def open_sqlite(legacy=False):
         conn.execute("INSERT INTO work_orders VALUES ('o','Lubrificação','', 'Lubrificação','Alta','a',30,'2026-10-20','pending','2026-10-20T12:00:00Z','2026-10-20T12:00:00Z')")
         conn.commit()
     conn.executescript(schema)
-    for name in ['block_reason', 'blocked_at']:
+    for name in ['block_reason', 'blocked_at', 'partial_reason', 'partial_at']:
         existing = [row[1] for row in conn.execute('PRAGMA table_info(work_orders)')]
         if name not in existing:
             if name == 'block_reason':
                 conn.execute("ALTER TABLE work_orders ADD COLUMN block_reason TEXT NOT NULL DEFAULT ''")
-            else:
+            elif name == 'blocked_at':
                 conn.execute('ALTER TABLE work_orders ADD COLUMN blocked_at TEXT')
+            elif name == 'partial_reason':
+                conn.execute("ALTER TABLE work_orders ADD COLUMN partial_reason TEXT NOT NULL DEFAULT ''")
+            else:
+                conn.execute('ALTER TABLE work_orders ADD COLUMN partial_at TEXT')
+    fields = [row[1] for row in conn.execute('PRAGMA table_info(executions)')]
+    if 'result' not in fields:
+        conn.execute("ALTER TABLE executions ADD COLUMN result TEXT NOT NULL DEFAULT 'completed' CHECK(result IN ('completed','partial'))")
     return conn
 
 
@@ -73,6 +80,12 @@ def test_legacy_upgrade():
     assert db.execute("SELECT block_reason FROM work_orders WHERE id='o'").fetchone()[0] == ''
     assert db.execute("SELECT blocked_at FROM work_orders WHERE id='o'").fetchone()[0] is None
     assert db.execute('PRAGMA foreign_key_check').fetchall() == []
+    assert db.execute("SELECT partial_reason,partial_at FROM work_orders WHERE id='o'").fetchone() == ('', None)
+    db.execute("""INSERT INTO executions(id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category,result)
+        VALUES ('e','o','Lubrificação','Reparo parcial, falta peça','2026-10-20T12:01:00Z','2026-10-20',NULL,'M-01','Lubrificação','partial')""")
+    db.execute("UPDATE work_orders SET partial_reason='Falta peça para encerrar',partial_at='2026-10-20T12:01:00Z' WHERE id='o'")
+    assert db.execute("SELECT result FROM executions WHERE id='e'").fetchone()[0] == 'partial'
+    assert db.execute("SELECT status,due_date FROM work_orders WHERE id='o'").fetchone() == ('pending','2026-10-20')
     db.execute("INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES('z','o','blocked','Peças','2026-10-20T00:00:00Z')")
     db.commit()
     try:
@@ -91,4 +104,4 @@ def test_legacy_upgrade():
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
-    print('OK: schema novo; impedimento/liberação; cascade; upgrade v0.2; rollback')
+    print('OK: schema novo; migração de parcial; manutenção de prazo; cascade; upgrade v0.2; rollback')

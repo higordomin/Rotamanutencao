@@ -24,8 +24,8 @@ test('app QA usa pacote Android isolado e nome próprio', () => {
   try {
     process.env.ROTA_PREVIEW = '1';
     const resolved = resolveAppConfig({config: base});
-    assert.equal(resolved.android.package, 'br.com.rotamanutencao.preview042');
-    assert.equal(resolved.name, 'RotaManutenção QA 0.4.2');
+    assert.equal(resolved.android.package, 'br.com.rotamanutencao.preview05');
+    assert.equal(resolved.name, 'RotaManutenção QA 0.5');
     assert.equal(base.android.package, 'br.com.rotamanutencao.app');
   } finally {
     if (previous === undefined) delete process.env.ROTA_PREVIEW;

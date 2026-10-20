@@ -35,13 +35,14 @@ export async function exportExecutionPdf(execution: Execution, photos: Execution
   footer{margin-top:22px;color:#777;font-size:10px}
   </style></head><body><header><div class="brand">RotaManutenção</div><div class="sub">Registro técnico de execução · arquivo gerado localmente</div></header>
   <h1>${escapeHtml(execution.order_title)}</h1><div class="grid">
+  ${field('Resultado', execution.result === 'partial' ? 'Execução parcial — pendência aberta' : 'Serviço concluído')}
   ${field('Executado em', new Date(execution.executed_at).toLocaleString('pt-BR'))}
   ${field('Equipamento / Área', execution.asset_label)}
   ${field('Especialidade', execution.category)}
   ${field('Data anterior', execution.previous_due_date)}
-  ${field('Próxima execução', execution.next_due_date ?? 'Atividade avulsa')}
+  ${field('Próxima execução', execution.result === 'partial' ? 'Sem reagendamento — OS permanece pendente' : (execution.next_due_date ?? 'Atividade avulsa'))}
   ${field('Identificador de execução', execution.id)}
-  </div><h2>Serviço realizado / observações</h2><div class="notes">${escapeHtml(execution.notes || 'Sem observações')}</div>
+  </div><h2>${execution.result === 'partial' ? 'Serviço parcial / pendências' : 'Serviço realizado / observações'}</h2><div class="notes">${escapeHtml(execution.notes || 'Sem observações')}</div>
   ${pictureHtml.length ? `<h2>Evidências fotográficas (${pictureHtml.length})</h2>${pictureHtml.join('')}` : ''}
   <footer>Documento gerado no dispositivo pelo RotaManutenção. As informações refletem o registro manual do usuário.</footer>
   </body></html>`;
