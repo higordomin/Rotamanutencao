@@ -13,6 +13,7 @@ import {taskState, taskSummary} from './src/logic';
 import {evidenceUri, selectPhoto, MAX_PHOTOS_PER_EXECUTION} from './src/evidence';
 import {exportExecutionPdf} from './src/report';
 import {exportBackup, pickBackupFile, restoreBackup} from './src/backup';
+import {inspectBackup} from './src/backupInspection';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -316,6 +317,22 @@ export default function App() {
           onPress={() => { void runExtra(async () => {
             await exportBackup();
             Alert.alert('Arquivo gerado', 'Verifique se o backup foi realmente salvo em um local seguro.');
+          }); }}/></View>
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Verificar arquivo de backup (sem restaurar)</Text>
+        <Text style={styles.description}>Confira se um JSON de backup é reconhecido e visualize as quantidades salvas. Seus dados atuais não são alterados.</Text>
+        <View style={styles.cardActions}><Action disabled={busy} secondary label="Verificar arquivo"
+          onPress={() => { void runExtra(async () => {
+            const selected = await pickBackupFile();
+            if (!selected) return;
+            const summary = inspectBackup(selected);
+            Alert.alert('Backup reconhecido',
+              `Versão: ${summary.version}\nExportado em: ${new Date(summary.exportedAt).toLocaleString('pt-BR')}\n` +
+              `Equipamentos: ${summary.assets}\nAtividades: ${summary.orders}\nImpedimentos ativos: ${summary.impediments}\n` +
+              `Execuções: ${summary.executions}\nFotos: ${summary.photos}\nEventos: ${summary.events}\n\n` +
+              'Verificação estrutural aprovada. Não houve restauração nem alteração dos seus dados. ' +
+              'Esta verificação não comprova que o arquivo pode ser restaurado integralmente em qualquer aparelho.');
           }); }}/></View>
       </View>
       <View style={styles.card}>

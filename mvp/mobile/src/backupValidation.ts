@@ -44,7 +44,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
     if (!str(o.title, 300) || !o.title.trim() || !str(o.description, 10000)
       || !ALLOWED_CATEGORIES.has(o.category) || !ALLOWED_PRIORITIES.has(o.priority)
       || (o.asset_id !== null && (!ident(o.asset_id) || !aIds.has(o.asset_id)))
-      || !Number.isSafeInteger(o.recurrence_days) || o.recurrence_days < 0
+      || !Number.isSafeInteger(o.recurrence_days) || o.recurrence_days < 0 || o.recurrence_days > 36500
       || !validDate(o.due_date) || !['pending', 'completed'].includes(o.status)
       || !iso(o.created_at) || !iso(o.updated_at)
       || (o.block_reason !== undefined && !str(o.block_reason, 500))

@@ -18,6 +18,7 @@ jobs:
         working-directory: mvp/mobile
     env:
       CI: 'true'
+      ROTA_PREVIEW: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,7 +40,7 @@ jobs:
       - name: Publicar artefato instalável de teste
         uses: actions/upload-artifact@v4
         with:
-          name: RotaManutencao-preview-APK
+          name: RotaManutencao-QA-APK
           path: mvp/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7

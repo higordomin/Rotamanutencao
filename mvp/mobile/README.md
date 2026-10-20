@@ -21,3 +21,9 @@ Após login com uma conta Expo, `eas build --platform android --profile preview`
 ## Cuidados
 
 As fotos são locais; o backup JSON contém imagens sem criptografia. Nunca envie backups por canais públicos. Use dados sintéticos/autorizados. O aplicativo não substitui LOTO, ordens formais de liberação, análise de risco ou procedimentos de segurança industrial.
+
+## Verificação não destrutiva de backup (0.4.1)
+
+A aba **Dados** agora oferece **Verificar arquivo**, que carrega um JSON de backup, valida sua estrutura e exibe quantidades. **Não restaura nem exclui informações**. Ver `docs/QA_BACKUP.md`.
+
+Correção: backups com periodicidade maior que 36500 dias são rejeitados antes da restauração.
