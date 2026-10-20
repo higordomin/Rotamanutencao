@@ -1,8 +1,6 @@
 name: Android APK de teste
 on:
-  push:
-    branches:
-      - feat/mvp04-resiliencia-chao-fabrica
+  pull_request:
     paths:
       - 'mvp/mobile/**'
       - '.github/workflows/android-apk-preview.yml'
