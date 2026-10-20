@@ -11,7 +11,7 @@ Aplicativo Android (Expo + SQLite) **local e individual**, voltado para lubrific
 - Execuções, fotos, relatório PDF e exportação/recuperação por backup JSON (v3, compatível com v2).
 - Banco SQLite persistente e migração sem descarte intencional de dados legados.
 
-**Estado real:** código-fonte atualizado e testes de lógica/SQLite concluídos no ambiente local. **Ainda falta instalar as dependências Expo, compilar um APK e testar no Android físico.** Não anunciar como versão estável para produção.
+**Estado real:** código-fonte atualizado e 14 testes automatizados Node e testes de migração SQLite concluídos no ambiente local. **Ainda falta instalar as dependências Expo, compilar um APK e testar no Android físico.** Não anunciar como versão estável para produção.
 
 ## Rodar e verificar
 
