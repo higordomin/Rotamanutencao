@@ -1,32 +1,13 @@
 import * as SQLite from 'expo-sqlite';
-import type {Asset, AssetDraft, BackupData, Execution, ExecutionPhoto, OrderDraft, PhotoDraft, WorkOrder} from './types';
+import type {Asset, AssetDraft, BackupData, Execution, ExecutionPhoto, OrderDraft, PhotoDraft, WorkOrder, OrderEvent} from './types';
 import {deletePhotoFile, persistPhoto, MAX_PHOTOS_PER_EXECUTION} from './evidence';
+import {localDate, addDays, validDate} from './logic';
+export {localDate, addDays, validDate} from './logic';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 function database() {
   if (!databasePromise) databasePromise = SQLite.openDatabaseAsync('rotamanutencao.db');
   return databasePromise;
-}
-
-export function localDate(value = new Date()): string {
-  const y = value.getFullYear();
-  const m = String(value.getMonth() + 1).padStart(2, '0');
-  const d = String(value.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-export function addDays(date: string, days: number): string {
-  const [year, month, day] = date.split('-').map(Number);
-  const next = new Date(year, month - 1, day, 12);
-  next.setDate(next.getDate() + days);
-  return localDate(next);
-}
-
-export function validDate(input: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) return false;
-  const [year, month, day] = input.split('-').map(Number);
-  const dt = new Date(year, month - 1, day, 12);
-  return dt.getFullYear() === year && dt.getMonth() === month - 1 && dt.getDate() === day;
 }
 
 function makeId(): string {
@@ -77,6 +58,14 @@ export async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_photos_execution ON execution_photos(execution_id);
     CREATE INDEX IF NOT EXISTS idx_orders_due ON work_orders(status, due_date);
     CREATE INDEX IF NOT EXISTS idx_executions_date ON executions(executed_at DESC);
+    CREATE TABLE IF NOT EXISTS order_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      order_id TEXT NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL CHECK (event_type IN ('blocked','released','executed')),
+      reason TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_order ON order_events(order_id, created_at DESC);
   `);
   // Migração não destrutiva para quem já usava o MVP 0.1.
   const fields = await db.getAllAsync<{name: string}>("PRAGMA table_info(executions)");
@@ -84,6 +73,11 @@ export async function initializeDatabase(): Promise<void> {
     await db.execAsync("ALTER TABLE executions ADD COLUMN asset_label TEXT NOT NULL DEFAULT ''");
   if (!fields.some(f => f.name === 'category'))
     await db.execAsync("ALTER TABLE executions ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+  const orderFields = await db.getAllAsync<{name: string}>("PRAGMA table_info(work_orders)");
+  if (!orderFields.some(f => f.name === 'block_reason'))
+    await db.execAsync("ALTER TABLE work_orders ADD COLUMN block_reason TEXT NOT NULL DEFAULT ''");
+  if (!orderFields.some(f => f.name === 'blocked_at'))
+    await db.execAsync('ALTER TABLE work_orders ADD COLUMN blocked_at TEXT');
 }
 
 export async function listAssets(): Promise<Asset[]> {
@@ -94,7 +88,7 @@ export async function listOrders(): Promise<WorkOrder[]> {
   return (await database()).getAllAsync<WorkOrder>(`
     SELECT o.*, a.name AS asset_name FROM work_orders o
     LEFT JOIN assets a ON a.id = o.asset_id
-    ORDER BY CASE WHEN o.status = 'pending' THEN 0 ELSE 1 END,
+    ORDER BY CASE WHEN o.status = 'completed' THEN 2 WHEN o.block_reason != '' THEN 1 ELSE 0 END,
              o.due_date ASC, o.created_at DESC
   `);
 }
@@ -128,7 +122,7 @@ export async function saveOrder(input: OrderDraft, existingId?: string): Promise
   if (title.length > 300 || input.description.length > 10000)
     throw new Error('Título ou descrição excede o limite permitido.');
   if (!validDate(input.due_date)) throw new Error('Use a data no formato AAAA-MM-DD.');
-  if (!Number.isInteger(input.recurrence_days) || input.recurrence_days < 0)
+  if (!Number.isSafeInteger(input.recurrence_days) || input.recurrence_days < 0 || input.recurrence_days > 36500)
     throw new Error('A periodicidade precisa ser 0 ou um número inteiro de dias.');
   const now = new Date().toISOString();
   if (existingId) {
@@ -145,6 +139,44 @@ export async function saveOrder(input: OrderDraft, existingId?: string): Promise
   }
 }
 
+export async function listRecentEvents(): Promise<OrderEvent[]> {
+  return (await database()).getAllAsync<OrderEvent>(
+    `SELECT ev.*, o.title AS order_title FROM order_events ev
+     JOIN work_orders o ON o.id=ev.order_id ORDER BY ev.created_at DESC LIMIT 250`
+  );
+}
+
+export async function setImpediment(orderId: string, reason: string): Promise<void> {
+  const clean = reason.trim();
+  if (!clean || clean.length > 500) throw new Error('Descreva o impedimento em até 500 caracteres.');
+  const db = await database();
+  const now = new Date().toISOString();
+  await db.withExclusiveTransactionAsync(async tx => {
+    const changed = await tx.runAsync(
+      `UPDATE work_orders SET block_reason=?, blocked_at=?, updated_at=?
+       WHERE id=? AND status='pending'`, clean, now, now, orderId
+    );
+    if (changed.changes !== 1) throw new Error('Atividade indisponível. Atualize os dados.');
+    await tx.runAsync('INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES(?,?,?,?,?)',
+      makeId(), orderId, 'blocked', clean, now);
+  });
+}
+
+export async function releaseImpediment(orderId: string): Promise<void> {
+  const db = await database();
+  const now = new Date().toISOString();
+  await db.withExclusiveTransactionAsync(async tx => {
+    const changed = await tx.runAsync(
+      `UPDATE work_orders SET block_reason='', blocked_at=NULL, updated_at=?
+       WHERE id=? AND status='pending' AND block_reason != ''`,
+      now, orderId
+    );
+    if (changed.changes !== 1) throw new Error('Impedimento já liberado ou atividade alterada.');
+    await tx.runAsync('INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES(?,?,?,?,?)',
+      makeId(), orderId, 'released', '', now);
+  });
+}
+
 export async function listAllPhotos(): Promise<ExecutionPhoto[]> {
   return (await database()).getAllAsync<ExecutionPhoto>(
     'SELECT * FROM execution_photos ORDER BY created_at ASC'
@@ -153,6 +185,7 @@ export async function listAllPhotos(): Promise<ExecutionPhoto[]> {
 
 export async function completeOrder(order: WorkOrder, notes: string, photos: PhotoDraft[] = []): Promise<void> {
   if (order.status !== 'pending') throw new Error('Esta atividade já foi concluída.');
+  if (order.block_reason?.trim()) throw new Error('Libere o impedimento antes de executar.');
   if (photos.length > MAX_PHOTOS_PER_EXECUTION) throw new Error('Limite de 6 fotos por execução.');
   if (notes.length > 10000) throw new Error('Observação grande demais. Resuma o registro.');
   const db = await database();
@@ -166,7 +199,7 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
     for (const photo of photos) savedFiles.push(await persistPhoto(photo));
     await db.withExclusiveTransactionAsync(async (tx) => {
       const changed = await tx.runAsync(`UPDATE work_orders SET status=?,due_date=?,updated_at=?
-        WHERE id=? AND status='pending'`, nextDue ? 'pending' : 'completed',
+        WHERE id=? AND status='pending' AND block_reason=''`, nextDue ? 'pending' : 'completed',
         nextDue ?? order.due_date, now, order.id);
       if (changed.changes !== 1) throw new Error('Atividade alterada. Atualize a tela.');
       await tx.runAsync(`INSERT INTO executions
@@ -174,6 +207,8 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
         VALUES (?,?,?,?,?,?,?,?,?)`,
         executionId, order.id, order.title, notes.trim(), now, order.due_date, nextDue,
         order.asset_name ?? '', order.category);
+      await tx.runAsync('INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES(?,?,?,?,?)',
+        makeId(), order.id, 'executed', '', now);
       for (let i = 0; i < savedFiles.length; i++) {
         const mime = photos[i].mime_type;
         await tx.runAsync(`INSERT INTO execution_photos
@@ -190,13 +225,14 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
 export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 'version' | 'exported_at' | 'photos'> & {photos: ExecutionPhoto[]}> {
   const db = await database();
   // A exportação usa todo o histórico, não apenas as 500 execuções da tela.
-  const [assets, work_orders, executions, photos] = await Promise.all([
+  const [assets, work_orders, executions, photos, order_events] = await Promise.all([
     db.getAllAsync<Asset>('SELECT * FROM assets'),
     db.getAllAsync<Omit<WorkOrder, 'asset_name'>>('SELECT * FROM work_orders'),
     db.getAllAsync<Omit<Execution, 'photo_count'>>('SELECT * FROM executions'),
     db.getAllAsync<ExecutionPhoto>('SELECT * FROM execution_photos'),
+    db.getAllAsync<OrderEvent>('SELECT * FROM order_events'),
   ]);
-  return {assets, work_orders, executions, photos};
+  return {assets, work_orders, executions, photos, order_events};
 }
 
 // Os dados são validados pelo módulo de backup antes de chegar à transação.
@@ -211,15 +247,19 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
     }
     for (const o of data.work_orders) {
       await tx.runAsync(`INSERT INTO work_orders
-        (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
-        o.recurrence_days,o.due_date,o.status,o.created_at,o.updated_at);
+        (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at,block_reason,blocked_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
+        o.recurrence_days,o.due_date,o.status,o.created_at,o.updated_at, o.block_reason ?? '', o.blocked_at ?? null);
     }
     for (const e of data.executions) {
       await tx.runAsync(`INSERT INTO executions
         (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category)
         VALUES (?,?,?,?,?,?,?,?,?)`, e.id,e.order_id,e.order_title,e.notes,e.executed_at,
         e.previous_due_date,e.next_due_date,e.asset_label,e.category);
+    }
+    for (const event of data.order_events ?? []) {
+      await tx.runAsync('INSERT INTO order_events (id,order_id,event_type,reason,created_at) VALUES (?,?,?,?,?)',
+        event.id, event.order_id, event.event_type, event.reason, event.created_at);
     }
     for (const p of data.photos) {
       const filename = filenames.get(p.id);

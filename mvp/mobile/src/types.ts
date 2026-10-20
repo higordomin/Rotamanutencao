@@ -10,6 +10,15 @@ export type Asset = {
   created_at: string;
 };
 
+export type OrderEvent = {
+  id: string;
+  order_id: string;
+  event_type: 'blocked' | 'released' | 'executed';
+  order_title?: string;
+  reason: string;
+  created_at: string;
+};
+
 export type WorkOrder = {
   id: string;
   title: string;
@@ -21,6 +30,8 @@ export type WorkOrder = {
   recurrence_days: number;
   due_date: string;
   status: OrderStatus;
+  block_reason: string;
+  blocked_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -54,10 +65,11 @@ export type OrderDraft = Pick<WorkOrder,
 
 export type BackupData = {
   format: 'rotamanutencao-offline';
-  version: 2;
+  version: 2 | 3;
   exported_at: string;
   assets: Asset[];
   work_orders: Omit<WorkOrder, 'asset_name'>[];
   executions: Omit<Execution, 'photo_count'>[];
   photos: Array<ExecutionPhoto & {base64: string}>;
+  order_events?: OrderEvent[];
 };
