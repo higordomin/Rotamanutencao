@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "RotaManutenção",
+    "slug": "rotamanutencao",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "br.com.rotamanutencao.app"
+    },
+    "plugins": ["expo-sqlite"]
+  }
+}
