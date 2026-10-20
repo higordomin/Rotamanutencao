@@ -19,3 +19,21 @@ export function completionPlan(expected: OrderSnapshot, current: OrderSnapshot |
     throw new Error('A atividade mudou enquanto você preenchia o registro. Atualize e confira os dados.');
   return {nextDue: current.recurrence_days > 0 ? addDays(today, current.recurrence_days) : null};
 }
+
+/**
+ * Um serviço parcial deve ser documentado sem encerrar a OS nem reagendar
+ * a próxima manutenção. O texto obrigatório explica a pendência.
+ */
+export function executionDecision(result: 'completed' | 'partial', notes: string, nextDue: string | null) {
+  if (result !== 'completed' && result !== 'partial') throw new Error('Resultado de execução inválido.');
+  if (notes.length > 10000) throw new Error('Observação grande demais. Resuma o registro.');
+  const clean = notes.trim();
+  if (result === 'partial' && (clean.length < 10 || clean.length > 1000))
+    throw new Error('Descreva o que ficou pendente em 10 a 1000 caracteres.');
+  return {
+    orderStatus: result === 'partial' || nextDue ? 'pending' as const : 'completed' as const,
+    nextDue: result === 'partial' ? null : nextDue,
+    partialReason: result === 'partial' ? clean : '',
+    notes: clean,
+  };
+}
