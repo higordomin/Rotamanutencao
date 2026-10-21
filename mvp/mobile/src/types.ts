@@ -1,3 +1,4 @@
+import type {Route,RoutePoint,RouteRun,RouteRunItem} from './routes';
 export type Category = 'Lubrificação' | 'Mecânica' | 'Elétrica' | 'Inspeção';
 export type Priority = 'Baixa' | 'Média' | 'Alta';
 export type OrderStatus = 'pending' | 'completed';
@@ -71,11 +72,15 @@ export type OrderDraft = Pick<WorkOrder,
 
 export type BackupData = {
   format: 'rotamanutencao-offline';
-  version: 2 | 3 | 4;
+  version: 2 | 3 | 4 | 5;
   exported_at: string;
   assets: Asset[];
   work_orders: Omit<WorkOrder, 'asset_name' | 'asset_code' | 'asset_area'>[];
   executions: Omit<Execution, 'photo_count'>[];
   photos: Array<ExecutionPhoto & {base64: string}>;
   order_events?: OrderEvent[];
+  routes?: Route[];
+  route_points?: RoutePoint[];
+  route_runs?: RouteRun[];
+  route_run_items?: RouteRunItem[];
 };
