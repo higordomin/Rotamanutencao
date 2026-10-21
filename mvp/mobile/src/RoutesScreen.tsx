@@ -111,7 +111,7 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
     {disabled&&!!item.notes&&<Text style={s.note}>{item.notes}</Text>}
   </View>;
 }
-export function RoutesScreen({assets}:{assets:Asset[]}){
+export function RoutesScreen({assets,onDataChanged}:{assets:Asset[];onDataChanged?:()=>void}){
   const [routes,setRoutes]=useState<Route[]>([]);
   const [runs,setRuns]=useState<RouteRun[]>([]);
   const [points,setPoints]=useState<RoutePoint[]>([]);
@@ -147,7 +147,7 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
   const execute=async(action:()=>Promise<void>)=>{
     if(busy)return;
     setBusy(true);
-    try{await action();await refresh();}
+    try{await action();await refresh();onDataChanged?.();}
     catch(e){Alert.alert('Operação não realizada',e instanceof Error?e.message:String(e));}
     finally{setBusy(false);}
   };
