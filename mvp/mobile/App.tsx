@@ -412,7 +412,7 @@ export default function App() {
   const assetContext = selectedAsset ? <View style={styles.card}>
     <Text style={styles.cardTitle}>⚙ TAG selecionada: {selectedAsset.code || 'sem código'}</Text>
     <Text style={styles.detail}>{selectedAsset.name} · {selectedAsset.area || 'Sem área'}</Text>
-    <Text style={styles.hint}>Filtro local deste equipamento. O histórico de execuções usa o retrato do equipamento registrado no momento do serviço: se a TAG, o nome ou a área foram alterados, consulte também o histórico geral.</Text>
+    <Text style={styles.hint}>Filtro local deste equipamento. Execuções novas mantêm o vínculo pelo ID estável do equipamento, mesmo após renomear a TAG. Registros legados sem vínculo seguro continuam consultáveis no histórico geral.</Text>
     <View style={styles.cardActions}>
       <Action label="Limpar filtro da TAG" secondary onPress={() => setAssetFilterId(null)}/>
       <Action label="+ OS para esta TAG" secondary onPress={() => openOrder(undefined,selectedAsset)}/>
@@ -595,13 +595,13 @@ export default function App() {
         <Text style={styles.description}>Substitui TODOS os registros existentes, depois de sua confirmação. Antes disso, exporte uma cópia do estado atual.</Text>
         <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
       </View>
-      <Text style={styles.hint}>Formato local versão 8 (restaura também versões 2, 3, 4, 5, 6 e 7) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+      <Text style={styles.hint}>Formato local versão 9 (restaura também versões 2 a 8) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
       {assetContext}
-      <Text style={[styles.detail, {marginBottom: 16}]}>Cada execução fica registrada no aparelho. {assetFilterId ? 'Exibindo somente os retratos correspondentes à TAG atual.' : 'Mostrando os registros mais recentes.'}</Text>
-      {historyExecutions.length === 0 ? <Text style={styles.empty}>{assetFilterId ? 'Nenhuma execução encontrada para os dados atuais desta TAG. Consulte o histórico geral se o cadastro foi alterado.' : 'Nenhum serviço executado ainda.'}</Text>
+      <Text style={[styles.detail, {marginBottom: 16}]}>Cada execução fica registrada no aparelho. {assetFilterId ? 'Exibindo execuções ligadas à TAG por ID ou, quando legado, por retrato exato.' : 'Mostrando os registros mais recentes.'}</Text>
+      {historyExecutions.length === 0 ? <Text style={styles.empty}>{assetFilterId ? 'Nenhuma execução vinculada encontrada. Confira o histórico geral para registros legados ou de equipamentos excluídos.' : 'Nenhum serviço executado ainda.'}</Text>
         : historyExecutions.slice(0, historyPageSize).map(execution => <View key={execution.id} style={styles.card}>
           <View style={{flexDirection: 'row', justifyContent: 'space-between', gap: 12}}>
             <Text style={[styles.cardTitle, {flex: 1}]}>{execution.order_title}</Text>
@@ -642,7 +642,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.16 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.17 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
