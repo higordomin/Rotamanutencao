@@ -2,7 +2,8 @@ import * as Notifications from 'expo-notifications';
 import {Platform} from 'react-native';
 import {getDatabase,listOrders} from './db';
 import {listRoutes} from './routes';
-import {planReminders,validReminderTime,type ReminderInput,type ReminderCandidate} from './reminderPlan';
+import {validReminderTime} from './reminderPlan';
+import {planDailyAndPriority,type MaintenanceNotice} from './dailyNoticePlan';
 
 const CHANNEL='rotamanutencao-lembretes-v2';
 const OWNER='rotamanutencao-local-v1';
@@ -53,17 +54,6 @@ async function cancelOwned(includeTest=false):Promise<void>{
       await Notifications.cancelScheduledNotificationAsync(request.identifier);
   }
 }
-function notificationContent(candidate:ReminderCandidate){
-  const desc=candidate.kind==='attention'?'Pendência na rota: verifique os pontos não executados ou com anomalias.'
-    :candidate.kind==='blocked'?'Atividade impedida: confira o bloqueio antes de iniciar o serviço.'
-    :candidate.kind==='overdue'?'Prazo vencido: revise a atividade e a programação.'
-    :'Confira a programação prevista para esta manutenção.';
-  return {
-    title:`${candidate.type==='route'?'Rota':'OS'} • ${candidate.title}`,
-    body:desc,
-    data:{rotaOwner:OWNER,entityType:candidate.type,entityKey:candidate.key},
-  };
-}
 async function resync():Promise<number>{
   const settings=await readPreferences();
   if(!settings.enabled){await cancelOwned(true);return 0;}
@@ -71,19 +61,21 @@ async function resync():Promise<number>{
   if(!permission.granted){await cancelOwned();return 0;}
   await createChannel();
   const [orders,routes]=await Promise.all([listOrders(),listRoutes()]);
-  const items:ReminderInput[]=[
+  const items:MaintenanceNotice[]=[
     ...orders.map(order=>({id:order.id,type:'order' as const,title:order.title,
-      dueDate:order.due_date,blocked:!!order.block_reason,completed:order.status==='completed'})),
+      dueDate:order.due_date,blocked:!!order.block_reason,completed:order.status==='completed',
+      priority:order.priority,category:order.category,assetCode:order.asset_code})),
     ...routes.map(route=>({id:route.id,type:'route' as const,title:route.title,
       dueDate:route.next_due_date,attentionCount:route.attention_count,
       completed:false})),
   ];
-  const next=planReminders(items,new Date(),settings.hour,settings.minute);
+  const next=planDailyAndPriority(items,new Date(),settings.hour,settings.minute);
   // Não apaga notificações agendadas por outros aplicativos ou módulos.
   await cancelOwned();
   for(const entry of next){
     await Notifications.scheduleNotificationAsync({
-      content:notificationContent(entry),
+      content:{title:entry.title,body:entry.body,
+        data:{rotaOwner:OWNER,kind:entry.kind,entityType:entry.target??'summary',entityKey:entry.key}},
       trigger:{type:Notifications.SchedulableTriggerInputTypes.DATE,
         date:entry.date,channelId:CHANNEL},
     });
@@ -162,6 +154,13 @@ export async function scheduleReminderTest():Promise<Date>{
     throw new Error('Android não confirmou o agendamento do teste.');
   return at;
 }
+export async function getReminderScheduleBreakdown():Promise<{total:number;daily:number;priority:number}>{
+  const requests=await Notifications.getAllScheduledNotificationsAsync();
+  const owned=requests.filter(x=>x.content.data?.rotaOwner===OWNER);
+  const daily=owned.filter(x=>x.content.data?.kind==='daily').length;
+  return {total:owned.length,daily,priority:owned.length-daily};
+}
+
 export async function countScheduledReminders():Promise<number>{
   const requests=await Notifications.getAllScheduledNotificationsAsync();
   return requests.filter(x=>x.content.data?.rotaOwner===OWNER).length;
