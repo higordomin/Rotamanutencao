@@ -370,7 +370,7 @@ export default function App() {
               `Versão: ${summary.version}\nExportado em: ${new Date(summary.exportedAt).toLocaleString('pt-BR')}\n` +
               `Equipamentos: ${summary.assets}\nAtividades: ${summary.orders}\nImpedimentos ativos: ${summary.impediments}\n` +
               `Execuções: ${summary.executions}\nFotos: ${summary.photos}\nEventos: ${summary.events}\n` +
-              `Rotas: ${summary.routes}\nPontos: ${summary.routePoints}\nExecuções de rota: ${summary.routeRuns}\n\n` +
+              `Rotas: ${summary.routes}\nPontos: ${summary.routePoints}\nExecuções de rota: ${summary.routeRuns}\nFotos dos pontos: ${summary.routePhotos}\n\n` +
               'Verificação estrutural aprovada. Não houve restauração nem alteração dos seus dados. ' +
               'Esta verificação não comprova que o arquivo pode ser restaurado integralmente em qualquer aparelho.');
           }); }}/></View>
@@ -380,7 +380,7 @@ export default function App() {
         <Text style={styles.description}>Substitui TODOS os registros existentes, depois de sua confirmação. Antes disso, exporte uma cópia do estado atual.</Text>
         <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
       </View>
-      <Text style={styles.hint}>Formato local versão 5 (restaura também versões 2, 3 e 4) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+      <Text style={styles.hint}>Formato local versão 6 (restaura também versões 2, 3, 4 e 5) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
@@ -426,7 +426,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.8 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.9 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>

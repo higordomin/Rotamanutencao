@@ -107,6 +107,15 @@ export async function initializeDatabase(): Promise<void> {
       position INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_run_items_run ON route_run_items(run_id, position);
+    CREATE TABLE IF NOT EXISTS route_run_photos (
+      id TEXT PRIMARY KEY NOT NULL,
+      item_id TEXT NOT NULL REFERENCES route_run_items(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL UNIQUE,
+      mime_type TEXT NOT NULL CHECK(mime_type IN ('image/jpeg','image/png')),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_photos_item ON route_run_photos(item_id);
+
 
   `);
   // Migração não destrutiva para quem já usava o MVP 0.1.
@@ -283,7 +292,10 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
   }
 }
 
-export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 'version' | 'exported_at' | 'photos'> & {photos: ExecutionPhoto[]}> {
+export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 'version' | 'exported_at' | 'photos' | 'route_photos'> & {
+  photos: ExecutionPhoto[];
+  route_photos: Array<Omit<NonNullable<BackupData['route_photos']>[number], 'base64'>>;
+}> {
   const db = await database();
   // A exportação usa todo o histórico, não apenas as 500 execuções da tela.
   // Snapshot consistente. Leituras concorrentes soltas poderiam misturar versões diferentes.
@@ -291,6 +303,7 @@ export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 
   let work_orders: BackupData['work_orders'] = [];
   let executions: BackupData['executions'] = [];
   let photos: ExecutionPhoto[] = [];
+  let route_photos: Array<Omit<NonNullable<BackupData['route_photos']>[number], 'base64'>> = [];
   let order_events: OrderEvent[] = [];
   let routes: NonNullable<BackupData['routes']> = [];
   let route_points: NonNullable<BackupData['route_points']> = [];
@@ -301,13 +314,14 @@ export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 
     work_orders = await tx.getAllAsync<BackupData['work_orders'][number]>('SELECT * FROM work_orders');
     executions = await tx.getAllAsync<BackupData['executions'][number]>('SELECT * FROM executions');
     photos = await tx.getAllAsync<ExecutionPhoto>('SELECT * FROM execution_photos');
+    route_photos = await tx.getAllAsync<typeof route_photos[number]>('SELECT * FROM route_run_photos');
     order_events = await tx.getAllAsync<OrderEvent>('SELECT * FROM order_events');
     routes = await tx.getAllAsync<NonNullable<BackupData['routes']>[number]>('SELECT * FROM routes');
     route_points = await tx.getAllAsync<NonNullable<BackupData['route_points']>[number]>('SELECT * FROM route_points');
     route_runs = await tx.getAllAsync<NonNullable<BackupData['route_runs']>[number]>('SELECT * FROM route_runs');
     route_run_items = await tx.getAllAsync<NonNullable<BackupData['route_run_items']>[number]>('SELECT * FROM route_run_items');
   });
-  return {assets, work_orders, executions, photos, order_events, routes, route_points, route_runs, route_run_items};
+  return {assets, work_orders, executions, photos, route_photos, order_events, routes, route_points, route_runs, route_run_items};
 }
 
 // Os dados são validados pelo módulo de backup antes de chegar à transação.
@@ -315,6 +329,7 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
   const db = await database();
   await db.withExclusiveTransactionAsync(async (tx) => {
     // Backup legado restaura rotas vazias; tudo é transacional para garantir rollback.
+    await tx.runAsync('DELETE FROM route_run_photos');
     await tx.runAsync('DELETE FROM route_run_items');
     await tx.runAsync('DELETE FROM route_runs');
     await tx.runAsync('DELETE FROM routes');
@@ -341,6 +356,12 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
         item.id,item.run_id,item.point_id,item.point_title,item.asset_label,item.lubricant,item.quantity_grams,
         item.status,item.notes,item.recorded_at,item.position);
     }
+    for (const photo of data.route_photos ?? []) {
+      const filename=filenames.get('route:'+photo.id);
+      if(!filename)throw new Error('Arquivo de foto de rota ausente no backup.');
+      await tx.runAsync('INSERT INTO route_run_photos(id,item_id,filename,mime_type,created_at) VALUES(?,?,?,?,?)',
+        photo.id,photo.item_id,filename,photo.mime_type,photo.created_at);
+    }
     for (const o of data.work_orders) {
       await tx.runAsync(`INSERT INTO work_orders
         (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at,block_reason,blocked_at,partial_reason,partial_at)
@@ -359,7 +380,7 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
         event.id, event.order_id, event.event_type, event.reason, event.created_at);
     }
     for (const p of data.photos) {
-      const filename = filenames.get(p.id);
+      const filename = filenames.get('os:'+p.id);
       if (!filename) throw new Error('Foto ausente no backup.');
       await tx.runAsync('INSERT INTO execution_photos (id,execution_id,filename,mime_type,created_at) VALUES (?,?,?,?,?)',
         p.id, p.execution_id, filename, p.mime_type, p.created_at);

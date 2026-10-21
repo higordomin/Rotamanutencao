@@ -15,13 +15,15 @@ async function shareFile(uri: string, mimeType: string, title: string) {
 export async function exportBackup(): Promise<{assets: number; orders: number; executions: number; photos: number}> {
   const rows = await exportDatabaseRows();
   const photos: BackupData['photos'] = [];
+  const routePhotos: NonNullable<BackupData['route_photos']> = [];
   if (rows.assets.length > MAX_RECORDS || rows.work_orders.length > MAX_RECORDS ||
       rows.executions.length > MAX_RECORDS || rows.photos.length > MAX_RECORDS ||
       (rows.order_events?.length ?? 0) > MAX_RECORDS ||
       (rows.routes?.length ?? 0) > MAX_RECORDS ||
       (rows.route_points?.length ?? 0) > MAX_RECORDS ||
       (rows.route_runs?.length ?? 0) > MAX_RECORDS ||
-      (rows.route_run_items?.length ?? 0) > MAX_RECORDS)
+      (rows.route_run_items?.length ?? 0) > MAX_RECORDS ||
+      rows.route_photos.length > MAX_RECORDS)
     throw new Error('A base excede o limite de backup desta versão.');
   for (const photo of rows.photos) {
     const info = await FileSystem.getInfoAsync(evidenceUri(photo.filename));
@@ -30,12 +32,20 @@ export async function exportBackup(): Promise<{assets: number; orders: number; e
       encoding: FileSystem.EncodingType.Base64,
     })});
   }
-  const data: BackupData = {format: 'rotamanutencao-offline', version: 5,
+  for (const photo of rows.route_photos) {
+    const info=await FileSystem.getInfoAsync(evidenceUri(photo.filename));
+    if(!info.exists||info.isDirectory)throw new Error('Foto do ponto '+photo.item_id+' está ausente. Backup cancelado.');
+    routePhotos.push({...photo,base64:await FileSystem.readAsStringAsync(evidenceUri(photo.filename),{
+      encoding:FileSystem.EncodingType.Base64,
+    })});
+  }
+  const data: BackupData = {format: 'rotamanutencao-offline', version: 6,
     exported_at: new Date().toISOString(), assets: rows.assets,
     work_orders: rows.work_orders, executions: rows.executions, photos,
     order_events: rows.order_events,
     routes: rows.routes, route_points: rows.route_points,
-    route_runs: rows.route_runs, route_run_items: rows.route_run_items};
+    route_runs: rows.route_runs, route_run_items: rows.route_run_items,
+    route_photos: routePhotos};
   validateBackup(data);
   const content = JSON.stringify(data);
   // Aproximação conservadora: UTF-8 pode ocupar mais bytes que JS length.
@@ -66,9 +76,14 @@ export async function pickBackupFile(): Promise<BackupData | null> {
 export async function restoreBackup(data: BackupData): Promise<void> {
   validateBackup(data);
   await makeEvidenceDirectory();
-  const oldPhotos = (await exportDatabaseRows()).photos;
+  const oldRows = await exportDatabaseRows();
+  const oldPhotos = [...oldRows.photos,...oldRows.route_photos];
+  const staged = [
+    ...data.photos.map(photo=>({...photo,id:'os:'+photo.id})),
+    ...(data.route_photos??[]).map(photo=>({...photo,id:'route:'+photo.id})),
+  ];
   const {filenames, created} = await stagePhotos(
-    data.photos, newFilename,
+    staged, newFilename,
     (filename, base64) => FileSystem.writeAsStringAsync(evidenceUri(filename), base64, {
       encoding: FileSystem.EncodingType.Base64,
     }),
