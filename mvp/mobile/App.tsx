@@ -23,6 +23,7 @@ import {buildOperationalBoard,type BoardEntry} from './src/operationalBoard';
 import {ReminderSettings} from './src/ReminderSettings';
 import {syncLocalReminders} from './src/localReminders';
 import {filterCompletedExecutions} from './src/completedExecutions';
+import {inspectLocalStorage} from './src/storageDiagnostics';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -487,6 +488,26 @@ export default function App() {
       <ReminderSettings/>
       <Text style={styles.description}>Todas as informações ficam neste aparelho. Não existe login, nuvem nem sincronização nesta versão.</Text>
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>Diagnóstico de integridade local</Text>
+        <Text style={styles.description}>Verifica o banco SQLite, vínculos entre registros e
+          fotografias armazenadas. Somente leitura: não apaga nem corrige arquivos.</Text>
+        <View style={styles.cardActions}>
+          <Action secondary disabled={busy} label={busy?'Verificando...':'Verificar dados do aparelho'}
+            onPress={()=>{void runExtra(async()=>{
+              const report=await inspectLocalStorage();
+              const healthy=report.databaseOk&&report.foreignKeyErrors===0&&report.missingPhotos===0
+                &&report.uncheckedPhotos===0;
+              Alert.alert(healthy?'Verificação sem falhas detectadas':'Atenção à integridade',
+                `Banco: ${report.databaseDetails}\nReferências inválidas: ${report.foreignKeyErrors}\n`+
+                `OS ativas: ${report.activeOrders}\nOS arquivadas: ${report.archivedOrders}\n`+
+                `Fotos no banco: ${report.photoRecords}\nFotos examinadas: ${report.verifiedPhotos}\n`+
+                `Fotos ausentes: ${report.missingPhotos}\nNão verificadas: ${report.uncheckedPhotos}\n\n`+
+                (healthy?'Nenhum problema detectado nos itens verificados. Isso não substitui o teste de restauração do backup.':
+                'Se houver fotos ausentes ou vínculos inválidos, não desinstale nem limpe os dados. Preserve seu backup e solicite revisão.'));
+            });}}/>
+        </View>
+      </View>
+      <View style={styles.card}>
         <Text style={styles.cardTitle}>Exportar backup completo</Text>
         <Text style={styles.description}>Inclui equipamentos, atividades, execuções e fotos. Salve o JSON em local seguro fora do aplicativo, por exemplo em uma pasta privada.</Text>
         <View style={styles.cardActions}><Action disabled={busy} label={busy ? 'Preparando...' : 'Exportar backup'}
@@ -505,7 +526,7 @@ export default function App() {
             const summary = inspectBackup(selected);
             Alert.alert('Backup reconhecido',
               `Versão: ${summary.version}\nExportado em: ${new Date(summary.exportedAt).toLocaleString('pt-BR')}\n` +
-              `Equipamentos: ${summary.assets}\nAtividades: ${summary.orders}\nImpedimentos ativos: ${summary.impediments}\n` +
+              `Equipamentos: ${summary.assets}\nAtividades: ${summary.orders}\nArquivadas: ${summary.archivedOrders}\nImpedimentos ativos: ${summary.impediments}\n` +
               `Execuções: ${summary.executions}\nFotos: ${summary.photos}\nEventos: ${summary.events}\n` +
               `Rotas: ${summary.routes}\nRotas periódicas: ${summary.scheduledRoutes}\nRotas com pendências: ${summary.routesWithAttention}\nPontos: ${summary.routePoints}\nExecuções de rota: ${summary.routeRuns}\nFotos dos pontos: ${summary.routePhotos}\n\n` +
               'Verificação estrutural aprovada. Não houve restauração nem alteração dos seus dados. ' +
@@ -517,7 +538,7 @@ export default function App() {
         <Text style={styles.description}>Substitui TODOS os registros existentes, depois de sua confirmação. Antes disso, exporte uma cópia do estado atual.</Text>
         <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
       </View>
-      <Text style={styles.hint}>Formato local versão 7 (restaura também versões 2, 3, 4, 5 e 6) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+      <Text style={styles.hint}>Formato local versão 8 (restaura também versões 2, 3, 4, 5, 6 e 7) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
