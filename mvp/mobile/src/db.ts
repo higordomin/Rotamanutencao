@@ -6,6 +6,8 @@ import {completionPlan, executionDecision} from './operations';
 export {localDate, addDays, validDate} from './logic';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
+/** A mesma conexão evita concorrência desnecessária durante rotas, backup e OS. */
+export async function getDatabase(): Promise<SQLite.SQLiteDatabase> { return database(); }
 function database() {
   if (!databasePromise) databasePromise = SQLite.openDatabaseAsync('rotamanutencao.db');
   return databasePromise;
@@ -67,6 +69,45 @@ export async function initializeDatabase(): Promise<void> {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_events_order ON order_events(order_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS routes (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL,
+      area TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS route_points (
+      id TEXT PRIMARY KEY NOT NULL,
+      route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+      asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      lubricant TEXT NOT NULL DEFAULT '',
+      quantity_grams REAL NOT NULL DEFAULT 0 CHECK(quantity_grams >= 0 AND quantity_grams <= 100000),
+      position INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_points_route ON route_points(route_id, position);
+    CREATE TABLE IF NOT EXISTS route_runs (
+      id TEXT PRIMARY KEY NOT NULL,
+      route_id TEXT REFERENCES routes(id) ON DELETE SET NULL,
+      route_title TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_runs_date ON route_runs(started_at DESC);
+    CREATE TABLE IF NOT EXISTS route_run_items (
+      id TEXT PRIMARY KEY NOT NULL,
+      run_id TEXT NOT NULL REFERENCES route_runs(id) ON DELETE CASCADE,
+      point_id TEXT NOT NULL,
+      point_title TEXT NOT NULL,
+      asset_label TEXT NOT NULL DEFAULT '',
+      lubricant TEXT NOT NULL DEFAULT '',
+      quantity_grams REAL NOT NULL DEFAULT 0 CHECK(quantity_grams >= 0 AND quantity_grams <= 100000),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done','anomaly','skipped')),
+      notes TEXT NOT NULL DEFAULT '',
+      recorded_at TEXT,
+      position INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_items_run ON route_run_items(run_id, position);
+
   `);
   // Migração não destrutiva para quem já usava o MVP 0.1.
   const fields = await db.getAllAsync<{name: string}>("PRAGMA table_info(executions)");
@@ -251,25 +292,54 @@ export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 
   let executions: BackupData['executions'] = [];
   let photos: ExecutionPhoto[] = [];
   let order_events: OrderEvent[] = [];
+  let routes: NonNullable<BackupData['routes']> = [];
+  let route_points: NonNullable<BackupData['route_points']> = [];
+  let route_runs: NonNullable<BackupData['route_runs']> = [];
+  let route_run_items: NonNullable<BackupData['route_run_items']> = [];
   await db.withExclusiveTransactionAsync(async tx => {
     assets = await tx.getAllAsync<Asset>('SELECT * FROM assets');
     work_orders = await tx.getAllAsync<BackupData['work_orders'][number]>('SELECT * FROM work_orders');
     executions = await tx.getAllAsync<BackupData['executions'][number]>('SELECT * FROM executions');
     photos = await tx.getAllAsync<ExecutionPhoto>('SELECT * FROM execution_photos');
     order_events = await tx.getAllAsync<OrderEvent>('SELECT * FROM order_events');
+    routes = await tx.getAllAsync<NonNullable<BackupData['routes']>[number]>('SELECT * FROM routes');
+    route_points = await tx.getAllAsync<NonNullable<BackupData['route_points']>[number]>('SELECT * FROM route_points');
+    route_runs = await tx.getAllAsync<NonNullable<BackupData['route_runs']>[number]>('SELECT * FROM route_runs');
+    route_run_items = await tx.getAllAsync<NonNullable<BackupData['route_run_items']>[number]>('SELECT * FROM route_run_items');
   });
-  return {assets, work_orders, executions, photos, order_events};
+  return {assets, work_orders, executions, photos, order_events, routes, route_points, route_runs, route_run_items};
 }
 
 // Os dados são validados pelo módulo de backup antes de chegar à transação.
 export async function restoreDatabaseRows(data: BackupData, filenames: Map<string, string>): Promise<void> {
   const db = await database();
   await db.withExclusiveTransactionAsync(async (tx) => {
+    // Backup legado restaura rotas vazias; tudo é transacional para garantir rollback.
+    await tx.runAsync('DELETE FROM route_run_items');
+    await tx.runAsync('DELETE FROM route_runs');
+    await tx.runAsync('DELETE FROM routes');
     await tx.runAsync('DELETE FROM work_orders'); // CASCADE -> execuções e fotos
     await tx.runAsync('DELETE FROM assets');
     for (const a of data.assets) {
       await tx.runAsync('INSERT INTO assets (id,code,name,area,created_at) VALUES (?,?,?,?,?)',
         a.id, a.code, a.name, a.area, a.created_at);
+    }
+    for (const r of data.routes ?? []) {
+      await tx.runAsync('INSERT INTO routes(id,title,area,created_at) VALUES(?,?,?,?)', r.id,r.title,r.area,r.created_at);
+    }
+    for (const p of data.route_points ?? []) {
+      await tx.runAsync(`INSERT INTO route_points(id,route_id,asset_id,title,lubricant,quantity_grams,position)
+        VALUES(?,?,?,?,?,?,?)`,p.id,p.route_id,p.asset_id,p.title,p.lubricant,p.quantity_grams,p.position);
+    }
+    for (const run of data.route_runs ?? []) {
+      await tx.runAsync('INSERT INTO route_runs(id,route_id,route_title,started_at,finished_at) VALUES(?,?,?,?,?)',
+        run.id,run.route_id,run.route_title,run.started_at,run.finished_at);
+    }
+    for (const item of data.route_run_items ?? []) {
+      await tx.runAsync(`INSERT INTO route_run_items(id,run_id,point_id,point_title,asset_label,lubricant,
+        quantity_grams,status,notes,recorded_at,position) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+        item.id,item.run_id,item.point_id,item.point_title,item.asset_label,item.lubricant,item.quantity_grams,
+        item.status,item.notes,item.recorded_at,item.position);
     }
     for (const o of data.work_orders) {
       await tx.runAsync(`INSERT INTO work_orders

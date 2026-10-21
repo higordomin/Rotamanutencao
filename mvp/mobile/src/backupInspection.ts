@@ -13,5 +13,8 @@ export function inspectBackup(data: unknown) {
     events: data.order_events?.length ?? 0,
     impediments: data.work_orders.filter(order => !!order.block_reason?.trim()).length,
     partials: data.work_orders.filter(order => !!order.partial_reason?.trim()).length,
+    routes: data.routes?.length ?? 0,
+    routePoints: data.route_points?.length ?? 0,
+    routeRuns: data.route_runs?.length ?? 0,
   };
 }

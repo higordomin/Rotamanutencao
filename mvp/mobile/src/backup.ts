@@ -17,7 +17,11 @@ export async function exportBackup(): Promise<{assets: number; orders: number; e
   const photos: BackupData['photos'] = [];
   if (rows.assets.length > MAX_RECORDS || rows.work_orders.length > MAX_RECORDS ||
       rows.executions.length > MAX_RECORDS || rows.photos.length > MAX_RECORDS ||
-      (rows.order_events?.length ?? 0) > MAX_RECORDS)
+      (rows.order_events?.length ?? 0) > MAX_RECORDS ||
+      (rows.routes?.length ?? 0) > MAX_RECORDS ||
+      (rows.route_points?.length ?? 0) > MAX_RECORDS ||
+      (rows.route_runs?.length ?? 0) > MAX_RECORDS ||
+      (rows.route_run_items?.length ?? 0) > MAX_RECORDS)
     throw new Error('A base excede o limite de backup desta versão.');
   for (const photo of rows.photos) {
     const info = await FileSystem.getInfoAsync(evidenceUri(photo.filename));
@@ -26,10 +30,12 @@ export async function exportBackup(): Promise<{assets: number; orders: number; e
       encoding: FileSystem.EncodingType.Base64,
     })});
   }
-  const data: BackupData = {format: 'rotamanutencao-offline', version: 4,
+  const data: BackupData = {format: 'rotamanutencao-offline', version: 5,
     exported_at: new Date().toISOString(), assets: rows.assets,
     work_orders: rows.work_orders, executions: rows.executions, photos,
-    order_events: rows.order_events};
+    order_events: rows.order_events,
+    routes: rows.routes, route_points: rows.route_points,
+    route_runs: rows.route_runs, route_run_items: rows.route_run_items};
   validateBackup(data);
   const content = JSON.stringify(data);
   // Aproximação conservadora: UTF-8 pode ocupar mais bytes que JS length.

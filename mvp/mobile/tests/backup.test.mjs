@@ -84,3 +84,44 @@ test('backup v4 exige campo de resultado e dados da pendência', () => {
     next_due_date:null,asset_label:'MC-01',category:'Lubrificação'});
   rejects(data, /Execução/);
 });
+
+test('backup v5 inclui rota, ponto, execução e checklist consistente',()=>{
+  const d=fixture(); d.version=5;
+  d.work_orders[0].partial_reason='';d.work_orders[0].partial_at=null;
+  d.routes=[{id:'r1',title:'Rota teste',area:'Utilidades',created_at:stamp}];
+  d.route_points=[{id:'p1',route_id:'r1',asset_id:'a1',title:'Mancal A',
+    lubricant:'NEVASTANE',quantity_grams:3.5,position:0}];
+  d.route_runs=[{id:'run1',route_id:'r1',route_title:'Rota teste',started_at:stamp,finished_at:stamp}];
+  d.route_run_items=[{id:'ri1',run_id:'run1',point_id:'p1',point_title:'Mancal A',
+    asset_label:'MC-01 · Motor',lubricant:'NEVASTANE',quantity_grams:3.5,status:'done',
+    notes:'',recorded_at:stamp,position:0}];
+  check(d);
+  d.route_run_items[0].status='anomaly';
+  rejects(d,/Registro de checklist/);
+  d.route_run_items[0].notes='Ruído anormal no eixo inferior';
+  check(d);
+  d.route_run_items[0].status='skipped';
+  rejects(d,/Registro de checklist/); // não executado não pode usar os 3,5 g planejados
+  d.route_run_items[0].quantity_grams=0;
+  check(d);
+  d.route_run_items[0].status='pending';
+  rejects(d,/Registro de checklist|Execução de rota/);
+});
+test('backup v5 rejeita referências órfãs em rota e execução',()=>{
+  const d=fixture(); d.version=5;
+  d.work_orders[0].partial_reason='';d.work_orders[0].partial_at=null;
+  d.routes=[{id:'r',title:'Rota',area:'Setor',created_at:stamp}];
+  d.route_points=[{id:'p',route_id:'r',asset_id:'a1',title:'Lubrificar',
+    lubricant:'',quantity_grams:0,position:0}];
+  d.route_runs=[{id:'run',route_id:'r',route_title:'Rota',started_at:stamp,finished_at:null}];
+  d.route_run_items=[{id:'item',run_id:'run',point_id:'p',point_title:'Lubrificar',
+    asset_label:'A',lubricant:'',quantity_grams:0,status:'pending',notes:'',recorded_at:null,position:0}];
+  check(d);
+  d.route_points[0].route_id='missing';
+  rejects(d,/Ponto de rota/);
+  d.route_points[0].route_id='r'; d.route_run_items[0].run_id='missing';
+  rejects(d,/Registro de checklist/);
+  d.route_run_items[0].run_id='run';
+  delete d.route_points;
+  rejects(d,/Dados das rotas/);
+});
