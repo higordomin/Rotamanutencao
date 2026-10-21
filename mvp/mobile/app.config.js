@@ -10,7 +10,7 @@ module.exports = ({config}) => {
   if (process.env.ROTA_PREVIEW !== '1') return config;
   return {
     ...config,
-    name: 'RotaManutenção QA',
+    name: 'RotaManutenção',
     android: {
       ...(config.android || {}),
       package: QA_PACKAGE,
