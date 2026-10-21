@@ -6,6 +6,8 @@ import {completionPlan, executionDecision} from './operations';
 export {localDate, addDays, validDate} from './logic';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
+/** A mesma conexão evita concorrência desnecessária durante rotas, backup e OS. */
+export async function getDatabase(): Promise<SQLite.SQLiteDatabase> { return database(); }
 function database() {
   if (!databasePromise) databasePromise = SQLite.openDatabaseAsync('rotamanutencao.db');
   return databasePromise;
@@ -67,6 +69,45 @@ export async function initializeDatabase(): Promise<void> {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_events_order ON order_events(order_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS routes (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL,
+      area TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS route_points (
+      id TEXT PRIMARY KEY NOT NULL,
+      route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+      asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      lubricant TEXT NOT NULL DEFAULT '',
+      quantity_grams REAL NOT NULL DEFAULT 0 CHECK(quantity_grams >= 0 AND quantity_grams <= 100000),
+      position INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_points_route ON route_points(route_id, position);
+    CREATE TABLE IF NOT EXISTS route_runs (
+      id TEXT PRIMARY KEY NOT NULL,
+      route_id TEXT REFERENCES routes(id) ON DELETE SET NULL,
+      route_title TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_runs_date ON route_runs(started_at DESC);
+    CREATE TABLE IF NOT EXISTS route_run_items (
+      id TEXT PRIMARY KEY NOT NULL,
+      run_id TEXT NOT NULL REFERENCES route_runs(id) ON DELETE CASCADE,
+      point_id TEXT NOT NULL,
+      point_title TEXT NOT NULL,
+      asset_label TEXT NOT NULL DEFAULT '',
+      lubricant TEXT NOT NULL DEFAULT '',
+      quantity_grams REAL NOT NULL DEFAULT 0 CHECK(quantity_grams >= 0 AND quantity_grams <= 100000),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done','anomaly','skipped')),
+      notes TEXT NOT NULL DEFAULT '',
+      recorded_at TEXT,
+      position INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_items_run ON route_run_items(run_id, position);
+
   `);
   // Migração não destrutiva para quem já usava o MVP 0.1.
   const fields = await db.getAllAsync<{name: string}>("PRAGMA table_info(executions)");
