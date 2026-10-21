@@ -170,9 +170,24 @@ def test_old_route_migration_and_schedule():
 
 
 
+def test_reminder_settings_migrate_without_dropping_data():
+    db=open_sqlite(legacy=True,legacy_routes=True)
+    tables={row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert 'app_settings' in tables
+    db.execute("INSERT INTO app_settings(key,value) VALUES('reminders.enabled','1')")
+    db.execute("INSERT INTO app_settings(key,value) VALUES('reminders.hour','14')")
+    db.execute("UPDATE app_settings SET value='19' WHERE key='reminders.hour'")
+    assert db.execute("SELECT value FROM app_settings WHERE key='reminders.hour'").fetchone()[0]=='19'
+    assert db.execute("SELECT COUNT(*) FROM work_orders").fetchone()[0]==1, 'Migração não pode apagar OS'
+    assert db.execute("SELECT COUNT(*) FROM routes WHERE id='old-route'").fetchone()[0]==1
+    assert db.execute("PRAGMA foreign_key_check").fetchall()==[]
+
+
+
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
     test_routes_and_snapshot_history()
     test_old_route_migration_and_schedule()
-    print('OK: rotas agendadas, migração 0.9, histórico, cascata, atualização e rollback SQLite')
+    test_reminder_settings_migrate_without_dropping_data()
+    print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')
