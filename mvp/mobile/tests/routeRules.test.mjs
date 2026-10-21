@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {gramAmount,routeResult} from '../src/routeRules.ts';
+import {gramAmount,routeResult,appliedGrams} from '../src/routeRules.ts';
 test('quantidade em gramas aceita decimal brasileiro e zero',()=>{
   assert.equal(gramAmount('0'),0);
   assert.equal(gramAmount('3,5'),3.5);
@@ -21,4 +21,10 @@ test('anomalia e não executado exigem descrição significativa',()=>{
 test('executado permite anotações vazias; pendente não é registro',()=>{
   assert.equal(routeResult('done',''),'');
   assert.throws(()=>routeResult('pending','teste suficiente'),/resultado/);
+});
+
+test('ponto não executado nunca contabiliza graxa planejada como aplicada',()=>{
+  assert.equal(appliedGrams('skipped','3,5'),0);
+  assert.equal(appliedGrams('done','3,5'),3.5);
+  assert.throws(()=>appliedGrams('anomaly','-3'),/Quantidade inválida/);
 });
