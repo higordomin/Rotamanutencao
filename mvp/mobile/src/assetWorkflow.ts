@@ -18,16 +18,40 @@ export function preselectAsset<T extends {asset_id:string|null}>(draft:T,asset:P
 }
 
 /**
- * Não associa registros só porque as TAGs têm prefixos parecidos.
- * Antes da versão com vínculo histórico permanente, usa o retrato exato
- * salvo na execução (código, nome e área; limite legado de 300 caracteres).
- * Uma edição posterior do cadastro pode fazer um registro ficar visível
- * apenas no histórico geral; jamais reescrevemos o histórico para ajustá-lo.
+ * Snapshot da TAG no momento da execução. Continua preservado no histórico
+ * mesmo quando o cadastro muda de nome/setor ou o ativo é excluído.
  */
+export function assetSnapshot(asset: Pick<Asset,'code'|'name'|'area'>): string {
+  return [asset.code,asset.name,asset.area].filter(Boolean).join(' · ').slice(0,300);
+}
+
+/**
+ * Migração conservadora de registros v2-v8: só atribui ID se o retrato
+ * coincide EXATAMENTE com um único ativo atual. Duplicidade é ambígua.
+ * Nunca associar apenas por prefixo de TAG ou equipamento da OS atual.
+ */
+export function buildLegacyAssetIndex(assets:ReadonlyArray<Pick<Asset,'id'|'code'|'name'|'area'>>): Map<string,string|null> {
+  const result=new Map<string,string|null>();
+  for(const asset of assets) {
+    const label=assetSnapshot(asset);
+    if(!label)continue;
+    if(result.has(label)) result.set(label,null);
+    else result.set(label,asset.id);
+  }
+  return result;
+}
+
+export function inferLegacyAssetId(snapshot:string, index:ReadonlyMap<string,string|null>):string|null {
+  return index.get(snapshot)??null;
+}
+
+/** Identidade de execução futura é o ID estável; legado sem ID usa retrato exato. */
 export function executionBelongsToAssetSnapshot(
-  execution:Pick<Execution,'asset_label'>,
-  asset:Pick<Asset,'code'|'name'|'area'>,
+  execution:Pick<Execution,'asset_label'> & Partial<Pick<Execution,'asset_id'>>,
+  asset:Pick<Asset,'id'|'code'|'name'|'area'>,
 ):boolean {
-  const snapshot=[asset.code,asset.name,asset.area].filter(Boolean).join(' · ').slice(0,300);
+  if(execution.asset_id!==null && execution.asset_id!==undefined)
+    return execution.asset_id===asset.id;
+  const snapshot=assetSnapshot(asset);
   return snapshot.length>0 && execution.asset_label===snapshot;
 }
