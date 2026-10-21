@@ -39,7 +39,7 @@ export async function exportBackup(): Promise<{assets: number; orders: number; e
       encoding:FileSystem.EncodingType.Base64,
     })});
   }
-  const data: BackupData = {format: 'rotamanutencao-offline', version: 7,
+  const data: BackupData = {format: 'rotamanutencao-offline', version: 8,
     exported_at: new Date().toISOString(), assets: rows.assets,
     work_orders: rows.work_orders, executions: rows.executions, photos,
     order_events: rows.order_events,
