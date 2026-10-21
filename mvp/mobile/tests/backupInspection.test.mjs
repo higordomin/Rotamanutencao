@@ -13,7 +13,7 @@ test('inspecionar backup v3 retorna resumo sem modificar arquivo original', () =
   const source = data();
   const before = JSON.stringify(source);
   const info = inspectBackup(source);
-  assert.deepEqual(info, {version:3, exportedAt:'2026-10-20T13:30:00.000Z', assets:1,orders:1, executions:0,photos:0,events:1,impediments:1,partials:0,routes:0,routePoints:0,routeRuns:0,routePhotos:0});
+  assert.deepEqual(info, {version:3, exportedAt:'2026-10-20T13:30:00.000Z', assets:1,orders:1, executions:0,photos:0,events:1,impediments:1,partials:0,routes:0,routePoints:0,routeRuns:0,routePhotos:0,scheduledRoutes:0,routesWithAttention:0});
   assert.equal(JSON.stringify(source), before);
 });
 
