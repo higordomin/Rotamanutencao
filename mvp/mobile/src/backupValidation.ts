@@ -82,19 +82,20 @@ export function validateBackup(data: unknown): asserts data is BackupData {
   // Rotas: somente o v5 exige a coleção completa, inclusive quando está vazia.
   const routeCollections = ['routes','route_points','route_runs','route_run_items'] as const;
   if (data.version === 5) {
+    const d = data as unknown as BackupData;
     for (const key of routeCollections) {
       const value=data[key];
       if (!Array.isArray(value) || value.length > MAX_RECORDS) throw new Error('Dados das rotas ausentes ou acima do limite: '+key);
     }
-    const routeIds=ids(data.routes!, 'rotas');
-    const pointIds=ids(data.route_points!, 'pontos de rota');
-    const runIds=ids(data.route_runs!, 'execuções de rota');
-    ids(data.route_run_items!, 'registros dos pontos');
-    for (const r of data.routes!) {
+    const routeIds=ids(d.routes!, 'rotas');
+    const pointIds=ids(d.route_points!, 'pontos de rota');
+    const runIds=ids(d.route_runs!, 'execuções de rota');
+    ids(d.route_run_items!, 'registros dos pontos');
+    for (const r of d.routes!) {
       if(!str(r.title,200)||!r.title.trim()||!str(r.area,200)||!iso(r.created_at))
         throw new Error('Rota com dados inválidos.');
     }
-    for (const p of data.route_points!) {
+    for (const p of d.route_points!) {
       if(!ident(p.route_id)||!routeIds.has(p.route_id)
         || (p.asset_id!==null&&(!ident(p.asset_id)||!aIds.has(p.asset_id)))
         || !str(p.title,200)||!p.title.trim()||!str(p.lubricant,200)
@@ -102,14 +103,14 @@ export function validateBackup(data: unknown): asserts data is BackupData {
         || !Number.isSafeInteger(p.position)||p.position<0)
         throw new Error('Ponto de rota inválido.');
     }
-    for (const r of data.route_runs!) {
+    for (const r of d.route_runs!) {
       if((r.route_id!==null&&(!ident(r.route_id)||!routeIds.has(r.route_id)))
         || !str(r.route_title,200)||!r.route_title.trim()||!iso(r.started_at)
         || (r.finished_at!==null&&!iso(r.finished_at)))
         throw new Error('Execução de rota inválida.');
     }
     const counts=new Map<string,{items:number;pending:number}>();
-    for (const i of data.route_run_items!) {
+    for (const i of d.route_run_items!) {
       if(!ident(i.run_id)||!runIds.has(i.run_id)||!ident(i.point_id)
         || !str(i.point_title,200)||!i.point_title.trim()||!str(i.asset_label,300)
         || !str(i.lubricant,200)||!Number.isFinite(i.quantity_grams)||i.quantity_grams<0||i.quantity_grams>100000
@@ -124,7 +125,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       count.items++; if(i.status==='pending')count.pending++;
       counts.set(i.run_id,count);
     }
-    for (const r of data.route_runs!) {
+    for (const r of d.route_runs!) {
       const stat=counts.get(r.id);
       if(!stat?.items || (r.finished_at!==null&&stat.pending>0))
         throw new Error('Execução de rota incompleta ou vazia.');
