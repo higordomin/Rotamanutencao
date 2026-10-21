@@ -3,6 +3,7 @@ import type {Asset, AssetDraft, BackupData, Execution, ExecutionPhoto, OrderDraf
 import {deletePhotoFile, persistPhoto, MAX_PHOTOS_PER_EXECUTION} from './evidence';
 import {localDate, addDays, validDate} from './logic';
 import {completionPlan, executionDecision} from './operations';
+import {buildLegacyAssetIndex, inferLegacyAssetId} from './assetWorkflow';
 export {localDate, addDays, validDate} from './logic';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -55,7 +56,8 @@ export async function initializeDatabase(): Promise<void> {
       notes TEXT NOT NULL DEFAULT '',
       executed_at TEXT NOT NULL,
       previous_due_date TEXT NOT NULL,
-      next_due_date TEXT
+      next_due_date TEXT,
+      asset_id TEXT -- snapshot de identidade, sem FK: preservado se o cadastro for excluído
     );
     CREATE TABLE IF NOT EXISTS execution_photos (
       id TEXT PRIMARY KEY NOT NULL,
@@ -159,6 +161,23 @@ export async function initializeDatabase(): Promise<void> {
     await db.execAsync('ALTER TABLE work_orders ADD COLUMN partial_at TEXT');
   if (!fields.some(f => f.name === 'result'))
     await db.execAsync("ALTER TABLE executions ADD COLUMN result TEXT NOT NULL DEFAULT 'completed' CHECK(result IN ('completed','partial'))");
+  if (!fields.some(f => f.name === 'asset_id')) {
+    // Migração aditiva da 0.16: nunca substituir retrato, fotos ou histórico.
+    await db.execAsync('ALTER TABLE executions ADD COLUMN asset_id TEXT');
+    const legacyAssets = await db.getAllAsync<Asset>('SELECT * FROM assets');
+    const legacyIndex = buildLegacyAssetIndex(legacyAssets);
+    // Backfill apenas por retrato EXATO e ÚNICO. Sem coincidência = NULL, sem suposições.
+    await db.withExclusiveTransactionAsync(async tx => {
+      const rows = await tx.getAllAsync<{id:string;asset_label:string}>(
+        "SELECT id,asset_label FROM executions WHERE asset_id IS NULL AND asset_label != ''");
+      for (const row of rows) {
+        const inferred = inferLegacyAssetId(row.asset_label,legacyIndex);
+        if (inferred !== null)
+          await tx.runAsync('UPDATE executions SET asset_id=? WHERE id=? AND asset_id IS NULL',inferred,row.id);
+      }
+    });
+  }
+  await db.execAsync('CREATE INDEX IF NOT EXISTS idx_executions_asset_id ON executions(asset_id,executed_at DESC)');
 }
 
 export async function listAssets(): Promise<Asset[]> {
@@ -322,10 +341,10 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
       const assetLabel = [current!.asset_code, current!.asset_name, current!.asset_area]
         .filter(Boolean).join(' · ').slice(0, 300);
       await tx.runAsync(`INSERT INTO executions
-        (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category,result)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category,result,asset_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         executionId, order.id, current!.title, decision.notes, now, current!.due_date, decision.nextDue,
-        assetLabel, current!.category, result);
+        assetLabel, current!.category, result, current!.asset_id);
       if (result === 'completed') {
         await tx.runAsync('INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES(?,?,?,?,?)',
           makeId(), order.id, 'executed', '', now);
@@ -423,11 +442,16 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
         o.recurrence_days,o.due_date,o.status,o.created_at,o.updated_at, o.block_reason ?? '', o.blocked_at ?? null,
         o.partial_reason ?? '', o.partial_at ?? null, o.archived_at ?? null,o.archive_reason ?? '');
     }
+    const legacyIndex=buildLegacyAssetIndex(data.assets);
     for (const e of data.executions) {
+      // v9 preserva identidade mesmo se o equipamento original foi excluído.
+      // v2-v8 só recuperam a identidade quando o retrato é inequívoco.
+      const historicalAssetId=data.version >= 9
+        ? e.asset_id : inferLegacyAssetId(e.asset_label,legacyIndex);
       await tx.runAsync(`INSERT INTO executions
-        (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category,result)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`, e.id,e.order_id,e.order_title,e.notes,e.executed_at,
-        e.previous_due_date,e.next_due_date,e.asset_label,e.category, e.result ?? 'completed');
+        (id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category,result,asset_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`, e.id,e.order_id,e.order_title,e.notes,e.executed_at,
+        e.previous_due_date,e.next_due_date,e.asset_label,e.category, e.result ?? 'completed',historicalAssetId);
     }
     for (const event of data.order_events ?? []) {
       await tx.runAsync('INSERT INTO order_events (id,order_id,event_type,reason,created_at) VALUES (?,?,?,?,?)',
