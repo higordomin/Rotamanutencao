@@ -113,8 +113,12 @@ def test_routes_and_snapshot_history():
     db.execute("""UPDATE route_run_items SET status='anomaly',notes='Vazamento de graxa no mancal',recorded_at='2026-10-20T12:02:00Z'
         WHERE id='item'""")
     db.execute("UPDATE route_runs SET finished_at='2026-10-20T12:04:00Z' WHERE id='run'")
+    db.execute("""INSERT INTO route_run_photos(id,item_id,filename,mime_type,created_at)
+        VALUES ('photo-route','item','route_1.jpg','image/jpeg','2026-10-20T12:03:00Z')""")
+    assert db.execute("SELECT COUNT(*) FROM route_run_photos WHERE item_id='item'").fetchone()[0] == 1
     db.execute("DELETE FROM routes WHERE id='r'")
     assert db.execute("SELECT COUNT(*) FROM route_points").fetchone()[0] == 0, 'Pontos novos removidos por cascata'
+    assert db.execute("SELECT COUNT(*) FROM route_run_photos WHERE id='photo-route'").fetchone()[0] == 1, 'Foto deve sobreviver à exclusão do cadastro'
     assert db.execute("SELECT route_id FROM route_runs WHERE id='run'").fetchone()[0] is None, 'Histórico órfão preservado'
     assert db.execute("SELECT status,notes FROM route_run_items WHERE id='item'").fetchone() == (
         'anomaly','Vazamento de graxa no mancal')
@@ -131,6 +135,7 @@ def test_routes_and_snapshot_history():
     else:
         raise AssertionError('Restore deve reverter FK inválida')
     assert db.execute("SELECT COUNT(*) FROM route_run_items WHERE id='item'").fetchone()[0] == 1
+    assert db.execute("SELECT COUNT(*) FROM route_run_photos WHERE id='photo-route'").fetchone()[0] == 1
 
 
 
