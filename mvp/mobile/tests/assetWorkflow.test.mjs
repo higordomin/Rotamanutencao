@@ -67,3 +67,14 @@ test('ativo excluído preserva ID do histórico, mas não faz correspondência t
   assert.equal(executionBelongsToAssetSnapshot(record,{id:'novo',code:'TAG',name:'Motor',area:'Setor'}),false);
   assert.equal(record.asset_id,'id-excluido');
 });
+
+test('visão por TAG não atribui registro legado ambíguo a dois cadastros iguais',()=>{
+  const twin={id:'new',code:assets[0].code,name:assets[0].name,area:assets[0].area};
+  const legacy={asset_id:null,asset_label:assetSnapshot(assets[0])};
+  const ambiguousIndex=buildLegacyAssetIndex([assets[0],twin]);
+  assert.equal(executionBelongsToAssetSnapshot(legacy,assets[0],ambiguousIndex),false);
+  assert.equal(executionBelongsToAssetSnapshot(legacy,twin,ambiguousIndex),false);
+  const uniqueIndex=buildLegacyAssetIndex(assets);
+  assert.equal(executionBelongsToAssetSnapshot(legacy,assets[0],uniqueIndex),true);
+  assert.equal(executionBelongsToAssetSnapshot({...legacy,asset_id:'a1'},assets[0],ambiguousIndex),true);
+});
