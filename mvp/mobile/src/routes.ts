@@ -6,6 +6,8 @@ export type Route = {id:string;title:string;area:string;created_at:string;point_
 export type RoutePoint = {id:string;route_id:string;asset_id:string|null;title:string;lubricant:string;
   quantity_grams:number;position:number;asset_name?:string|null;asset_code?:string|null;asset_area?:string|null};
 export type RouteRun = {id:string;route_id:string|null;route_title:string;started_at:string;finished_at:string|null};
+export type RouteRunPhoto = {id:string;item_id:string;filename:string;
+  mime_type:'image/jpeg'|'image/png';created_at:string};
 export type RouteRunItem = {id:string;run_id:string;point_id:string;point_title:string;asset_label:string;
   lubricant:string;quantity_grams:number;status:'pending'|'done'|'anomaly'|'skipped';notes:string;
   recorded_at:string|null;position:number};
