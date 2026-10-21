@@ -12,8 +12,8 @@ const ident = (v: unknown): v is string => str(v, 100) && v.length > 0;
 const iso = (v: unknown): v is string => str(v, 50) && !Number.isNaN(Date.parse(v));
 
 export function validateBackup(data: unknown): asserts data is BackupData {
-  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5].includes(data.version as number))
-    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4 ou v5.');
+  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6].includes(data.version as number))
+    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5 ou v6.');
   if (!Array.isArray(data.assets) || data.assets.length > MAX_RECORDS) throw new Error('Equipamentos inválidos.');
   if (!Array.isArray(data.work_orders) || data.work_orders.length > MAX_RECORDS) throw new Error('Atividades inválidas.');
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
@@ -79,9 +79,9 @@ export function validateBackup(data: unknown): asserts data is BackupData {
         throw new Error('Evento de impedimento inválido.');
     }
   }
-  // Rotas: somente o v5 exige a coleção completa, inclusive quando está vazia.
+  // Rotas: v5 e v6 exigem coleções completas, inclusive quando estão vazias.
   const routeCollections = ['routes','route_points','route_runs','route_run_items'] as const;
-  if (data.version === 5) {
+  if ((data.version as number) >= 5) {
     const d = data as unknown as BackupData;
     for (const key of routeCollections) {
       const value=data[key];
@@ -132,6 +132,28 @@ export function validateBackup(data: unknown): asserts data is BackupData {
         throw new Error('Execução de rota incompleta ou vazia.');
     }
     void pointIds; // O registro executado guarda snapshot e pode apontar para ponto já removido.
+  }
+  if (data.version === 6) {
+    if (!Array.isArray(data.route_photos) || data.route_photos.length > MAX_RECORDS)
+      throw new Error('Fotos dos pontos ausentes ou acima do limite.');
+    ids(data.route_photos,'fotos dos pontos');
+    const itemIds = new Set((data.route_run_items ?? []).map(i => i.id));
+    const items = new Map((data.route_run_items ?? []).map(i => [i.id, i]));
+    const counts = new Map<string,number>();
+    for (const p of data.route_photos) {
+      if (!ident(p.item_id)||!itemIds.has(p.item_id)
+        || !str(p.filename,120) || !/^[a-zA-Z0-9_-]+\.(jpe?g|png)$/.test(p.filename)
+        || !['image/jpeg','image/png'].includes(p.mime_type)||!iso(p.created_at)
+        || !str(p.base64,7_500_000)||p.base64.length<10
+        || p.base64.length%4!==0||!/^[A-Za-z0-9+/]*={0,2}$/.test(p.base64)
+        || (p.mime_type==='image/jpeg'&&!p.base64.startsWith('/9j/'))
+        || (p.mime_type==='image/png'&&!p.base64.startsWith('iVBORw0KGgo'))
+        || items.get(p.item_id)?.status==='pending')
+        throw new Error('Foto de ponto inválida ou vinculada a registro pendente.');
+      const n=(counts.get(p.item_id)??0)+1;
+      if(n>4)throw new Error('O ponto contém mais de 4 fotos.');
+      counts.set(p.item_id,n);
+    }
   }
   const imagesPerExecution = new Map<string, number>();
   for (const p of data.photos) {
