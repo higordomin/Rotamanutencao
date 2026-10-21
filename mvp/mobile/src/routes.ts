@@ -1,4 +1,5 @@
-import type {Asset} from './types';
+import type {Asset,PhotoDraft} from './types';
+import {persistPhoto,deletePhotoFile} from './evidence';
 import {getDatabase} from './db';
 import {gramAmount,routeResult,appliedGrams} from './routeRules';
 
@@ -11,6 +12,7 @@ export type RouteRunPhoto = {id:string;item_id:string;filename:string;
 export type RouteRunItem = {id:string;run_id:string;point_id:string;point_title:string;asset_label:string;
   lubricant:string;quantity_grams:number;status:'pending'|'done'|'anomaly'|'skipped';notes:string;
   recorded_at:string|null;position:number};
+export const MAX_ROUTE_PHOTOS = 4;
 export type RouteBackupRows = {routes:Route[];route_points:RoutePoint[];route_runs:RouteRun[];route_run_items:RouteRunItem[]};
 
 function id() {return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,11)}`;}
@@ -67,6 +69,11 @@ export async function listRunItems(runId:string):Promise<RouteRunItem[]> {
   const db=await getDatabase();
   return db.getAllAsync<RouteRunItem>('SELECT * FROM route_run_items WHERE run_id=? ORDER BY position,id',runId);
 }
+export async function listRunPhotos(runId:string):Promise<RouteRunPhoto[]> {
+  const db=await getDatabase();
+  return db.getAllAsync<RouteRunPhoto>(`SELECT p.* FROM route_run_photos p
+    JOIN route_run_items i ON i.id=p.item_id WHERE i.run_id=? ORDER BY p.created_at,p.id`,runId);
+}
 export async function startRouteRun(routeId:string):Promise<string> {
   const db=await getDatabase();
   const runId=id(),started=new Date().toISOString();
@@ -90,17 +97,39 @@ export async function startRouteRun(routeId:string):Promise<string> {
   });
   return runId;
 }
-export async function recordRoutePoint(itemId:string,status:RouteRunItem['status'],notes:string,lubricant:string,quantity:string):Promise<void> {
+export async function recordRoutePoint(
+  itemId:string,status:RouteRunItem['status'],notes:string,lubricant:string,quantity:string,
+  attachments:PhotoDraft[]=[]
+):Promise<void> {
   const message=routeResult(status,notes),grams=appliedGrams(status,quantity);
   if(lubricant.length>200)throw new Error('Nome do lubrificante muito longo.');
+  if(attachments.length>MAX_ROUTE_PHOTOS)throw new Error('Limite de 4 fotos por ponto.');
   const db=await getDatabase();
-  await db.withExclusiveTransactionAsync(async tx=>{
-    const updated=await tx.runAsync(`UPDATE route_run_items SET status=?,notes=?,lubricant=?,quantity_grams=?,recorded_at=?
-    WHERE id=? AND EXISTS(SELECT 1 FROM route_runs r WHERE r.id=route_run_items.run_id AND r.finished_at IS NULL)`,
-    status,message,lubricant.trim(),grams,new Date().toISOString(),itemId);
-    if(updated.changes!==1)throw new Error('Ponto não encontrado ou rota já encerrada.');
-  });
+  const savedFiles:string[]=[];
+  try {
+    // Copie antes da transação: escrita de arquivos não é rollbackável no SQLite.
+    for(const photo of attachments) savedFiles.push(await persistPhoto(photo));
+    await db.withExclusiveTransactionAsync(async tx=>{
+      const current=await tx.getFirstAsync<{run_id:string;finished_at:string|null;n:number}>(`
+        SELECT i.run_id,r.finished_at,(SELECT COUNT(*) FROM route_run_photos p WHERE p.item_id=i.id) AS n
+        FROM route_run_items i JOIN route_runs r ON r.id=i.run_id WHERE i.id=?`,itemId);
+      if(!current || current.finished_at!==null)throw new Error('Ponto não encontrado ou rota já encerrada.');
+      if(current.n+savedFiles.length>MAX_ROUTE_PHOTOS)throw new Error('Cada ponto permite até 4 fotos.');
+      const changed=await tx.runAsync(`UPDATE route_run_items SET status=?,notes=?,lubricant=?,quantity_grams=?,recorded_at=?
+        WHERE id=? AND EXISTS(SELECT 1 FROM route_runs r WHERE r.id=route_run_items.run_id AND r.finished_at IS NULL)`,
+        status,message,lubricant.trim(),grams,new Date().toISOString(),itemId);
+      if(changed.changes!==1)throw new Error('Ponto não encontrado ou rota já encerrada.');
+      for(let i=0;i<savedFiles.length;i++) {
+        await tx.runAsync('INSERT INTO route_run_photos(id,item_id,filename,mime_type,created_at) VALUES(?,?,?,?,?)',
+          id(),itemId,savedFiles[i],attachments[i].mime_type,new Date().toISOString());
+      }
+    });
+  } catch(error) {
+    await Promise.allSettled(savedFiles.map(deletePhotoFile));
+    throw error;
+  }
 }
+
 export async function finishRouteRun(runId:string):Promise<void> {
   const db=await getDatabase();
   await db.withExclusiveTransactionAsync(async tx=>{
