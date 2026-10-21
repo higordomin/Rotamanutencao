@@ -21,6 +21,7 @@ import {RoutesScreen} from './src/RoutesScreen';
 import {listRoutes,listAssetRouteHistory,type AssetRouteHistoryItem,type Route} from './src/routes';
 import {buildOperationalBoard,type BoardEntry} from './src/operationalBoard';
 import {ReminderSettings} from './src/ReminderSettings';
+import {ConsolidatedReportPanel} from './src/ConsolidatedReportPanel';
 import {syncLocalReminders} from './src/localReminders';
 import {filterCompletedExecutions} from './src/completedExecutions';
 import {inspectLocalStorage} from './src/storageDiagnostics';
@@ -561,6 +562,7 @@ export default function App() {
     </>;
     if (tab === 'Dados') return <>
       <Text style={styles.sectionTitle}>Seus dados</Text>
+      <ConsolidatedReportPanel/>
       <ReminderSettings/>
       <Text style={styles.description}>Todas as informações ficam neste aparelho. Não existe login, nuvem nem sincronização nesta versão.</Text>
       <View style={styles.card}>
@@ -683,7 +685,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.18 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.19 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
