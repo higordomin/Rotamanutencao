@@ -51,7 +51,7 @@ jobs:
           BADGING="$("$BUILD_TOOLS/aapt" dump badging "$APK" | grep -m 1 '^package:')"
           echo "$BADGING"
           [[ "$BADGING" == *"name='br.com.rotamanutencao.qa'"* ]] || { echo 'ID QA alterado!'; exit 1; }
-          [[ "$BADGING" == *"versionCode='140'"* ]] || { echo 'versionCode inesperado!'; exit 1; }
+          [[ "$BADGING" == *"versionCode='150'"* ]] || { echo 'versionCode inesperado!'; exit 1; }
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/rotamanutencao-qa-signature.txt
           # Debug keystore de template, observada nos APKs 0.4-0.6. Somente QA.
           grep -qi 'fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c' /tmp/rotamanutencao-qa-signature.txt || {
@@ -61,7 +61,7 @@ jobs:
       - name: Publicar artefato instalável de teste
         uses: actions/upload-artifact@v4
         with:
-          name: RotaManutencao-0_14_0-APK
+          name: RotaManutencao-0_15_0-APK
           path: mvp/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
