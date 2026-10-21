@@ -107,6 +107,15 @@ export async function initializeDatabase(): Promise<void> {
       position INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_run_items_run ON route_run_items(run_id, position);
+    CREATE TABLE IF NOT EXISTS route_run_photos (
+      id TEXT PRIMARY KEY NOT NULL,
+      item_id TEXT NOT NULL REFERENCES route_run_items(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL UNIQUE,
+      mime_type TEXT NOT NULL CHECK(mime_type IN ('image/jpeg','image/png')),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_photos_item ON route_run_photos(item_id);
+
 
   `);
   // Migração não destrutiva para quem já usava o MVP 0.1.
