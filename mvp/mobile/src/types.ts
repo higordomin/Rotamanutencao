@@ -34,6 +34,8 @@ export type WorkOrder = {
   recurrence_days: number;
   due_date: string;
   status: OrderStatus;
+  archived_at: string | null;
+  archive_reason: string;
   block_reason: string;
   blocked_at: string | null;
   partial_reason: string;
@@ -72,7 +74,7 @@ export type OrderDraft = Pick<WorkOrder,
 
 export type BackupData = {
   format: 'rotamanutencao-offline';
-  version: 2 | 3 | 4 | 5 | 6 | 7;
+  version: 2 | 3 | 4 | 5 | 6 | 7 | 8;
   exported_at: string;
   assets: Asset[];
   work_orders: Omit<WorkOrder, 'asset_name' | 'asset_code' | 'asset_area'>[];
