@@ -25,7 +25,7 @@ import {syncLocalReminders} from './src/localReminders';
 import {filterCompletedExecutions} from './src/completedExecutions';
 import {inspectLocalStorage} from './src/storageDiagnostics';
 import {duplicateOrderDraft, needsPriorityAttention} from './src/operatorActions';
-import {searchAssets, preselectAsset, executionBelongsToAssetSnapshot} from './src/assetWorkflow';
+import {searchAssets, preselectAsset, executionBelongsToAssetSnapshot, buildLegacyAssetIndex} from './src/assetWorkflow';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -174,6 +174,7 @@ export default function App() {
   const selectedAsset = useMemo(() => assets.find(asset => asset.id === assetFilterId) ?? null,
     [assets, assetFilterId]);
   const visibleAssets = useMemo(() => searchAssets(assets, assetSearch), [assets, assetSearch]);
+  const legacyAssetIndex = useMemo(() => buildLegacyAssetIndex(assets),[assets]);
   const today = localDate();
   const stateOf = (order: WorkOrder) => taskState(order, today);
   const counts = useMemo(() => taskSummary(orders, today), [orders, today]);
@@ -205,12 +206,12 @@ export default function App() {
 
   const completedExecutions = useMemo(
     () => filterCompletedExecutions(executions,search).filter(execution =>
-      !assetFilterId || (!!selectedAsset && executionBelongsToAssetSnapshot(execution, selectedAsset))),
-    [executions,search,assetFilterId,selectedAsset],
+      !assetFilterId || (!!selectedAsset && executionBelongsToAssetSnapshot(execution, selectedAsset,legacyAssetIndex))),
+    [executions,search,assetFilterId,selectedAsset,legacyAssetIndex],
   );
   const historyExecutions = useMemo(() => executions.filter(execution =>
-    !assetFilterId || (!!selectedAsset && executionBelongsToAssetSnapshot(execution,selectedAsset))),
-    [executions,assetFilterId,selectedAsset],
+    !assetFilterId || (!!selectedAsset && executionBelongsToAssetSnapshot(execution,selectedAsset,legacyAssetIndex))),
+    [executions,assetFilterId,selectedAsset,legacyAssetIndex],
   );
   const archivedVisible=useMemo(()=>{
     const term=search.trim().toLocaleLowerCase('pt-BR');
