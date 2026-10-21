@@ -21,7 +21,12 @@ async function readReportRows(start:string,end:string,includePhotos:boolean):Pro
 }> {
   const db=await getDatabase();
   const today=localDate();
-  return db.withExclusiveTransactionAsync(async tx=>{
+  // Expo SQLite retorna Promise<void> neste método: preencher resultado dentro da transação.
+  const output:{executions:ReportExecution[];routeRuns:RouteRun[];
+    routeItems:ReportRouteItem[];pendingOrders:ReportPending[];photos:ImageRow[]}={
+    executions:[],routeRuns:[],routeItems:[],pendingOrders:[],photos:[],
+  };
+  await db.withExclusiveTransactionAsync(async tx=>{
     const executions=await tx.getAllAsync<ReportExecution>(`
       SELECT id,order_title,result,executed_at,asset_label,category,notes,next_due_date
       FROM executions WHERE date(executed_at,'localtime') BETWEEN ? AND ?
@@ -62,8 +67,10 @@ async function readReportRows(start:string,end:string,includePhotos:boolean):Pro
         ...routeImages.map(p=>({...p,owner_kind:'route' as const})),
       ];
     }
-    return {executions,routeRuns,routeItems,pendingOrders,photos};
+    output.executions=executions;output.routeRuns=routeRuns;
+    output.routeItems=routeItems;output.pendingOrders=pendingOrders;output.photos=photos;
   });
+  return output;
 }
 
 /** Gera e compartilha, sob pedido explícito do usuário, sem alterar SQLite ou enviar para servidores. */
