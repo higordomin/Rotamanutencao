@@ -16,13 +16,14 @@ import {exportBackup, pickBackupFile, restoreBackup} from './src/backup';
 import {inspectBackup} from './src/backupInspection';
 import {CalendarPicker} from './src/CalendarPicker';
 import {brazilianDate} from './src/calendar';
+import {RoutesScreen} from './src/RoutesScreen';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
   text: '#EFF6FF', muted: '#9CB0C8', accent: '#47B7F6', green: '#5DD7AC',
   red: '#FF7D8B', yellow: '#FFD075',
 };
-type Tab = 'Início' | 'Atividades' | 'Ativos' | 'Histórico' | 'Dados';
+type Tab = 'Início' | 'Atividades' | 'Rotas' | 'Ativos' | 'Histórico' | 'Dados';
 type ModalType = 'asset' | 'order' | 'complete' | 'block' | null;
 type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Concluídas';
 const categories: Category[] = ['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção'];
@@ -424,7 +425,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.7.2 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.8 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
@@ -439,6 +440,7 @@ export default function App() {
             finally { setReady(true); }
           })(); }}/>
         </View>
+      : tab === 'Rotas' ? <RoutesScreen assets={assets}/>
       : tab === 'Atividades' ? <FlatList
           data={visibleOrders}
           keyExtractor={item => item.id}
@@ -466,12 +468,13 @@ export default function App() {
         />
       : <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content()}</ScrollView>}
     <View style={styles.nav}>
-      {([{label: 'Início', icon: '⌂'}, {label: 'Atividades', icon: '☑'},
-        {label: 'Ativos', icon: '⚙'}, {label: 'Histórico', icon: '◷'}, {label:'Dados',icon:'▣'}] as const).map(item =>
+      {([{label: 'Início', icon: '⌂', caption:'Início'}, {label: 'Atividades', icon: '☑', caption:'OS'},
+        {label: 'Rotas', icon: '⇢',caption:'Rotas'},
+        {label: 'Ativos', icon: '⚙',caption:'Ativos'}, {label: 'Histórico', icon: '◷',caption:'Hist.'}, {label:'Dados',icon:'▣',caption:'Dados'}] as const).map(item =>
         <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{selected: tab === item.label}}
           onPress={() => setTab(item.label)} style={styles.navItem}>
           <Text style={[styles.navIcon, tab === item.label && {color: COLORS.accent}]}>{item.icon}</Text>
-          <Text style={[styles.navLabel, tab === item.label && {color: COLORS.accent}]}>{item.label}</Text>
+          <Text style={[styles.navLabel, tab === item.label && {color: COLORS.accent}]}>{item.caption}</Text>
         </Pressable>)}
     </View>
     <Modal animationType="slide" visible={dialog !== null} transparent onRequestClose={closeDialog}>
