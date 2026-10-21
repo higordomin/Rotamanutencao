@@ -79,6 +79,11 @@ def open_sqlite(legacy=False, legacy_routes=False, legacy_history=False):
             else:
                 conn.execute("ALTER TABLE work_orders ADD COLUMN archive_reason TEXT NOT NULL DEFAULT ''")
     fields = [row[1] for row in conn.execute('PRAGMA table_info(executions)')]
+    # O schema inicial é legado: espelhar também migração de snapshots/área usada no app.
+    if 'asset_label' not in fields:
+        conn.execute("ALTER TABLE executions ADD COLUMN asset_label TEXT NOT NULL DEFAULT ''")
+    if 'category' not in fields:
+        conn.execute("ALTER TABLE executions ADD COLUMN category TEXT NOT NULL DEFAULT ''")
     if 'result' not in fields:
         conn.execute("ALTER TABLE executions ADD COLUMN result TEXT NOT NULL DEFAULT 'completed' CHECK(result IN ('completed','partial'))")
     if 'asset_id' not in fields:
