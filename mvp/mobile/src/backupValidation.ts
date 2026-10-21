@@ -12,8 +12,8 @@ const ident = (v: unknown): v is string => str(v, 100) && v.length > 0;
 const iso = (v: unknown): v is string => str(v, 50) && !Number.isNaN(Date.parse(v));
 
 export function validateBackup(data: unknown): asserts data is BackupData {
-  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4].includes(data.version as number))
-    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3 ou v4.');
+  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5].includes(data.version as number))
+    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4 ou v5.');
   if (!Array.isArray(data.assets) || data.assets.length > MAX_RECORDS) throw new Error('Equipamentos inválidos.');
   if (!Array.isArray(data.work_orders) || data.work_orders.length > MAX_RECORDS) throw new Error('Atividades inválidas.');
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
@@ -52,7 +52,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       || ((data.version as number) >= 3 && (!str(o.block_reason, 500) || (o.blocked_at !== null && !iso(o.blocked_at))
         || (!!o.block_reason !== !!o.blocked_at)
         || (o.status === 'completed' && !!o.block_reason)))
-      || (data.version === 4 && (
+      || ((data.version as number) >= 4 && (
         !str(o.partial_reason, 1000)
         || (o.partial_at !== null && !iso(o.partial_at))
         || (!!o.partial_reason !== !!o.partial_at)
@@ -64,7 +64,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       || !str(e.notes, 10000) || !iso(e.executed_at) || !validDate(e.previous_due_date)
       || (e.next_due_date !== null && !validDate(e.next_due_date))
       || !str(e.asset_label, 300) || !str(e.category, 100)
-      || (data.version === 4 && (!['partial','completed'].includes(e.result)
+      || ((data.version as number) >= 4 && (!['partial','completed'].includes(e.result)
         || (e.result === 'partial' && (e.notes.trim().length < 10 || e.notes.trim().length > 1000
           || e.next_due_date !== null)))))
       throw new Error('Execução com dados ou vínculos inválidos.');
@@ -78,6 +78,58 @@ export function validateBackup(data: unknown): asserts data is BackupData {
         || (ev.event_type === 'blocked' && !ev.reason.trim()))
         throw new Error('Evento de impedimento inválido.');
     }
+  }
+  // Rotas: somente o v5 exige a coleção completa, inclusive quando está vazia.
+  const routeCollections = ['routes','route_points','route_runs','route_run_items'] as const;
+  if (data.version === 5) {
+    for (const key of routeCollections) {
+      const value=data[key];
+      if (!Array.isArray(value) || value.length > MAX_RECORDS) throw new Error('Dados das rotas ausentes ou acima do limite: '+key);
+    }
+    const routeIds=ids(data.routes!, 'rotas');
+    const pointIds=ids(data.route_points!, 'pontos de rota');
+    const runIds=ids(data.route_runs!, 'execuções de rota');
+    ids(data.route_run_items!, 'registros dos pontos');
+    for (const r of data.routes!) {
+      if(!str(r.title,200)||!r.title.trim()||!str(r.area,200)||!iso(r.created_at))
+        throw new Error('Rota com dados inválidos.');
+    }
+    for (const p of data.route_points!) {
+      if(!ident(p.route_id)||!routeIds.has(p.route_id)
+        || (p.asset_id!==null&&(!ident(p.asset_id)||!aIds.has(p.asset_id)))
+        || !str(p.title,200)||!p.title.trim()||!str(p.lubricant,200)
+        || !Number.isFinite(p.quantity_grams)||p.quantity_grams<0||p.quantity_grams>100000
+        || !Number.isSafeInteger(p.position)||p.position<0)
+        throw new Error('Ponto de rota inválido.');
+    }
+    for (const r of data.route_runs!) {
+      if((r.route_id!==null&&(!ident(r.route_id)||!routeIds.has(r.route_id)))
+        || !str(r.route_title,200)||!r.route_title.trim()||!iso(r.started_at)
+        || (r.finished_at!==null&&!iso(r.finished_at)))
+        throw new Error('Execução de rota inválida.');
+    }
+    const counts=new Map<string,{items:number;pending:number}>();
+    for (const i of data.route_run_items!) {
+      if(!ident(i.run_id)||!runIds.has(i.run_id)||!ident(i.point_id)
+        || !str(i.point_title,200)||!i.point_title.trim()||!str(i.asset_label,300)
+        || !str(i.lubricant,200)||!Number.isFinite(i.quantity_grams)||i.quantity_grams<0||i.quantity_grams>100000
+        || !['pending','done','anomaly','skipped'].includes(i.status)
+        || !str(i.notes,1000)||!Number.isSafeInteger(i.position)||i.position<0
+        || (i.recorded_at!==null&&!iso(i.recorded_at))
+        || (i.status==='pending'&&(i.recorded_at!==null||!!i.notes))
+        || (i.status!=='pending'&&!i.recorded_at)
+        || ((i.status==='anomaly'||i.status==='skipped')&&i.notes.trim().length<10))
+        throw new Error('Registro de checklist inválido.');
+      const count=counts.get(i.run_id)||{items:0,pending:0};
+      count.items++; if(i.status==='pending')count.pending++;
+      counts.set(i.run_id,count);
+    }
+    for (const r of data.route_runs!) {
+      const stat=counts.get(r.id);
+      if(!stat?.items || (r.finished_at!==null&&stat.pending>0))
+        throw new Error('Execução de rota incompleta ou vazia.');
+    }
+    void pointIds; // O registro executado guarda snapshot e pode apontar para ponto já removido.
   }
   const imagesPerExecution = new Map<string, number>();
   for (const p of data.photos) {
