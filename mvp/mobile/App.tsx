@@ -24,6 +24,7 @@ import {ReminderSettings} from './src/ReminderSettings';
 import {syncLocalReminders} from './src/localReminders';
 import {filterCompletedExecutions} from './src/completedExecutions';
 import {inspectLocalStorage} from './src/storageDiagnostics';
+import {duplicateOrderDraft, needsPriorityAttention} from './src/operatorActions';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -32,7 +33,7 @@ const COLORS = {
 };
 type Tab = 'Início' | 'Atividades' | 'Rotas' | 'Ativos' | 'Histórico' | 'Dados';
 type ModalType = 'asset' | 'order' | 'complete' | 'block' | 'archive' | null;
-type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Concluídas' | 'Arquivadas';
+type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Prioritárias' | 'Concluídas' | 'Arquivadas';
 type ActivityListItem = {kind:'order';value:WorkOrder}|{kind:'execution';value:Execution};
 const categories: Category[] = ['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção'];
 const priorities: Priority[] = ['Baixa', 'Média', 'Alta'];
@@ -113,6 +114,7 @@ export default function App() {
   const modalScrollRef = useRef<ScrollView>(null);
   const [assetDraft, setAssetDraft] = useState<AssetDraft>(initialAsset());
   const [orderDraft, setOrderDraft] = useState<OrderDraft>(initialOrder());
+  const [duplicateSource, setDuplicateSource] = useState<string | null>(null);
   const [recurrenceInput, setRecurrenceInput] = useState('30');
   const [editingAsset, setEditingAsset] = useState<string | undefined>();
   const [editingOrder, setEditingOrder] = useState<string | undefined>();
@@ -187,6 +189,7 @@ export default function App() {
       const state = taskState(order, today);
       if (orderFilter === 'Pendentes' && ['completed', 'blocked'].includes(state)) return false;
       if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
+      if (orderFilter === 'Prioritárias' && !needsPriorityAttention(order)) return false;
       if (orderFilter === 'Concluídas' || orderFilter === 'Arquivadas') return false; // A aba Concluídas mostra execuções históricas, não estados de OS.
       return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason, order.partial_reason]
         .some(value => value.toLocaleLowerCase('pt-BR').includes(term));
@@ -224,6 +227,7 @@ export default function App() {
     setDialog('asset');
   };
   const openOrder = (order?: WorkOrder) => {
+    setDuplicateSource(null);
     setCalendarOpen(false);
     setEditingOrder(order?.id);
     setRecurrenceInput(String(order?.recurrence_days ?? 30));
@@ -233,6 +237,19 @@ export default function App() {
       recurrence_days: order.recurrence_days, due_date: order.due_date,
     } : initialOrder());
     setDialog('order');
+  };
+  const openDuplicateOrder = (order: WorkOrder) => {
+    try {
+      const draft = duplicateOrderDraft(order, localDate());
+      setCalendarOpen(false);
+      setEditingOrder(undefined); // Salvar criará uma OS nova, com ID e histórico próprios.
+      setRecurrenceInput(String(draft.recurrence_days));
+      setOrderDraft(draft);
+      setDuplicateSource(order.title);
+      setDialog('order');
+    } catch (error) {
+      Alert.alert('Não foi possível duplicar', error instanceof Error ? error.message : String(error));
+    }
   };
   const openComplete = (order: WorkOrder) => {
     setCompletingOrder(order);
@@ -336,6 +353,7 @@ export default function App() {
               : <Action label="⚠ Impedimento" secondary disabled={busy}
                   onPress={() => openBlock(order)}/>)}
             <Action label="Editar" secondary onPress={() => openOrder(order)}/>
+            <Action label="Duplicar" secondary disabled={busy} onPress={() => openDuplicateOrder(order)}/>
             <Action label="Arquivar" dangerous disabled={busy}
               onPress={()=>openArchiveOrder(order)}/>
           </>}
@@ -584,7 +602,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.14 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.15 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
@@ -624,7 +642,7 @@ export default function App() {
             <TextInput accessibilityLabel="Buscar atividades" placeholder="Buscar por TAG, equipamento ou atividade..."
               placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch} style={styles.searchField}/>
             <View style={styles.filters}>
-              {(['Todas', 'Pendentes', 'Impedidas', 'Concluídas', 'Arquivadas'] as const).map(filter =>
+              {(['Todas', 'Pendentes', 'Impedidas', 'Prioritárias', 'Concluídas', 'Arquivadas'] as const).map(filter =>
                 <Pressable key={filter} accessibilityRole="button" accessibilityState={{selected: orderFilter === filter}}
                   onPress={() => setOrderFilter(filter)} style={[styles.choice, orderFilter === filter && styles.choiceActive]}>
                   <Text style={{color: orderFilter === filter ? COLORS.bg : COLORS.text, fontWeight: '700', fontSize: 12}}>{filter}</Text>
@@ -656,7 +674,7 @@ export default function App() {
         <SafeAreaView style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <Text style={styles.sectionTitle}>{calendarOpen ? 'Selecionar data' : dialog === 'asset' ? (editingAsset ? 'Editar equipamento' : 'Novo equipamento')
-              : dialog === 'order' ? (editingOrder ? 'Editar atividade' : 'Nova atividade')
+              : dialog === 'order' ? (editingOrder ? 'Editar atividade' : duplicateSource ? 'Duplicar atividade' : 'Nova atividade')
               : dialog === 'block' ? 'Registrar impedimento' : dialog==='archive' ? 'Arquivar OS' : 'Registrar execução'}</Text>
             <Pressable accessibilityRole="button" accessibilityLabel={calendarOpen ? 'Voltar ao formulário' : 'Fechar formulário'}
               onPress={closeDialog}><Text style={{color: COLORS.muted, fontSize: 24}}>{calendarOpen ? '‹' : '×'}</Text></Pressable>
@@ -681,6 +699,7 @@ export default function App() {
                 onPress={() => { void handle(() => saveAsset(assetDraft, editingAsset)); }}/>
             </>}
             {dialog === 'order' && <>
+              {duplicateSource && <Text style={styles.description}>Nova OS independente baseada em “{duplicateSource}”. Confira o prazo (ajustado para hoje), equipamento e periodicidade antes de salvar. Fotos, histórico, impedimentos e pendências não serão copiados.</Text>}
               <FormField label="Atividade *" placeholder="Ex.: Lubrificar mancais" value={orderDraft.title}
                 onChangeText={v => setOrderDraft({...orderDraft, title: v})}/>
               <FormField label="Descrição" placeholder="Pontos, graxa, procedimentos..." multiline
