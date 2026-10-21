@@ -17,5 +17,7 @@ export function inspectBackup(data: unknown) {
     routePoints: data.route_points?.length ?? 0,
     routeRuns: data.route_runs?.length ?? 0,
     routePhotos: data.route_photos?.length ?? 0,
+    scheduledRoutes: data.routes?.filter(r => r.recurrence_days>0).length ?? 0,
+    routesWithAttention: data.routes?.filter(r => r.attention_count>0).length ?? 0,
   };
 }
