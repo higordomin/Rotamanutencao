@@ -137,8 +137,9 @@ export function validateBackup(data: unknown): asserts data is BackupData {
     if (!Array.isArray(data.route_photos) || data.route_photos.length > MAX_RECORDS)
       throw new Error('Fotos dos pontos ausentes ou acima do limite.');
     ids(data.route_photos,'fotos dos pontos');
-    const itemIds = new Set((data.route_run_items ?? []).map(i => i.id));
-    const items = new Map((data.route_run_items ?? []).map(i => [i.id, i]));
+    const d = data as unknown as BackupData;
+    const itemIds = new Set((d.route_run_items ?? []).map(i => i.id));
+    const items = new Map((d.route_run_items ?? []).map(i => [i.id, i]));
     const counts = new Map<string,number>();
     for (const p of data.route_photos) {
       if (!ident(p.item_id)||!itemIds.has(p.item_id)
