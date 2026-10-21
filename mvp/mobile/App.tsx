@@ -17,6 +17,8 @@ import {inspectBackup} from './src/backupInspection';
 import {CalendarPicker} from './src/CalendarPicker';
 import {brazilianDate} from './src/calendar';
 import {RoutesScreen} from './src/RoutesScreen';
+import {ReminderSettings} from './src/ReminderSettings';
+import {syncLocalReminders} from './src/localReminders';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -130,6 +132,7 @@ export default function App() {
   const refresh = useCallback(async () => {
     const [a, o, e, p, ev] = await Promise.all([listAssets(), listOrders(), listExecutions(), listAllPhotos(), listRecentEvents()]);
     setAssets(a); setOrders(o); setExecutions(e); setEvidence(p); setEvents(ev);
+    void syncLocalReminders().catch(err=>console.warn('Lembretes não atualizados:',String(err)));
   }, []);
 
   useEffect(() => {
@@ -348,6 +351,7 @@ export default function App() {
     </>;
     if (tab === 'Dados') return <>
       <Text style={styles.sectionTitle}>Seus dados</Text>
+      <ReminderSettings/>
       <Text style={styles.description}>Todas as informações ficam neste aparelho. Não existe login, nuvem nem sincronização nesta versão.</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Exportar backup completo</Text>
@@ -426,7 +430,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.10 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.11 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
@@ -441,7 +445,9 @@ export default function App() {
             finally { setReady(true); }
           })(); }}/>
         </View>
-      : tab === 'Rotas' ? <RoutesScreen assets={assets}/>
+      : tab === 'Rotas' ? <RoutesScreen assets={assets} onDataChanged={()=>{
+          void syncLocalReminders().catch(err=>console.warn('Falha ao atualizar lembretes:',String(err)));
+        }}/>
       : tab === 'Atividades' ? <FlatList
           data={visibleOrders}
           keyExtractor={item => item.id}
