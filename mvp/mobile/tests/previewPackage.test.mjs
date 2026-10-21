@@ -19,7 +19,7 @@ test('produção mantém ID Android fixo e versionCode 71', () => {
   }
 });
 
-test('QA 0.7 usa ID fixo, separado da produção e versões legadas', () => {
+test('QA 0.7.1 usa ID fixo, separado da produção e versões legadas', () => {
   try {
     process.env.ROTA_PREVIEW = '1';
     const result = resolveAppConfig({config: base});
