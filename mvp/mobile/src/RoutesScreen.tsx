@@ -89,7 +89,7 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
     catch(e){Alert.alert('Operação não realizada',e instanceof Error?e.message:String(e));}
     finally{setBusy(false);}
   };
-  return <KeyboardAvoidingView style={{flex:1,backgroundColor:c.bg}} behavior={Platform.OS==='ios'?'padding':undefined}>
+  return <KeyboardAvoidingView style={{flex:1,backgroundColor:c.bg}} behavior={Platform.OS==='ios'?'padding':'height'}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.page}>
       <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:10}}>
         <View style={{flex:1}}><Text style={s.heading}>Rotas de manutenção</Text>
