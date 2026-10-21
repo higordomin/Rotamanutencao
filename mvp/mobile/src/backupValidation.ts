@@ -12,8 +12,8 @@ const ident = (v: unknown): v is string => str(v, 100) && v.length > 0;
 const iso = (v: unknown): v is string => str(v, 50) && !Number.isNaN(Date.parse(v));
 
 export function validateBackup(data: unknown): asserts data is BackupData {
-  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6].includes(data.version as number))
-    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5 ou v6.');
+  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7].includes(data.version as number))
+    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6 ou v7.');
   if (!Array.isArray(data.assets) || data.assets.length > MAX_RECORDS) throw new Error('Equipamentos inválidos.');
   if (!Array.isArray(data.work_orders) || data.work_orders.length > MAX_RECORDS) throw new Error('Atividades inválidas.');
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
@@ -92,7 +92,15 @@ export function validateBackup(data: unknown): asserts data is BackupData {
     const runIds=ids(d.route_runs!, 'execuções de rota');
     ids(d.route_run_items!, 'registros dos pontos');
     for (const r of d.routes!) {
-      if(!str(r.title,200)||!r.title.trim()||!str(r.area,200)||!iso(r.created_at))
+      if(!str(r.title,200)||!r.title.trim()||!str(r.area,200)||!iso(r.created_at)
+        || (data.version === 7 && (
+          !Number.isSafeInteger(r.recurrence_days)||r.recurrence_days<0||r.recurrence_days>36500
+          || (r.next_due_date!==null && !validDate(r.next_due_date))
+          || (r.recurrence_days===0 && r.next_due_date!==null)
+          || (r.recurrence_days>0 && !r.next_due_date)
+          || !Number.isSafeInteger(r.attention_count)||r.attention_count<0||r.attention_count>100
+          || (r.attention_at!==null && !iso(r.attention_at))
+          || (!!r.attention_count !== !!r.attention_at))))
         throw new Error('Rota com dados inválidos.');
     }
     for (const p of d.route_points!) {
@@ -133,7 +141,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
     }
     void pointIds; // O registro executado guarda snapshot e pode apontar para ponto já removido.
   }
-  if (data.version === 6) {
+  if ((data.version as number) >= 6) {
     if (!Array.isArray(data.route_photos) || data.route_photos.length > MAX_RECORDS)
       throw new Error('Fotos dos pontos ausentes ou acima do limite.');
     ids(data.route_photos,'fotos dos pontos');
