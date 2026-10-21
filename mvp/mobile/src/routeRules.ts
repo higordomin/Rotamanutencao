@@ -13,3 +13,8 @@ export function routeResult(status:'pending'|'done'|'anomaly'|'skipped',notes:st
   if(status!=='done'&&message.length<10)throw new Error('Explique a anomalia ou motivo de não execução (mínimo 10 caracteres).');
   return message;
 }
+
+/** Um ponto não executado nunca deve contabilizar graxa aplicada. */
+export function appliedGrams(status:'pending'|'done'|'anomaly'|'skipped',raw:string|number):number {
+  return status==='skipped'?0:gramAmount(raw);
+}
