@@ -100,6 +100,10 @@ test('backup v5 inclui rota, ponto, execução e checklist consistente',()=>{
   rejects(d,/Registro de checklist/);
   d.route_run_items[0].notes='Ruído anormal no eixo inferior';
   check(d);
+  d.route_run_items[0].status='skipped';
+  rejects(d,/Registro de checklist/); // não executado não pode usar os 3,5 g planejados
+  d.route_run_items[0].quantity_grams=0;
+  check(d);
   d.route_run_items[0].status='pending';
   rejects(d,/Registro de checklist|Execução de rota/);
 });
