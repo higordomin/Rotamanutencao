@@ -1,8 +1,9 @@
 import React,{useEffect,useState} from 'react';
-import {Alert,Pressable,StyleSheet,Text,View} from 'react-native';
-import {activateReminders,chooseReminderHour,countScheduledReminders,
-  deactivateReminders,getReminderSettings,syncLocalReminders} from './localReminders';
-import {REMINDER_HOURS} from './reminderPlan';
+import {Alert,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import DateTimePicker,{DateTimePickerAndroid} from '@react-native-community/datetimepicker';
+import {activateReminders,chooseReminderTime,countScheduledReminders,
+  deactivateReminders,getReminderSettings,scheduleReminderTest,syncLocalReminders} from './localReminders';
+import {reminderTimeLabel} from './reminderPlan';
 
 const C={panel:'#111E31',border:'#24394F',bg:'#08101E',text:'#EFF6FF',
   muted:'#9CB0C8',blue:'#47B7F6',green:'#5DD7AC',yellow:'#FFD075'};
@@ -10,12 +11,15 @@ const C={panel:'#111E31',border:'#24394F',bg:'#08101E',text:'#EFF6FF',
 export function ReminderSettings(){
   const [enabled,setEnabled]=useState(false);
   const [hour,setHour]=useState(14);
+  const [minute,setMinute]=useState(0);
   const [count,setCount]=useState(0);
   const [loading,setLoading]=useState(true);
   const [working,setWorking]=useState(false);
+  const [iosClock,setIosClock]=useState(false);
+  const [testTime,setTestTime]=useState<string|null>(null);
   const load=async()=>{
     const [settings,scheduled]=await Promise.all([getReminderSettings(),countScheduledReminders()]);
-    setEnabled(settings.enabled);setHour(settings.hour);setCount(scheduled);
+    setEnabled(settings.enabled);setHour(settings.hour);setMinute(settings.minute);setCount(scheduled);
   };
   useEffect(()=>{
     let live=true;
@@ -30,6 +34,37 @@ export function ReminderSettings(){
     catch(e){Alert.alert('Não foi possível alterar os lembretes',e instanceof Error?e.message:String(e));}
     finally{setWorking(false);}
   };
+  const dateValue=()=>{
+    const date=new Date();
+    date.setHours(hour,minute,0,0);
+    return date;
+  };
+  const openClock=()=>{
+    if(working||loading)return;
+    if(Platform.OS==='android'){
+      DateTimePickerAndroid.open({
+        value:dateValue(),mode:'time',display:'clock',is24Hour:true,
+        onChange:(event,selected)=>{
+          if(event.type==='set'&&selected){
+            void act(()=>chooseReminderTime(selected.getHours(),selected.getMinutes()));
+          }
+        },
+      });
+    }else setIosClock(true);
+  };
+  const showTest=async()=>{
+    if(working||loading)return;
+    setWorking(true);
+    try {
+      const at=await scheduleReminderTest();
+      const msg=at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+      setTestTime(msg);
+      Alert.alert('Teste programado',`Aviso local previsto para aproximadamente ${msg} (daqui a 2 minutos). Bloqueie a tela ou deixe o aplicativo em segundo plano.`);
+      await load();
+    }catch(e){
+      Alert.alert('Teste não programado',e instanceof Error?e.message:String(e));
+    }finally{setWorking(false);}
+  };
   return <View style={s.card}>
     <Text style={s.heading}>Lembretes locais de manutenção</Text>
     <Text style={s.note}>Opcional, sem internet e sem login. Avisos para OS e rotas próximas do prazo,
@@ -37,16 +72,24 @@ export function ReminderSettings(){
     <Text style={[s.state,{color:enabled?C.green:C.muted}]}>
       {loading?'Carregando…':enabled?'● Lembretes ativados':'○ Lembretes desativados'}
     </Text>
-    <Text style={s.note}>Horário dos avisos</Text>
-    <View style={s.row}>
-      {REMINDER_HOURS.map(h=><Pressable key={h} accessibilityRole="button"
-        accessibilityState={{selected:hour===h}}
-        disabled={working||loading}
-        onPress={()=>{void act(()=>chooseReminderHour(h));}}
-        style={[s.option,hour===h&&s.active]}>
-        <Text style={[s.optionText,hour===h&&{color:C.bg}]}>{h}:00</Text>
-      </Pressable>)}
-    </View>
+    <Text style={s.note}>Horário diário dos avisos (relógio Android)</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel="Escolher horário do lembrete"
+      disabled={working||loading} onPress={openClock} style={s.clockButton}>
+      <Text style={s.clockIcon}>◷</Text>
+      <View style={{flex:1}}>
+        <Text style={s.clockTime}>{reminderTimeLabel(hour,minute)}</Text>
+        <Text style={s.note}>Toque para escolher hora e minuto</Text>
+      </View>
+      <Text style={{color:C.blue,fontWeight:'800'}}>Alterar</Text>
+    </Pressable>
+    {Platform.OS==='ios'&&iosClock&&<View>
+      <DateTimePicker value={dateValue()} mode="time" display="spinner" onChange={(_event,selected)=>{
+        if(selected)void act(()=>chooseReminderTime(selected.getHours(),selected.getMinutes()));
+      }}/>
+      <Pressable onPress={()=>setIosClock(false)} style={s.action}>
+        <Text style={s.actionText}>Fechar relógio</Text>
+      </Pressable>
+    </View>}
     <View style={s.row}>
       <Pressable accessibilityRole="button" disabled={working||loading}
         style={[s.action,{backgroundColor:enabled?C.border:C.blue}]}
@@ -64,11 +107,22 @@ export function ReminderSettings(){
         <Text style={[s.actionText,{color:C.text}]}>Revisar avisos</Text>
       </Pressable>}
     </View>
-    <Text style={s.note}>{count} lembrete(s) agendado(s). O aplicativo atualiza os avisos ao ser aberto ou
-      quando você altera uma OS ou rota. Limite de 40 agendamentos futuros, priorizando pendências.</Text>
-    <Text style={[s.note,{color:C.yellow}]}>A entrega depende das permissões e das regras de economia
-      de bateria do Android. Não há consulta ao banco com o app fechado; rotas além de 45 dias
-      serão programadas ao abrir o aplicativo novamente. Os avisos não substituem o planejamento oficial.</Text>
+    {enabled&&<View style={s.testBox}>
+      <Text style={[s.note,{color:C.text,fontWeight:'800'}]}>Verificar se o Android recebe notificações</Text>
+      <Text style={s.note}>Este teste independe de OS e rotas; programe um aviso para daqui a 2 minutos.</Text>
+      <Pressable accessibilityRole="button" disabled={working} onPress={()=>{void showTest();}}
+        style={[s.action,{alignSelf:'flex-start',backgroundColor:C.blue}]}>
+        <Text style={s.actionText}>🔔 Testar notificação em 2 minutos</Text>
+      </Pressable>
+      {!!testTime&&<Text style={[s.note,{color:C.green}]}>Teste programado para aproximadamente {testTime}. Confira a bandeja de notificações.</Text>}
+    </View>}
+    <Text style={s.note}>{count} lembrete(s) de manutenção agendado(s). Se estiver em 0, verifique se há
+      OS ou rotas próximas do prazo ou pendências. O teste acima não entra nessa contagem.</Text>
+    <Text style={s.note}>Se o horário escolhido já passou hoje, o aviso de hoje não é enviado retroativamente:
+      um aviso pendente será programado para o próximo horário possível, normalmente amanhã.</Text>
+    <Text style={[s.note,{color:C.yellow}]}>O Android pode atrasar avisos devido às permissões e
+      à economia de bateria. Se o teste não chegar, confira as notificações do aplicativo e o
+      canal “Manutenções e rotas” nas configurações do Android. O aplicativo não consulta o banco com a tela fechada.</Text>
   </View>;
 }
 const s=StyleSheet.create({
@@ -77,9 +131,11 @@ const s=StyleSheet.create({
   note:{color:C.muted,fontSize:12,lineHeight:18},
   state:{fontSize:14,fontWeight:'800',marginTop:4},
   row:{flexDirection:'row',flexWrap:'wrap',gap:8},
-  option:{backgroundColor:C.bg,paddingHorizontal:18,paddingVertical:11,borderRadius:10,borderWidth:1,borderColor:C.border},
-  active:{backgroundColor:C.blue,borderColor:C.blue},
-  optionText:{color:C.text,fontWeight:'800'},
-  action:{paddingHorizontal:14,minHeight:44,justifyContent:'center',borderRadius:10},
+  clockButton:{flexDirection:'row',gap:12,alignItems:'center',backgroundColor:C.bg,
+    borderWidth:1,borderColor:C.blue,borderRadius:12,padding:12,minHeight:72},
+  clockIcon:{fontSize:32,color:C.blue},
+  clockTime:{fontSize:26,color:C.text,fontWeight:'900'},
+  action:{paddingHorizontal:14,minHeight:44,justifyContent:'center',borderRadius:10,backgroundColor:C.blue},
   actionText:{color:C.bg,fontWeight:'800',fontSize:12},
+  testBox:{backgroundColor:C.bg,borderColor:C.border,borderWidth:1,borderRadius:12,padding:12,gap:9},
 });

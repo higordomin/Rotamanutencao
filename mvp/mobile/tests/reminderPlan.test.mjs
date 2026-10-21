@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {planReminders,MAX_REMINDERS,REMINDER_HOURS} from '../src/reminderPlan.ts';
+import {planReminders,MAX_REMINDERS,validReminderTime,reminderTimeLabel} from '../src/reminderPlan.ts';
 
 const at=(y,m,d,h)=>new Date(y,m-1,d,h,0,0,0);
 test('agenda vencimento de OS no horário selecionado',()=>{
@@ -35,7 +35,25 @@ test('alertas críticos têm precedência e limite de quarenta notificações',(
   assert.equal(r.length,MAX_REMINDERS);
   assert.equal(r[0].key,'route:critical');
 });
-test('horário de lembrete precisa ser uma opção válida',()=>{
-  assert.deepEqual([...REMINDER_HOURS],[8,14,19]);
-  assert.throws(()=>planReminders([],at(2026,10,21,9),28),/Horário/);
+test('aceita qualquer hora e minuto no formato 24h, inclusive 08:07',()=>{
+  assert.equal(reminderTimeLabel(8,7),'08:07');
+  assert.equal(reminderTimeLabel(23,59),'23:59');
+  assert.equal(validReminderTime(0,0),true);
+  assert.equal(validReminderTime(24,0),false);
+  assert.equal(validReminderTime(10,60),false);
+  const r=planReminders([{id:'1',type:'order',title:'Teste',dueDate:'2026-10-21'}],at(2026,10,21,8),8,7);
+  assert.equal(r[0].date.getHours(),8);
+  assert.equal(r[0].date.getMinutes(),7);
+});
+test('horário passado não dispara imediatamente: seleciona amanhã no minuto escolhido',()=>{
+  const now=new Date(2026,9,21,8,9);
+  const r=planReminders([{id:'1',type:'route',title:'Rota',dueDate:'2026-10-21'}],now,8,0);
+  assert.equal(r[0].date.getDate(),22);
+  assert.equal(r[0].date.getHours(),8);
+  assert.equal(r[0].date.getMinutes(),0);
+});
+test('horário inválido recusa minutos ou horas fracionários',()=>{
+  for(const [h,m] of [[24,0],[-1,0],[8,60],[8,-1],[8,2.5]]){
+    assert.throws(()=>planReminders([],at(2026,10,21,9),h,m),/Horário/);
+  }
 });
