@@ -49,7 +49,8 @@ function RunItem({item,onSaved,disabled}:{item:RouteRunItem;onSaved:()=>Promise<
         </Pressable>)}
       </View>
       <Input label="Lubrificante utilizado" value={lubricant} onChange={setLubricant} placeholder="Ex.: NEVASTANE HD2T"/>
-      <Input label="Quantidade aplicada (g)" value={grams} onChange={setGrams} numeric placeholder="0"/>
+      {status==='skipped' ? <Text style={[s.note,{color:c.amber}]}>Não executado: quantidade aplicada será registrada como 0 g.</Text>
+        : <Input label="Quantidade aplicada (g)" value={grams} onChange={setGrams} numeric placeholder="0"/>}
       <Input label={status==='done'?'Observações (opcional)':'Justificativa / anomalia (obrigatória)'}
         value={notes} onChange={setNotes} multiline placeholder="Informe o que foi observado, sem dados confidenciais"/>
       <View style={{marginTop:12}}><Btn text={working?'Salvando...':'Salvar registro do ponto'} disabled={working} onPress={()=>{void save();}}/></View>
