@@ -12,8 +12,8 @@ const ident = (v: unknown): v is string => str(v, 100) && v.length > 0;
 const iso = (v: unknown): v is string => str(v, 50) && !Number.isNaN(Date.parse(v));
 
 export function validateBackup(data: unknown): asserts data is BackupData {
-  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7].includes(data.version as number))
-    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6 ou v7.');
+  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7, 8].includes(data.version as number))
+    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6, v7 ou v8.');
   if (!Array.isArray(data.assets) || data.assets.length > MAX_RECORDS) throw new Error('Equipamentos inválidos.');
   if (!Array.isArray(data.work_orders) || data.work_orders.length > MAX_RECORDS) throw new Error('Atividades inválidas.');
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
@@ -52,6 +52,11 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       || ((data.version as number) >= 3 && (!str(o.block_reason, 500) || (o.blocked_at !== null && !iso(o.blocked_at))
         || (!!o.block_reason !== !!o.blocked_at)
         || (o.status === 'completed' && !!o.block_reason)))
+      || (data.version === 8 && (
+        (o.archived_at!==null && !iso(o.archived_at))
+        || !str(o.archive_reason,500)
+        || (!!o.archived_at !== !!o.archive_reason)
+        || (!!o.archived_at && o.archive_reason.trim().length<10)))
       || ((data.version as number) >= 4 && (
         !str(o.partial_reason, 1000)
         || (o.partial_at !== null && !iso(o.partial_at))
@@ -93,7 +98,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
     ids(d.route_run_items!, 'registros dos pontos');
     for (const r of d.routes!) {
       if(!str(r.title,200)||!r.title.trim()||!str(r.area,200)||!iso(r.created_at)
-        || (data.version === 7 && (
+        || ((data.version as number) >= 7 && (
           !Number.isSafeInteger(r.recurrence_days)||r.recurrence_days<0||r.recurrence_days>36500
           || (r.next_due_date!==null && !validDate(r.next_due_date))
           || (r.recurrence_days===0 && r.next_due_date!==null)
