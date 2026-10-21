@@ -1,6 +1,6 @@
 import type {Asset} from './types';
 import {getDatabase} from './db';
-import {gramAmount,routeResult} from './routeRules';
+import {gramAmount,routeResult,appliedGrams} from './routeRules';
 
 export type Route = {id:string;title:string;area:string;created_at:string;point_count?:number};
 export type RoutePoint = {id:string;route_id:string;asset_id:string|null;title:string;lubricant:string;
@@ -89,7 +89,7 @@ export async function startRouteRun(routeId:string):Promise<string> {
   return runId;
 }
 export async function recordRoutePoint(itemId:string,status:RouteRunItem['status'],notes:string,lubricant:string,quantity:string):Promise<void> {
-  const message=routeResult(status,notes),grams=gramAmount(quantity);
+  const message=routeResult(status,notes),grams=appliedGrams(status,quantity);
   if(lubricant.length>200)throw new Error('Nome do lubrificante muito longo.');
   const db=await getDatabase();
   await db.withExclusiveTransactionAsync(async tx=>{
