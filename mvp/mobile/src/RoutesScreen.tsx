@@ -1,9 +1,10 @@
 import React,{useCallback,useEffect,useMemo,useState} from 'react';
-import {Alert,KeyboardAvoidingView,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
-import type {Asset} from './types';
+import {Alert,KeyboardAvoidingView,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View,Image} from 'react-native';
+import type {Asset,PhotoDraft} from './types';
+import {selectPhoto,evidenceUri} from './evidence';
 import {addRoutePoint,createRoute,deleteRoute,deleteRoutePoint,finishRouteRun,
-  listRoutePoints,listRouteRuns,listRoutes,listRunItems,recordRoutePoint,startRouteRun,
-  type Route,type RoutePoint,type RouteRun,type RouteRunItem} from './routes';
+  listRoutePoints,listRouteRuns,listRoutes,listRunItems,listRunPhotos,recordRoutePoint,startRouteRun,MAX_ROUTE_PHOTOS,
+  type Route,type RoutePoint,type RouteRun,type RouteRunItem,type RouteRunPhoto} from './routes';
 import {exportRoutePdf} from './routeReport';
 
 const c={bg:'#08101E',panel:'#111E31',field:'#16273D',line:'#24394F',text:'#EFF6FF',
@@ -23,16 +24,26 @@ function Input({label,value,onChange,placeholder,numeric=false,multiline=false}:
       multiline={multiline}/>
   </View>;
 }
-function RunItem({item,onSaved,disabled}:{item:RouteRunItem;onSaved:()=>Promise<void>;disabled:boolean}){
+function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>Promise<void>;
+  disabled:boolean;photos:RouteRunPhoto[]}){
   const [status,setStatus]=useState<RouteRunItem['status']>(item.status);
   const [notes,setNotes]=useState(item.notes);
   const [lubricant,setLubricant]=useState(item.lubricant);
   const [grams,setGrams]=useState(String(item.quantity_grams));
   const [working,setWorking]=useState(false);
+  const [draftPhotos,setDraftPhotos]=useState<PhotoDraft[]>([]);
+  const addPhoto=async(camera:boolean)=>{
+    if(working || photos.length+draftPhotos.length>=MAX_ROUTE_PHOTOS)return;
+    try {
+      const photo=await selectPhoto(camera);
+      if(photo) setDraftPhotos(current=>current.length+photos.length>=MAX_ROUTE_PHOTOS?current:[...current,photo]);
+    }catch(error){Alert.alert('Não foi possível adicionar foto',error instanceof Error?error.message:String(error));}
+  };
   const save=async()=>{
     if(working)return;
     setWorking(true);
-    try{await recordRoutePoint(item.id,status,notes,lubricant,grams);await onSaved();}
+    try{await recordRoutePoint(item.id,status,notes,lubricant,grams,draftPhotos);
+      setDraftPhotos([]);await onSaved();}
     catch(e){Alert.alert('Registro não salvo',e instanceof Error?e.message:String(e));}
     finally{setWorking(false);}
   };
@@ -53,8 +64,27 @@ function RunItem({item,onSaved,disabled}:{item:RouteRunItem;onSaved:()=>Promise<
         : <Input label="Quantidade aplicada (g)" value={grams} onChange={setGrams} numeric placeholder="0"/>}
       <Input label={status==='done'?'Observações (opcional)':'Justificativa / anomalia (obrigatória)'}
         value={notes} onChange={setNotes} multiline placeholder="Informe o que foi observado, sem dados confidenciais"/>
+      <Text style={[s.label,{marginTop:14}]}>Fotos deste ponto ({photos.length+draftPhotos.length}/{MAX_ROUTE_PHOTOS})</Text>
+      <View style={s.row}>
+        <Btn text="📷 Fotografar" outline disabled={working||photos.length+draftPhotos.length>=MAX_ROUTE_PHOTOS}
+          onPress={()=>{void addPhoto(true);}}/>
+        <Btn text="+ Galeria" outline disabled={working||photos.length+draftPhotos.length>=MAX_ROUTE_PHOTOS}
+          onPress={()=>{void addPhoto(false);}}/>
+      </View>
+      <Text style={s.sub}>As novas fotos serão anexadas quando você salvar o resultado do ponto.</Text>
+      {draftPhotos.length>0&&<View style={s.row}>
+        {draftPhotos.map((photo,index)=><Pressable key={photo.uri+index} accessibilityRole="button"
+          accessibilityLabel={`Remover foto nova ${index+1}`}
+          onPress={()=>setDraftPhotos(p=>p.filter((_,i)=>i!==index))}>
+          <Image source={{uri:photo.uri}} style={s.thumbnail}/>
+          <Text style={[s.sub,{color:c.amber}]}>Remover</Text>
+        </Pressable>)}
+      </View>}
       <View style={{marginTop:12}}><Btn text={working?'Salvando...':'Salvar registro do ponto'} disabled={working} onPress={()=>{void save();}}/></View>
     </>}
+    {photos.length>0&&<View style={s.row}>
+      {photos.map(photo=><Image key={photo.id} source={{uri:evidenceUri(photo.filename)}} style={s.thumbnail}/>)}
+    </View>}
     {!!item.recorded_at&&<Text style={s.sub}>Registrado em {new Date(item.recorded_at).toLocaleString('pt-BR')}</Text>}
     {disabled&&!!item.notes&&<Text style={s.note}>{item.notes}</Text>}
   </View>;
@@ -64,6 +94,7 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
   const [runs,setRuns]=useState<RouteRun[]>([]);
   const [points,setPoints]=useState<RoutePoint[]>([]);
   const [items,setItems]=useState<RouteRunItem[]>([]);
+  const [savedPhotos,setSavedPhotos]=useState<RouteRunPhoto[]>([]);
   const [selected,setSelected]=useState<string|null>(null);
   const [activeRun,setActiveRun]=useState<string|null>(null);
   const [name,setName]=useState(''),[area,setArea]=useState('');
@@ -74,7 +105,8 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
     const [a,b]=await Promise.all([listRoutes(),listRouteRuns()]);
     setRoutes(a);setRuns(b);
     if(selected)setPoints(await listRoutePoints(selected));
-    if(activeRun)setItems(await listRunItems(activeRun));
+    if(activeRun){const [parts,images]=await Promise.all([listRunItems(activeRun),listRunPhotos(activeRun)]);
+      setItems(parts);setSavedPhotos(images);}
   },[selected,activeRun]);
   useEffect(()=>{void refresh().catch(e=>Alert.alert('Erro ao carregar rotas',String(e)));},[refresh]);
   const current=routes.find(r=>r.id===selected);
@@ -96,7 +128,7 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
         <View style={{flex:1}}><Text style={s.heading}>Rotas de manutenção</Text>
           <Text style={s.sub}>Checklists offline • lubrificação e inspeções</Text></View>
         {(selected||activeRun)&&<Btn text="← Voltar" outline onPress={()=>{
-          if(activeRun)setActiveRun(null);else setSelected(null);setItems([]);
+          if(activeRun)setActiveRun(null);else setSelected(null);setItems([]);setSavedPhotos([]);
         }}/>}
       </View>
       {activeRun&&run?<>
@@ -109,11 +141,12 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
             <Text style={[s.note,{color:c.amber}]}>Finalize apenas quando todos os pontos tiverem resultado.</Text>}
           <View style={s.row}>
             {run.finished_at?
-              <Btn text="Gerar PDF da rota" onPress={()=>{void execute(()=>exportRoutePdf(run,items));}}/>:
+              <Btn text="Gerar PDF da rota" onPress={()=>{void execute(()=>exportRoutePdf(run,items,savedPhotos));}}/>:
               <Btn text="Finalizar rota" disabled={pending>0||busy} onPress={()=>{void execute(async()=>{await finishRouteRun(run.id);await refresh();});}}/>}
           </View>
         </View>
-        {items.map(item=><RunItem key={item.id} item={item} disabled={!!run.finished_at} onSaved={refresh}/>)}
+        {items.map(item=><RunItem key={item.id} item={item} disabled={!!run.finished_at}
+          photos={savedPhotos.filter(photo=>photo.item_id===item.id)} onSaved={refresh}/>)}
       </>:selected&&current?<>
         <View style={s.card}>
           <Text style={s.title}>{current.title}</Text>
@@ -181,6 +214,7 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
   </KeyboardAvoidingView>;
 }
 const s=StyleSheet.create({
+ thumbnail:{width:96,height:78,borderRadius:8,backgroundColor:c.field},
  page:{padding:16,paddingBottom:65,gap:11},card:{backgroundColor:c.panel,borderRadius:14,borderWidth:1,borderColor:c.line,padding:15,gap:5},
  heading:{fontSize:17,fontWeight:'800',color:c.text,marginBottom:6},
  title:{fontSize:15,fontWeight:'800',color:c.text},
