@@ -101,7 +101,41 @@ def test_legacy_upgrade():
     assert db.execute("SELECT count(*) FROM order_events WHERE id='z'").fetchone()[0] == 1
 
 
+def test_routes_and_snapshot_history():
+    db = open_sqlite(legacy=True)
+    db.execute("INSERT INTO routes(id,title,area,created_at) VALUES ('r','Lubrificação','Setor A','2026-10-20T12:00:00Z')")
+    db.execute("""INSERT INTO route_points(id,route_id,asset_id,title,lubricant,quantity_grams,position)
+        VALUES ('p','r','a','Mancal A','Graxa teste',3.5,0)""")
+    db.execute("""INSERT INTO route_runs(id,route_id,route_title,started_at,finished_at)
+        VALUES ('run','r','Lubrificação','2026-10-20T12:00:00Z',NULL)""")
+    db.execute("""INSERT INTO route_run_items(id,run_id,point_id,point_title,asset_label,lubricant,quantity_grams,status,notes,recorded_at,position)
+        VALUES ('item','run','p','Mancal A','M-01','Graxa teste',3.5,'pending','',NULL,0)""")
+    db.execute("""UPDATE route_run_items SET status='anomaly',notes='Vazamento de graxa no mancal',recorded_at='2026-10-20T12:02:00Z'
+        WHERE id='item'""")
+    db.execute("UPDATE route_runs SET finished_at='2026-10-20T12:04:00Z' WHERE id='run'")
+    db.execute("DELETE FROM routes WHERE id='r'")
+    assert db.execute("SELECT COUNT(*) FROM route_points").fetchone()[0] == 0, 'Pontos novos removidos por cascata'
+    assert db.execute("SELECT route_id FROM route_runs WHERE id='run'").fetchone()[0] is None, 'Histórico órfão preservado'
+    assert db.execute("SELECT status,notes FROM route_run_items WHERE id='item'").fetchone() == (
+        'anomaly','Vazamento de graxa no mancal')
+    assert db.execute('PRAGMA foreign_key_check').fetchall() == []
+    db.commit()
+    try:
+        with db:
+            db.execute("DELETE FROM route_run_items")
+            db.execute("""INSERT INTO route_run_items
+                (id,run_id,point_id,point_title,asset_label,lubricant,quantity_grams,status,notes,recorded_at,position)
+                VALUES('invalid','missing','x','Teste','', '',0,'pending','',NULL,0)""")
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError('Restore deve reverter FK inválida')
+    assert db.execute("SELECT COUNT(*) FROM route_run_items WHERE id='item'").fetchone()[0] == 1
+
+
+
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
-    print('OK: schema novo; migração de parcial; manutenção de prazo; cascade; upgrade v0.2; rollback')
+    test_routes_and_snapshot_history()
+    print('OK: rotas, histórico, migração, cascata, atualização e rollback SQLite')
