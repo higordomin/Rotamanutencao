@@ -16,5 +16,6 @@ export function inspectBackup(data: unknown) {
     routes: data.routes?.length ?? 0,
     routePoints: data.route_points?.length ?? 0,
     routeRuns: data.route_runs?.length ?? 0,
+    routePhotos: data.route_photos?.length ?? 0,
   };
 }
