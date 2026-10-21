@@ -115,6 +115,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
         || !str(i.point_title,200)||!i.point_title.trim()||!str(i.asset_label,300)
         || !str(i.lubricant,200)||!Number.isFinite(i.quantity_grams)||i.quantity_grams<0||i.quantity_grams>100000
         || !['pending','done','anomaly','skipped'].includes(i.status)
+        || (i.status==='skipped'&&i.quantity_grams!==0)
         || !str(i.notes,1000)||!Number.isSafeInteger(i.position)||i.position<0
         || (i.recorded_at!==null&&!iso(i.recorded_at))
         || (i.status==='pending'&&(i.recorded_at!==null||!!i.notes))
