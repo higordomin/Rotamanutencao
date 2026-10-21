@@ -25,6 +25,7 @@ import {syncLocalReminders} from './src/localReminders';
 import {filterCompletedExecutions} from './src/completedExecutions';
 import {inspectLocalStorage} from './src/storageDiagnostics';
 import {duplicateOrderDraft, needsPriorityAttention} from './src/operatorActions';
+import {searchAssets, preselectAsset, executionBelongsToAssetSnapshot} from './src/assetWorkflow';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -103,6 +104,8 @@ export default function App() {
   const [evidence, setEvidence] = useState<ExecutionPhoto[]>([]);
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [search, setSearch] = useState('');
+  const [assetSearch, setAssetSearch] = useState('');
+  const [assetFilterId, setAssetFilterId] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('Todas');
   const [historyPageSize, setHistoryPageSize] = useState(40);
   const [ready, setReady] = useState(false);
@@ -168,6 +171,9 @@ export default function App() {
     return () => subscription.remove();
   }, [ready, refresh]);
 
+  const selectedAsset = useMemo(() => assets.find(asset => asset.id === assetFilterId) ?? null,
+    [assets, assetFilterId]);
+  const visibleAssets = useMemo(() => searchAssets(assets, assetSearch), [assets, assetSearch]);
   const today = localDate();
   const stateOf = (order: WorkOrder) => taskState(order, today);
   const counts = useMemo(() => taskSummary(orders, today), [orders, today]);
@@ -186,6 +192,7 @@ export default function App() {
   const visibleOrders = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('pt-BR');
     return orders.filter(order => {
+      if (assetFilterId && order.asset_id !== assetFilterId) return false;
       const state = taskState(order, today);
       if (orderFilter === 'Pendentes' && ['completed', 'blocked'].includes(state)) return false;
       if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
@@ -194,17 +201,23 @@ export default function App() {
       return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason, order.partial_reason]
         .some(value => value.toLocaleLowerCase('pt-BR').includes(term));
     });
-  }, [orders, search, orderFilter, today]);
+  }, [orders, search, orderFilter, today, assetFilterId]);
 
   const completedExecutions = useMemo(
-    ()=>filterCompletedExecutions(executions,search),[executions,search],
+    () => filterCompletedExecutions(executions,search).filter(execution =>
+      !assetFilterId || (!!selectedAsset && executionBelongsToAssetSnapshot(execution, selectedAsset))),
+    [executions,search,assetFilterId,selectedAsset],
+  );
+  const historyExecutions = useMemo(() => executions.filter(execution =>
+    !assetFilterId || (!!selectedAsset && executionBelongsToAssetSnapshot(execution,selectedAsset))),
+    [executions,assetFilterId,selectedAsset],
   );
   const archivedVisible=useMemo(()=>{
     const term=search.trim().toLocaleLowerCase('pt-BR');
-    return archivedOrders.filter(o=>!term ||
+    return archivedOrders.filter(o=>(!assetFilterId || o.asset_id===assetFilterId) && (!term ||
       [o.title,o.description,o.asset_code||'',o.asset_name||'',o.asset_area||'',o.archive_reason]
-        .some(value=>value.toLocaleLowerCase('pt-BR').includes(term)));
-  },[archivedOrders,search]);
+        .some(value=>value.toLocaleLowerCase('pt-BR').includes(term))));
+  },[archivedOrders,search,assetFilterId]);
   const activityList:ActivityListItem[]=useMemo(()=>orderFilter==='Concluídas'
     ?completedExecutions.map(value=>({kind:'execution' as const,value}))
     :orderFilter==='Arquivadas'
@@ -226,7 +239,7 @@ export default function App() {
     setAssetDraft(asset ? {name: asset.name, code: asset.code, area: asset.area} : initialAsset());
     setDialog('asset');
   };
-  const openOrder = (order?: WorkOrder) => {
+  const openOrder = (order?: WorkOrder, asset?: Asset) => {
     setDuplicateSource(null);
     setCalendarOpen(false);
     setEditingOrder(order?.id);
@@ -235,7 +248,7 @@ export default function App() {
       title: order.title, description: order.description, category: order.category,
       priority: order.priority, asset_id: order.asset_id,
       recurrence_days: order.recurrence_days, due_date: order.due_date,
-    } : initialOrder());
+    } : asset ? preselectAsset(initialOrder(),asset) : initialOrder());
     setDialog('order');
   };
   const openDuplicateOrder = (order: WorkOrder) => {
@@ -388,6 +401,24 @@ export default function App() {
     </View>;
   }
 
+  const openAssetView = (asset:Asset, view:'orders'|'history') => {
+    setAssetFilterId(asset.id);
+    setSearch('');
+    setHistoryPageSize(40);
+    if (view === 'orders') { setOrderFilter('Todas'); setTab('Atividades'); }
+    else setTab('Histórico');
+  };
+
+  const assetContext = selectedAsset ? <View style={styles.card}>
+    <Text style={styles.cardTitle}>⚙ TAG selecionada: {selectedAsset.code || 'sem código'}</Text>
+    <Text style={styles.detail}>{selectedAsset.name} · {selectedAsset.area || 'Sem área'}</Text>
+    <Text style={styles.hint}>Filtro local deste equipamento. O histórico de execuções usa o retrato do equipamento registrado no momento do serviço: se a TAG, o nome ou a área foram alterados, consulte também o histórico geral.</Text>
+    <View style={styles.cardActions}>
+      <Action label="Limpar filtro da TAG" secondary onPress={() => setAssetFilterId(null)}/>
+      <Action label="+ OS para esta TAG" secondary onPress={() => openOrder(undefined,selectedAsset)}/>
+    </View>
+  </View> : null;
+
   function assetCard(asset: Asset) {
     const count = orders.filter(o => o.asset_id === asset.id).length;
     return <View key={asset.id} style={styles.card}>
@@ -395,6 +426,9 @@ export default function App() {
       <Text style={styles.detail}>{asset.code || 'Sem código'} · {asset.area || 'Sem área'}</Text>
       <Text style={styles.description}>{count} atividade(s) vinculada(s)</Text>
       <View style={styles.cardActions}>
+        <Action label="+ Nova OS" onPress={() => openOrder(undefined,asset)}/>
+        <Action label="Ver OS" secondary onPress={() => openAssetView(asset,'orders')}/>
+        <Action label="Histórico" secondary onPress={() => openAssetView(asset,'history')}/>
         <Action label="Editar" secondary onPress={() => openAsset(asset)}/>
         <Pressable accessibilityRole="button" onPress={() => confirmDeleteAsset(asset)} style={{padding: 11}}>
           <Text style={{color: COLORS.red, fontWeight: '700'}}>Excluir</Text>
@@ -499,7 +533,12 @@ export default function App() {
     if (tab === 'Ativos') return <>
       <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Equipamentos</Text><Text style={styles.detail}>{assets.length} cadastrados</Text></View>
         <Action label="+ Novo" onPress={() => openAsset()}/></View>
-      {assets.length === 0 ? <Text style={styles.empty}>Cadastre seu primeiro equipamento.</Text> : assets.map(assetCard)}
+      <TextInput accessibilityLabel="Buscar equipamento por TAG" placeholder="Buscar por TAG, nome ou setor..."
+        placeholderTextColor={COLORS.muted} value={assetSearch} onChangeText={setAssetSearch} style={styles.searchField}/>
+      <Text style={styles.detail}>{visibleAssets.length} de {assets.length} equipamento(s) na pesquisa</Text>
+      {assets.length === 0 ? <Text style={styles.empty}>Cadastre seu primeiro equipamento.</Text>
+        : visibleAssets.length === 0 ? <Text style={styles.empty}>Nenhuma TAG encontrada. Ajuste a busca.</Text>
+        : visibleAssets.map(assetCard)}
     </>;
     if (tab === 'Dados') return <>
       <Text style={styles.sectionTitle}>Seus dados</Text>
@@ -560,9 +599,10 @@ export default function App() {
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
-      <Text style={[styles.detail, {marginBottom: 16}]}>Cada execução fica registrada no aparelho.</Text>
-      {executions.length === 0 ? <Text style={styles.empty}>Nenhum serviço executado ainda.</Text>
-        : executions.slice(0, historyPageSize).map(execution => <View key={execution.id} style={styles.card}>
+      {assetContext}
+      <Text style={[styles.detail, {marginBottom: 16}]}>Cada execução fica registrada no aparelho. {assetFilterId ? 'Exibindo somente os retratos correspondentes à TAG atual.' : 'Mostrando os registros mais recentes.'}</Text>
+      {historyExecutions.length === 0 ? <Text style={styles.empty}>{assetFilterId ? 'Nenhuma execução encontrada para os dados atuais desta TAG. Consulte o histórico geral se o cadastro foi alterado.' : 'Nenhum serviço executado ainda.'}</Text>
+        : historyExecutions.slice(0, historyPageSize).map(execution => <View key={execution.id} style={styles.card}>
           <View style={{flexDirection: 'row', justifyContent: 'space-between', gap: 12}}>
             <Text style={[styles.cardTitle, {flex: 1}]}>{execution.order_title}</Text>
             <Pill text={execution.result === 'partial' ? 'Parcial' : 'Concluída'} tone={execution.result === 'partial' ? 'yellow' : 'green'}/>
@@ -585,8 +625,8 @@ export default function App() {
                 evidenceByExecution.get(execution.id) ?? [])); }}/>
           </View>
         </View>)}
-      {executions.length > historyPageSize && <Action secondary label={`Carregar mais registros (${executions.length - historyPageSize} restantes)`} onPress={() => setHistoryPageSize(n => n + 40)}/> }
-      {events.length > 0 && <>
+      {historyExecutions.length > historyPageSize && <Action secondary label={`Carregar mais registros (${historyExecutions.length - historyPageSize} restantes)`} onPress={() => setHistoryPageSize(n => n + 40)}/> }
+      {!assetFilterId && events.length > 0 && <>
         <Text style={[styles.sectionTitle, {marginTop: 26}]}>Ocorrências / impedimentos</Text>
         <Text style={styles.detail}>Registros de bloqueio, liberação e execução (últimos 250 eventos).</Text>
         {events.slice(0, 25).map(ev => <View key={ev.id} style={styles.eventRow}>
@@ -602,7 +642,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.15 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.16 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
@@ -632,6 +672,7 @@ export default function App() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scroll}
           ListHeaderComponent={<>
+            {assetContext}
             <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Rotas e atividades</Text>
               <Text style={styles.detail}>{orderFilter==='Concluídas'
                 ?`${completedExecutions.length} execução(ões) concluída(s)`
@@ -663,6 +704,7 @@ export default function App() {
         <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{selected: tab === item.label}}
           onPress={() => {
             if(item.label==='Rotas')setSelectedRouteId(null);
+            setAssetFilterId(null); // abas abertas manualmente mostram visão geral
             setTab(item.label);
           }} style={styles.navItem}>
           <Text style={[styles.navIcon, tab === item.label && {color: COLORS.accent}]}>{item.icon}</Text>
