@@ -8,6 +8,7 @@ export function inspectBackup(data: unknown) {
     exportedAt: data.exported_at,
     assets: data.assets.length,
     orders: data.work_orders.length,
+    archivedOrders: data.work_orders.filter(order=>!!order.archived_at).length,
     executions: data.executions.length,
     photos: data.photos.length,
     events: data.order_events?.length ?? 0,

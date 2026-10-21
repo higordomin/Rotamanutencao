@@ -43,6 +43,8 @@ export async function initializeDatabase(): Promise<void> {
       recurrence_days INTEGER NOT NULL DEFAULT 0 CHECK (recurrence_days >= 0),
       due_date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','completed')),
+      archived_at TEXT,
+      archive_reason TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -143,6 +145,10 @@ export async function initializeDatabase(): Promise<void> {
   if (!fields.some(f => f.name === 'category'))
     await db.execAsync("ALTER TABLE executions ADD COLUMN category TEXT NOT NULL DEFAULT ''");
   const orderFields = await db.getAllAsync<{name: string}>("PRAGMA table_info(work_orders)");
+  if (!orderFields.some(f => f.name === 'archived_at'))
+    await db.execAsync('ALTER TABLE work_orders ADD COLUMN archived_at TEXT');
+  if (!orderFields.some(f => f.name === 'archive_reason'))
+    await db.execAsync("ALTER TABLE work_orders ADD COLUMN archive_reason TEXT NOT NULL DEFAULT ''");
   if (!orderFields.some(f => f.name === 'block_reason'))
     await db.execAsync("ALTER TABLE work_orders ADD COLUMN block_reason TEXT NOT NULL DEFAULT ''");
   if (!orderFields.some(f => f.name === 'blocked_at'))
@@ -163,9 +169,35 @@ export async function listOrders(): Promise<WorkOrder[]> {
   return (await database()).getAllAsync<WorkOrder>(`
     SELECT o.*, a.name AS asset_name, a.code AS asset_code, a.area AS asset_area FROM work_orders o
     LEFT JOIN assets a ON a.id = o.asset_id
+    WHERE o.archived_at IS NULL
     ORDER BY CASE WHEN o.status = 'completed' THEN 2 WHEN o.block_reason != '' THEN 1 ELSE 0 END,
              o.due_date ASC, o.created_at DESC
   `);
+}
+
+/** OS arquivadas não são executadas nem programadas, mas preservam fotos e histórico. */
+export async function listArchivedOrders(): Promise<WorkOrder[]> {
+  return (await database()).getAllAsync<WorkOrder>(`
+    SELECT o.*, a.name AS asset_name, a.code AS asset_code, a.area AS asset_area
+    FROM work_orders o LEFT JOIN assets a ON a.id=o.asset_id
+    WHERE o.archived_at IS NOT NULL ORDER BY o.archived_at DESC, o.title`);
+}
+
+/** Arquivamento reversível substitui exclusão definitiva e mantém FKs intactas. */
+export async function archiveOrder(orderId:string,reason:string):Promise<void> {
+  const clean=reason.trim();
+  if(clean.length<10||clean.length>500)throw new Error('Explique o arquivamento entre 10 e 500 caracteres.');
+  const now=new Date().toISOString();
+  const result=await (await database()).runAsync(
+    `UPDATE work_orders SET archived_at=?,archive_reason=?,updated_at=?
+     WHERE id=? AND archived_at IS NULL`,now,clean,now,orderId);
+  if(result.changes!==1)throw new Error('OS não encontrada ou já arquivada.');
+}
+export async function restoreArchivedOrder(orderId:string):Promise<void>{
+  const result=await (await database()).runAsync(
+    `UPDATE work_orders SET archived_at=NULL,archive_reason='',updated_at=?
+     WHERE id=? AND archived_at IS NOT NULL`,new Date().toISOString(),orderId);
+  if(result.changes!==1)throw new Error('OS não encontrada ou já reativada.');
 }
 
 export async function listExecutions(): Promise<Execution[]> {
@@ -203,7 +235,7 @@ export async function saveOrder(input: OrderDraft, existingId?: string): Promise
   const now = new Date().toISOString();
   if (existingId) {
     const result = await db.runAsync(`UPDATE work_orders SET title=?,description=?,category=?,priority=?,asset_id=?,
-      recurrence_days=?,due_date=?,updated_at=? WHERE id=?`,
+      recurrence_days=?,due_date=?,updated_at=? WHERE id=? AND archived_at IS NULL`,
       title, input.description.trim(), input.category, input.priority,
       input.asset_id, input.recurrence_days, input.due_date, now, existingId);
     if (result.changes !== 1) throw new Error('Atividade excluída ou desatualizada. Atualize a tela.');
@@ -231,7 +263,7 @@ export async function setImpediment(orderId: string, reason: string): Promise<vo
   await db.withExclusiveTransactionAsync(async tx => {
     const changed = await tx.runAsync(
       `UPDATE work_orders SET block_reason=?, blocked_at=?, updated_at=?
-       WHERE id=? AND status='pending' AND block_reason=''`, clean, now, now, orderId
+       WHERE id=? AND archived_at IS NULL AND status='pending' AND block_reason=''`, clean, now, now, orderId
     );
     if (changed.changes !== 1) throw new Error('Atividade indisponível. Atualize os dados.');
     await tx.runAsync('INSERT INTO order_events(id,order_id,event_type,reason,created_at) VALUES(?,?,?,?,?)',
@@ -245,7 +277,7 @@ export async function releaseImpediment(orderId: string): Promise<void> {
   await db.withExclusiveTransactionAsync(async tx => {
     const changed = await tx.runAsync(
       `UPDATE work_orders SET block_reason='', blocked_at=NULL, updated_at=?
-       WHERE id=? AND status='pending' AND block_reason != ''`,
+       WHERE id=? AND archived_at IS NULL AND status='pending' AND block_reason != ''`,
       now, orderId
     );
     if (changed.changes !== 1) throw new Error('Impedimento já liberado ou atividade alterada.');
@@ -268,7 +300,7 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
   const executionId = makeId();
   const savedFiles: string[] = [];
   // Evita gastar espaço copiando imagens se a OS já foi alterada ou impedida.
-  const initial = await db.getFirstAsync<WorkOrder>('SELECT * FROM work_orders WHERE id=?', order.id);
+  const initial = await db.getFirstAsync<WorkOrder>('SELECT * FROM work_orders WHERE id=? AND archived_at IS NULL', order.id);
   const initialPlan = completionPlan(order, initial, today);
   executionDecision(result, notes, initialPlan.nextDue);
   try {
@@ -277,12 +309,12 @@ export async function completeOrder(order: WorkOrder, notes: string, photos: Pho
       // Revalidação dentro da transação: alteração entre a abertura do formulário e o clique.
       const current = await tx.getFirstAsync<WorkOrder & {asset_name: string | null; asset_code: string | null; asset_area: string | null}>(
         `SELECT o.*, a.name AS asset_name, a.code AS asset_code, a.area AS asset_area
-         FROM work_orders o LEFT JOIN assets a ON a.id=o.asset_id WHERE o.id=?`, order.id);
+         FROM work_orders o LEFT JOIN assets a ON a.id=o.asset_id WHERE o.id=? AND o.archived_at IS NULL`, order.id);
       const plan = completionPlan(order, current, today);
       const decision = executionDecision(result, notes, plan.nextDue);
       const changed = await tx.runAsync(`UPDATE work_orders
         SET status=?,due_date=?,partial_reason=?,partial_at=?,updated_at=?
-        WHERE id=? AND status='pending' AND block_reason='' AND updated_at=?`,
+        WHERE id=? AND archived_at IS NULL AND status='pending' AND block_reason='' AND updated_at=?`,
         decision.orderStatus, decision.nextDue ?? current!.due_date,
         decision.partialReason, result === 'partial' ? now : null,
         now, order.id, order.updated_at);
@@ -385,10 +417,11 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
     }
     for (const o of data.work_orders) {
       await tx.runAsync(`INSERT INTO work_orders
-        (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at,block_reason,blocked_at,partial_reason,partial_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
+        (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at,
+          block_reason,blocked_at,partial_reason,partial_at,archived_at,archive_reason)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
         o.recurrence_days,o.due_date,o.status,o.created_at,o.updated_at, o.block_reason ?? '', o.blocked_at ?? null,
-        o.partial_reason ?? '', o.partial_at ?? null);
+        o.partial_reason ?? '', o.partial_at ?? null, o.archived_at ?? null,o.archive_reason ?? '');
     }
     for (const e of data.executions) {
       await tx.runAsync(`INSERT INTO executions
@@ -409,14 +442,9 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
   });
 }
 
+/** API legada sem exclusão definitiva: preserva todos os vínculos e evidências. */
 export async function removeOrder(orderId: string): Promise<void> {
-  // Excluir uma atividade também exclui seu histórico; a interface informa essa consequência.
-  const db = await database();
-  const files = await db.getAllAsync<{filename: string}>(`SELECT p.filename FROM execution_photos p
-    JOIN executions e ON p.execution_id=e.id WHERE e.order_id=?`, orderId);
-  await db.runAsync('DELETE FROM work_orders WHERE id=?', orderId);
-  // Limpar arquivos depois do commit; falhas de limpeza não comprometem o histórico remanescente.
-  await Promise.allSettled(files.map(f => deletePhotoFile(f.filename)));
+  await archiveOrder(orderId,'Arquivada pelo usuário; históricos preservados.');
 }
 
 export async function removeAsset(assetId: string): Promise<void> {
