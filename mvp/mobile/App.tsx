@@ -17,6 +17,8 @@ import {inspectBackup} from './src/backupInspection';
 import {CalendarPicker} from './src/CalendarPicker';
 import {brazilianDate} from './src/calendar';
 import {RoutesScreen} from './src/RoutesScreen';
+import {listRoutes,type Route} from './src/routes';
+import {buildOperationalBoard,type BoardEntry} from './src/operationalBoard';
 import {ReminderSettings} from './src/ReminderSettings';
 import {syncLocalReminders} from './src/localReminders';
 
@@ -87,6 +89,9 @@ function Choices<T extends string>({label, options, value, onChange}: {
 export default function App() {
   const [tab, setTab] = useState<Tab>('Início');
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [selectedRouteId,setSelectedRouteId] = useState<string|null>(null);
+  const [showAllBoard,setShowAllBoard]=useState(false);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [evidence, setEvidence] = useState<ExecutionPhoto[]>([]);
@@ -130,8 +135,10 @@ export default function App() {
   };
 
   const refresh = useCallback(async () => {
-    const [a, o, e, p, ev] = await Promise.all([listAssets(), listOrders(), listExecutions(), listAllPhotos(), listRecentEvents()]);
-    setAssets(a); setOrders(o); setExecutions(e); setEvidence(p); setEvents(ev);
+    const [a, o, e, p, ev, r] = await Promise.all([
+      listAssets(), listOrders(), listExecutions(), listAllPhotos(), listRecentEvents(), listRoutes(),
+    ]);
+    setAssets(a); setOrders(o); setExecutions(e); setEvidence(p); setEvents(ev); setRoutes(r);
     void syncLocalReminders().catch(err=>console.warn('Lembretes não atualizados:',String(err)));
   }, []);
 
@@ -154,6 +161,7 @@ export default function App() {
   const today = localDate();
   const stateOf = (order: WorkOrder) => taskState(order, today);
   const counts = useMemo(() => taskSummary(orders, today), [orders, today]);
+  const board = useMemo(()=>buildOperationalBoard(orders,routes,today),[orders,routes,today]);
   const overdue = orders.filter(o => stateOf(o) === 'overdue');
   const todayTasks = orders.filter(o => stateOf(o) === 'today');
   const upcoming = orders.filter(o => stateOf(o) === 'upcoming');
@@ -315,6 +323,41 @@ export default function App() {
     }}/>}
   </View>;
 
+  function boardEntryCard(entry:BoardEntry){
+    const stateLabel=entry.state==='attention'?'⚠ Rota com pendência'
+      :entry.state==='blocked'?'⚠ Impedida'
+      :entry.state==='overdue'?'● Vencida'
+      :entry.state==='today'?'● Hoje':'● Próximos dias';
+    const tone=entry.state==='attention'||entry.state==='blocked'?'yellow':
+      entry.state==='overdue'?'red':entry.state==='today'?'green':'blue';
+    const linkedOrder=entry.type==='order'?orders.find(o=>o.id===entry.id):undefined;
+    return <View key={entry.type+':'+entry.id} style={styles.card}>
+      <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
+        <Text style={[styles.detail,{fontWeight:'800'}]}>{entry.type==='route'?'ROTA':'ORDEM DE SERVIÇO'}</Text>
+        <Pill text={stateLabel} tone={tone}/>
+      </View>
+      <Text style={styles.cardTitle}>{entry.title}</Text>
+      <Text style={styles.description}>{entry.subtitle}</Text>
+      <View style={styles.chips}>
+        {entry.date&&<Pill text={'📅 '+brazilianDate(entry.date)}/>}
+        {entry.priority==='Alta'&&<Pill tone="red" text="Prioridade Alta"/>}
+        {entry.partial&&<Pill tone="yellow" text="Execução parcial"/>}
+      </View>
+      <View style={styles.cardActions}>
+        {entry.type==='route'?
+          <Action label="Abrir rota" onPress={()=>{
+            setSelectedRouteId(entry.id);setTab('Rotas');
+          }}/>:
+          linkedOrder ? <>
+            {linkedOrder.block_reason?.trim()?
+              <Action label="Ver impedimento" secondary onPress={()=>openBlock(linkedOrder)}/>:
+              <Action label="Executar OS" onPress={()=>openComplete(linkedOrder)}/>}
+            <Action label="Editar OS" secondary onPress={()=>openOrder(linkedOrder)}/>
+          </>:null}
+      </View>
+    </View>;
+  }
+
   const content = () => {
     if (tab === 'Início') return <>
       <View style={styles.hero}>
@@ -329,6 +372,27 @@ export default function App() {
           <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.yellow}]}>{counts.blocked}</Text><Text style={styles.metricLabel}>Impedidas</Text></View>
           <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.green}]}>{counts.today}</Text><Text style={styles.metricLabel}>Hoje</Text></View>
         </View>
+      </View>
+      <View style={{marginTop:20}}>
+        <Text style={styles.sectionTitle}>Painel operacional • Hoje e próximos 7 dias</Text>
+        <Text style={styles.description}>OS e rotas reunidas por prioridade. Pendências, bloqueios
+          e serviços atrasados aparecem primeiro; sem internet ou sincronização.</Text>
+        <View style={styles.metrics}>
+          <View style={styles.metric}><Text style={[styles.metricValue,{color:COLORS.yellow}]}>{board.counts.attention+board.counts.blocked}</Text>
+            <Text style={styles.metricLabel}>Pendências</Text></View>
+          <View style={styles.metric}><Text style={[styles.metricValue,{color:COLORS.red}]}>{board.counts.overdue}</Text>
+            <Text style={styles.metricLabel}>Vencidas</Text></View>
+          <View style={styles.metric}><Text style={[styles.metricValue,{color:COLORS.green}]}>{board.counts.today}</Text>
+            <Text style={styles.metricLabel}>Para hoje</Text></View>
+        </View>
+        <Text style={styles.detail}>{board.counts.orders} OS · {board.counts.routes} rotas no planejamento</Text>
+        {board.entries.length===0?
+          <Text style={styles.empty}>Nenhuma manutenção pendente ou programada para os próximos 7 dias.</Text>:
+          (showAllBoard?board.entries:board.entries.slice(0,8)).map(boardEntryCard)}
+        {board.entries.length>8&&<View style={{marginTop:8}}>
+          <Action secondary label={showAllBoard?'Mostrar menos':'Ver mais '+(board.entries.length-8)+' serviços'}
+            onPress={()=>setShowAllBoard(!showAllBoard)}/>
+        </View>}
       </View>
       {partialOrders.length > 0 && <Text style={[styles.detail, {color: COLORS.yellow, marginTop: 8}]}>
         {partialOrders.length} atividade(s) com execução parcial e pendência registrada.
@@ -430,7 +494,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.12 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.13 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
@@ -445,9 +509,10 @@ export default function App() {
             finally { setReady(true); }
           })(); }}/>
         </View>
-      : tab === 'Rotas' ? <RoutesScreen assets={assets} onDataChanged={()=>{
-          void syncLocalReminders().catch(err=>console.warn('Falha ao atualizar lembretes:',String(err)));
-        }}/>
+      : tab === 'Rotas' ? <RoutesScreen assets={assets} initialRouteId={selectedRouteId}
+          onDataChanged={()=>{
+            void refresh().catch(err=>console.warn('Falha ao atualizar painel:',String(err)));
+          }}/>
       : tab === 'Atividades' ? <FlatList
           data={visibleOrders}
           keyExtractor={item => item.id}
@@ -479,7 +544,10 @@ export default function App() {
         {label: 'Rotas', icon: '⇢',caption:'Rotas'},
         {label: 'Ativos', icon: '⚙',caption:'Ativos'}, {label: 'Histórico', icon: '◷',caption:'Hist.'}, {label:'Dados',icon:'▣',caption:'Dados'}] as const).map(item =>
         <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{selected: tab === item.label}}
-          onPress={() => setTab(item.label)} style={styles.navItem}>
+          onPress={() => {
+            if(item.label==='Rotas')setSelectedRouteId(null);
+            setTab(item.label);
+          }} style={styles.navItem}>
           <Text style={[styles.navIcon, tab === item.label && {color: COLORS.accent}]}>{item.icon}</Text>
           <Text style={[styles.navLabel, tab === item.label && {color: COLORS.accent}]}>{item.caption}</Text>
         </Pressable>)}
