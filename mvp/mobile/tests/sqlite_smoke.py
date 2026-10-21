@@ -14,7 +14,7 @@ schema = match.group(1)
 assert '${' not in schema, 'O schema extraído não pode conter interpolação dinâmica'
 
 
-def open_sqlite(legacy=False, legacy_routes=False):
+def open_sqlite(legacy=False, legacy_routes=False, legacy_history=False):
     conn = sqlite3.connect(':memory:')
     conn.execute('PRAGMA foreign_keys=ON')
     if legacy:
@@ -39,6 +39,11 @@ def open_sqlite(legacy=False, legacy_routes=False):
         ''')
         conn.execute("INSERT INTO assets VALUES ('a','M-01','Motor 01','Produção','2026-10-20T12:00:00Z')")
         conn.execute("INSERT INTO work_orders VALUES ('o','Lubrificação','', 'Lubrificação','Alta','a',30,'2026-10-20','pending','2026-10-20T12:00:00Z','2026-10-20T12:00:00Z')")
+        if legacy_history:
+            conn.execute("""INSERT INTO executions(id,order_id,order_title,notes,executed_at,
+                previous_due_date,next_due_date,asset_label,category)
+                VALUES('legacy-e','o','Lubrificação','OS executada','2026-10-20T12:01:00Z',
+                '2026-10-20','2026-11-19','M-01 · Motor 01 · Produção','Lubrificação')""")
         conn.commit()
     if legacy_routes:
         conn.executescript("""
@@ -76,6 +81,18 @@ def open_sqlite(legacy=False, legacy_routes=False):
     fields = [row[1] for row in conn.execute('PRAGMA table_info(executions)')]
     if 'result' not in fields:
         conn.execute("ALTER TABLE executions ADD COLUMN result TEXT NOT NULL DEFAULT 'completed' CHECK(result IN ('completed','partial'))")
+    if 'asset_id' not in fields:
+        conn.execute("ALTER TABLE executions ADD COLUMN asset_id TEXT")
+        # Replica backfill: somente snapshot igual e único no cadastro, sem alterar fotos.
+        snapshots={}
+        for asset_id,code,name,area in conn.execute('SELECT id,code,name,area FROM assets'):
+            label=' · '.join(part for part in (code,name,area) if part)[:300]
+            snapshots[label]=None if label in snapshots else asset_id
+        for execution_id, label in conn.execute("SELECT id,asset_label FROM executions WHERE asset_id IS NULL AND asset_label != ''").fetchall():
+            matched=snapshots.get(label)
+            if matched is not None:
+                conn.execute('UPDATE executions SET asset_id=? WHERE id=?',(matched,execution_id))
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_executions_asset_id ON executions(asset_id,executed_at DESC)')
     return conn
 
 
@@ -226,6 +243,36 @@ def test_archived_orders_restore_snapshot_transaction():
     assert db.execute("SELECT archived_at FROM work_orders WHERE id='o'").fetchone()[0]=='2026-10-21T12:00:00Z'
 
 
+def test_asset_id_keeps_identity_after_rename_and_deletion():
+    db=open_sqlite()
+    db.execute("INSERT INTO assets VALUES('id-ativo','T-11','Esteira','Fábrica','2026-10-21T10:00:00Z')")
+    db.execute("""INSERT INTO work_orders(id,title,description,category,priority,asset_id,
+        recurrence_days,due_date,status,created_at,updated_at)
+        VALUES('order1','Lubrificar','','Lubrificação','Alta','id-ativo',30,'2026-10-21','pending',
+        '2026-10-21T10:00:00Z','2026-10-21T10:00:00Z')""")
+    db.execute("""INSERT INTO executions(id,order_id,order_title,notes,executed_at,
+        previous_due_date,next_due_date,asset_label,category,result,asset_id)
+        VALUES('exec1','order1','Lubrificar','Feito','2026-10-21T11:00:00Z',
+        '2026-10-21','2026-11-20','T-11 · Esteira · Fábrica','Lubrificação','completed','id-ativo')""")
+    db.execute("""INSERT INTO execution_photos(id,execution_id,filename,mime_type,created_at)
+        VALUES('photo','exec1','photo.jpg','image/jpeg','2026-10-21T11:00:00Z')""")
+    db.execute("UPDATE assets SET code='TAG-NOVA',name='Esteira revisada',area='Outra área' WHERE id='id-ativo'")
+    assert db.execute("SELECT asset_id,asset_label FROM executions WHERE id='exec1'").fetchone() == (
+        'id-ativo','T-11 · Esteira · Fábrica')
+    db.execute("DELETE FROM assets WHERE id='id-ativo'")
+    assert db.execute("SELECT asset_id FROM work_orders WHERE id='order1'").fetchone() == (None,)
+    assert db.execute("SELECT asset_id FROM executions WHERE id='exec1'").fetchone() == ('id-ativo',)
+    assert db.execute("SELECT COUNT(*) FROM execution_photos").fetchone()[0] == 1
+    assert db.execute('PRAGMA foreign_key_check').fetchall() == []
+
+def test_migration_preserves_unique_legacy_asset_link():
+    db=open_sqlite(legacy=True,legacy_history=True)
+    assert db.execute("SELECT asset_id FROM executions WHERE id='legacy-e'").fetchone() == ('a',)
+    assert db.execute("SELECT count(*) FROM executions").fetchone()[0] == 1
+    db.execute("UPDATE assets SET name='Motor renomeado' WHERE id='a'")
+    assert db.execute("SELECT asset_id FROM executions WHERE id='legacy-e'").fetchone() == ('a',)
+    assert db.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
+
 
 if __name__ == '__main__':
     test_fresh()
@@ -235,4 +282,6 @@ if __name__ == '__main__':
     test_reminder_settings_migrate_without_dropping_data()
     test_soft_archive_preserves_execution_photos_and_can_restore()
     test_archived_orders_restore_snapshot_transaction()
+    test_asset_id_keeps_identity_after_rename_and_deletion()
+    test_migration_preserves_unique_legacy_asset_link()
     print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')
