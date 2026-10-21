@@ -1,5 +1,6 @@
 import type {Asset} from './types';
 import {getDatabase} from './db';
+import {gramAmount,routeResult} from './routeRules';
 
 export type Route = {id:string;title:string;area:string;created_at:string;point_count?:number};
 export type RoutePoint = {id:string;route_id:string;asset_id:string|null;title:string;lubricant:string;
@@ -15,20 +16,6 @@ function str(v:string, max:number, name:string) {
   const x=v.trim();
   if(!x || x.length>max) throw new Error(`Informe ${name} (até ${max} caracteres).`);
   return x;
-}
-export function gramAmount(input:string|number):number {
-  const parsed= typeof input==='string' ? Number(input.trim().replace(',','.')):input;
-  if(!Number.isFinite(parsed)||parsed<0||parsed>100000||Math.round(parsed*1000)!==parsed*1000)
-    throw new Error('Quantidade inválida: informe gramas entre 0 e 100000, até 3 casas decimais.');
-  return parsed;
-}
-export function routeResult(status:RouteRunItem['status'],notes:string) {
-  if(!['done','anomaly','skipped'].includes(status)) throw new Error('Escolha o resultado do ponto.');
-  const message=notes.trim();
-  if(message.length>1000)throw new Error('Observação do ponto excede 1000 caracteres.');
-  if(status!=='done' && message.length<10)
-    throw new Error('Explique a anomalia ou motivo de não execução (mínimo 10 caracteres).');
-  return message;
 }
 export async function listRoutes():Promise<Route[]> {
   const db=await getDatabase();
