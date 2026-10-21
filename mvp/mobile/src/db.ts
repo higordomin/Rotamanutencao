@@ -73,7 +73,11 @@ export async function initializeDatabase(): Promise<void> {
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL,
       area TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      recurrence_days INTEGER NOT NULL DEFAULT 0 CHECK(recurrence_days >= 0 AND recurrence_days <= 36500),
+      next_due_date TEXT,
+      attention_count INTEGER NOT NULL DEFAULT 0 CHECK(attention_count >= 0),
+      attention_at TEXT
     );
     CREATE TABLE IF NOT EXISTS route_points (
       id TEXT PRIMARY KEY NOT NULL,
@@ -118,6 +122,16 @@ export async function initializeDatabase(): Promise<void> {
 
 
   `);
+  // Migração aditiva: preservar rotas/execuções/fotos do MVP 0.8/0.9.
+  const routeFields = await db.getAllAsync<{name:string}>('PRAGMA table_info(routes)');
+  if (!routeFields.some(f => f.name === 'recurrence_days'))
+    await db.execAsync('ALTER TABLE routes ADD COLUMN recurrence_days INTEGER NOT NULL DEFAULT 0 CHECK(recurrence_days >= 0 AND recurrence_days <= 36500)');
+  if (!routeFields.some(f => f.name === 'next_due_date'))
+    await db.execAsync('ALTER TABLE routes ADD COLUMN next_due_date TEXT');
+  if (!routeFields.some(f => f.name === 'attention_count'))
+    await db.execAsync('ALTER TABLE routes ADD COLUMN attention_count INTEGER NOT NULL DEFAULT 0 CHECK(attention_count >= 0)');
+  if (!routeFields.some(f => f.name === 'attention_at'))
+    await db.execAsync('ALTER TABLE routes ADD COLUMN attention_at TEXT');
   // Migração não destrutiva para quem já usava o MVP 0.1.
   const fields = await db.getAllAsync<{name: string}>("PRAGMA table_info(executions)");
   if (!fields.some(f => f.name === 'asset_label'))
@@ -340,7 +354,10 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
         a.id, a.code, a.name, a.area, a.created_at);
     }
     for (const r of data.routes ?? []) {
-      await tx.runAsync('INSERT INTO routes(id,title,area,created_at) VALUES(?,?,?,?)', r.id,r.title,r.area,r.created_at);
+      await tx.runAsync(`INSERT INTO routes
+        (id,title,area,created_at,recurrence_days,next_due_date,attention_count,attention_at)
+        VALUES(?,?,?,?,?,?,?,?)`, r.id,r.title,r.area,r.created_at,
+        r.recurrence_days ?? 0,r.next_due_date ?? null,r.attention_count ?? 0,r.attention_at ?? null);
     }
     for (const p of data.route_points ?? []) {
       await tx.runAsync(`INSERT INTO route_points(id,route_id,asset_id,title,lubricant,quantity_grams,position)

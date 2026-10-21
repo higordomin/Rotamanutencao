@@ -72,7 +72,7 @@ export type OrderDraft = Pick<WorkOrder,
 
 export type BackupData = {
   format: 'rotamanutencao-offline';
-  version: 2 | 3 | 4 | 5 | 6;
+  version: 2 | 3 | 4 | 5 | 6 | 7;
   exported_at: string;
   assets: Asset[];
   work_orders: Omit<WorkOrder, 'asset_name' | 'asset_code' | 'asset_area'>[];

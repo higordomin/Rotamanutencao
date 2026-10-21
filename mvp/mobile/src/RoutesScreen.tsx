@@ -6,6 +6,11 @@ import {addRoutePoint,createRoute,deleteRoute,deleteRoutePoint,finishRouteRun,
   listRoutePoints,listRouteRuns,listRoutes,listRunItems,listRunPhotos,recordRoutePoint,startRouteRun,MAX_ROUTE_PHOTOS,
   type Route,type RoutePoint,type RouteRun,type RouteRunItem,type RouteRunPhoto} from './routes';
 import {exportRoutePdf} from './routeReport';
+import {CalendarPicker} from './CalendarPicker';
+import {brazilianDate} from './calendar';
+import {localDate} from './logic';
+import {routePlanningState} from './routeSchedule';
+import {updateRouteSchedule} from './routes';
 
 const c={bg:'#08101E',panel:'#111E31',field:'#16273D',line:'#24394F',text:'#EFF6FF',
   muted:'#9CB0C8',blue:'#47B7F6',amber:'#FFD075',red:'#FF7D8B',green:'#5DD7AC'};
@@ -22,6 +27,23 @@ function Input({label,value,onChange,placeholder,numeric=false,multiline=false}:
       value={value} onChangeText={onChange} placeholder={placeholder}
       placeholderTextColor={c.muted} selectionColor={c.blue} keyboardType={numeric?'decimal-pad':'default'}
       multiline={multiline}/>
+  </View>;
+}
+function ScheduleSummary({route}:{route:Route}) {
+  const state=routePlanningState(route);
+  const text=state==='attention'?`⚠ ${route.attention_count} ponto(s) exigem retorno`
+    :state==='overdue'?'● Rota vencida'
+    :state==='today'?'● Vence hoje'
+    :state==='upcoming'?'● Programada':'— Rota avulsa';
+  const color=state==='attention'||state==='overdue'?c.red:state==='today'?c.amber:state==='upcoming'?c.green:c.muted;
+  return <View style={{marginTop:7}}>
+    <Text style={[s.note,{color,fontWeight:'800'}]}>{text}</Text>
+    {route.recurrence_days>0&&<Text style={s.sub}>
+      A cada {route.recurrence_days} dia(s) • Data: {route.next_due_date?brazilianDate(route.next_due_date):'Não definida'}
+    </Text>}
+    {state==='attention'&&<Text style={s.sub}>
+      O prazo permanece em aberto. Verifique as anomalias/não execuções antes de considerar a rota regularizada.
+    </Text>}
   </View>;
 }
 function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>Promise<void>;
@@ -98,6 +120,10 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
   const [selected,setSelected]=useState<string|null>(null);
   const [activeRun,setActiveRun]=useState<string|null>(null);
   const [name,setName]=useState(''),[area,setArea]=useState('');
+  const [period,setPeriod]=useState('0'),[firstDue,setFirstDue]=useState(localDate());
+  const [editingSchedule,setEditingSchedule]=useState(false);
+  const [editPeriod,setEditPeriod]=useState('0'),[editDue,setEditDue]=useState(localDate());
+  const [calendarMode,setCalendarMode]=useState<'new'|'edit'|null>(null);
   const [assetId,setAssetId]=useState<string|null>(null),[assetSearch,setAssetSearch]=useState('');
   const [task,setTask]=useState(''),[lubricant,setLubricant]=useState(''),[grams,setGrams]=useState('0');
   const [busy,setBusy]=useState(false);
@@ -110,6 +136,9 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
   },[selected,activeRun]);
   useEffect(()=>{void refresh().catch(e=>Alert.alert('Erro ao carregar rotas',String(e)));},[refresh]);
   const current=routes.find(r=>r.id===selected);
+  const overdueCount=routes.filter(r=>routePlanningState(r)==='overdue').length;
+  const attentionCount=routes.filter(r=>routePlanningState(r)==='attention').length;
+  const todayCount=routes.filter(r=>routePlanningState(r)==='today').length;
   const run=runs.find(r=>r.id===activeRun);
   const visible=useMemo(()=>assets.filter(a=>[a.code,a.name,a.area].join(' ').toLowerCase().includes(assetSearch.trim().toLowerCase())).slice(0,12),[assets,assetSearch]);
   const pending=items.filter(i=>i.status==='pending').length;
@@ -126,7 +155,7 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.page}>
       <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:10}}>
         <View style={{flex:1}}><Text style={s.heading}>Rotas de manutenção</Text>
-          <Text style={s.sub}>Checklists offline • lubrificação e inspeções</Text></View>
+          <Text style={s.sub}>Checklists offline • rotas programadas</Text></View>
         {(selected||activeRun)&&<Btn text="← Voltar" outline onPress={()=>{
           if(activeRun)setActiveRun(null);else setSelected(null);setItems([]);setSavedPhotos([]);
         }}/>}
@@ -151,6 +180,31 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
         <View style={s.card}>
           <Text style={s.title}>{current.title}</Text>
           <Text style={s.sub}>{current.area||'Sem setor'} • {points.length} ponto(s)</Text>
+          <ScheduleSummary route={current}/>
+          <View style={{marginTop:8}}>
+            <Btn outline text={editingSchedule?'Fechar programação':'Editar periodicidade e data'} onPress={()=>{
+              if(editingSchedule){setEditingSchedule(false);setCalendarMode(null);}
+              else {setEditPeriod(String(current.recurrence_days));setEditDue(current.next_due_date??localDate());setEditingSchedule(true);}
+            }}/>
+          </View>
+          {editingSchedule&&<View>
+            <Input label="Repetir a cada quantos dias? (0 = avulsa)" value={editPeriod}
+              onChange={setEditPeriod} numeric/>
+            {editPeriod.trim()!=='0'&&<>
+              <Text style={s.label}>Próxima data da rota</Text>
+              <Btn outline text={brazilianDate(editDue)} onPress={()=>setCalendarMode('edit')}/>
+              {calendarMode==='edit'&&<CalendarPicker value={editDue}
+                onSelect={d=>{setEditDue(d);setCalendarMode(null);}}
+                onCancel={()=>setCalendarMode(null)}/>}
+            </>}
+            <View style={{marginTop:12}}>
+              <Btn text="Salvar programação" disabled={busy} onPress={()=>{void execute(async()=>{
+                await updateRouteSchedule(current.id,editPeriod,editPeriod.trim()==='0'?null:editDue);
+                setEditingSchedule(false);setCalendarMode(null);
+              });}}/>
+            </View>
+            <Text style={s.sub}>Alterar a data não apaga anomalias nem históricos.</Text>
+          </View>}
           <View style={s.row}>
             <Btn disabled={busy||points.length===0} text="▶ Iniciar rota" onPress={()=>{void execute(async()=>{
               const id=await startRouteRun(selected);setActiveRun(id);setItems(await listRunItems(id));
@@ -195,13 +249,27 @@ export function RoutesScreen({assets}:{assets:Asset[]}){
           <Text style={s.heading}>Nova rota</Text>
           <Input label="Nome da rota *" value={name} onChange={setName} placeholder="Ex.: Lubrificação — Paletização"/>
           <Input label="Setor / área" value={area} onChange={setArea} placeholder="Ex.: Utilidades"/>
+          <Input label="Repetir a cada quantos dias? (0 = avulsa)" value={period}
+            onChange={setPeriod} numeric/>
+          {period.trim()!=='0'&&<>
+            <Text style={[s.label,{marginTop:10}]}>Primeira data da rota</Text>
+            <Btn outline text={'📅 '+brazilianDate(firstDue)} onPress={()=>setCalendarMode('new')}/>
+            {calendarMode==='new'&&<CalendarPicker value={firstDue}
+              onSelect={date=>{setFirstDue(date);setCalendarMode(null);}}
+              onCancel={()=>setCalendarMode(null)}/>}
+          </>}
           <View style={{marginTop:12}}><Btn text="Criar rota" disabled={busy} onPress={()=>{void execute(async()=>{
-            await createRoute(name,area);setName('');setArea('');
+            await createRoute(name,area,period,period.trim()==='0'?null:firstDue);
+            setName('');setArea('');setPeriod('0');setFirstDue(localDate());setCalendarMode(null);
           });}}/></View>
         </View>
+        <Text style={[s.note,{fontWeight:'800'}]}>
+          {attentionCount} com pendências • {overdueCount} vencida(s) • {todayCount} para hoje
+        </Text>
         {routes.map(r=><View style={s.card} key={r.id}>
           <Text style={s.title}>{r.title}</Text>
           <Text style={s.sub}>{r.area||'Sem setor'} • {r.point_count??0} pontos</Text>
+          <ScheduleSummary route={r}/>
           <View style={s.row}><Btn text="Abrir rota" outline onPress={()=>{setSelected(r.id);void listRoutePoints(r.id).then(setPoints);}}/></View>
         </View>)}
         {runs.filter(r=>r.route_id===null).slice(0,8).map(r=><View key={r.id} style={s.card}>

@@ -14,7 +14,7 @@ schema = match.group(1)
 assert '${' not in schema, 'O schema extraído não pode conter interpolação dinâmica'
 
 
-def open_sqlite(legacy=False):
+def open_sqlite(legacy=False, legacy_routes=False):
     conn = sqlite3.connect(':memory:')
     conn.execute('PRAGMA foreign_keys=ON')
     if legacy:
@@ -40,7 +40,24 @@ def open_sqlite(legacy=False):
         conn.execute("INSERT INTO assets VALUES ('a','M-01','Motor 01','Produção','2026-10-20T12:00:00Z')")
         conn.execute("INSERT INTO work_orders VALUES ('o','Lubrificação','', 'Lubrificação','Alta','a',30,'2026-10-20','pending','2026-10-20T12:00:00Z','2026-10-20T12:00:00Z')")
         conn.commit()
+    if legacy_routes:
+        conn.executescript("""
+        CREATE TABLE routes(id TEXT PRIMARY KEY NOT NULL,title TEXT NOT NULL,
+          area TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL);
+        INSERT INTO routes(id,title,area,created_at)
+          VALUES('old-route','Lubrificação preventiva','Setor A','2026-10-20T12:00:00Z');
+        """)
     conn.executescript(schema)
+    route_fields=[row[1] for row in conn.execute('PRAGMA table_info(routes)')]
+    route_migrations=[
+        ('recurrence_days',"ALTER TABLE routes ADD COLUMN recurrence_days INTEGER NOT NULL DEFAULT 0 CHECK(recurrence_days >= 0 AND recurrence_days <= 36500)"),
+        ('next_due_date',"ALTER TABLE routes ADD COLUMN next_due_date TEXT"),
+        ('attention_count',"ALTER TABLE routes ADD COLUMN attention_count INTEGER NOT NULL DEFAULT 0 CHECK(attention_count >= 0)"),
+        ('attention_at',"ALTER TABLE routes ADD COLUMN attention_at TEXT")
+    ]
+    for name,statement in route_migrations:
+        if name not in route_fields:
+            conn.execute(statement)
     for name in ['block_reason', 'blocked_at', 'partial_reason', 'partial_at']:
         existing = [row[1] for row in conn.execute('PRAGMA table_info(work_orders)')]
         if name not in existing:
@@ -139,8 +156,23 @@ def test_routes_and_snapshot_history():
 
 
 
+def test_old_route_migration_and_schedule():
+    db=open_sqlite(legacy=True,legacy_routes=True)
+    before=db.execute("SELECT id,title,area FROM routes WHERE id='old-route'").fetchone()
+    assert before==('old-route','Lubrificação preventiva','Setor A')
+    assert db.execute("SELECT recurrence_days,next_due_date,attention_count,attention_at FROM routes WHERE id='old-route'").fetchone()==(0,None,0,None)
+    db.execute("UPDATE routes SET recurrence_days=30,next_due_date='2026-10-21' WHERE id='old-route'")
+    db.execute("UPDATE routes SET attention_count=2,attention_at='2026-10-21T00:00:00Z' WHERE id='old-route'")
+    assert db.execute("SELECT next_due_date,attention_count FROM routes WHERE id='old-route'").fetchone()==('2026-10-21',2)
+    db.execute("UPDATE routes SET next_due_date='2026-11-20',attention_count=0,attention_at=NULL WHERE id='old-route'")
+    assert db.execute("SELECT next_due_date,attention_count FROM routes WHERE id='old-route'").fetchone()==('2026-11-20',0)
+    assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+
+
+
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
     test_routes_and_snapshot_history()
-    print('OK: rotas, histórico, migração, cascata, atualização e rollback SQLite')
+    test_old_route_migration_and_schedule()
+    print('OK: rotas agendadas, migração 0.9, histórico, cascata, atualização e rollback SQLite')

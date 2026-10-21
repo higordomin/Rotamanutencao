@@ -2,8 +2,11 @@ import type {Asset,PhotoDraft} from './types';
 import {persistPhoto,deletePhotoFile} from './evidence';
 import {getDatabase} from './db';
 import {gramAmount,routeResult,appliedGrams} from './routeRules';
+import {localDate} from './logic';
+import {routePlanInput,planAfterRouteRun} from './routeSchedule';
 
-export type Route = {id:string;title:string;area:string;created_at:string;point_count?:number};
+export type Route = {id:string;title:string;area:string;created_at:string;point_count?:number;
+  recurrence_days:number;next_due_date:string|null;attention_count:number;attention_at:string|null};
 export type RoutePoint = {id:string;route_id:string;asset_id:string|null;title:string;lubricant:string;
   quantity_grams:number;position:number;asset_name?:string|null;asset_code?:string|null;asset_area?:string|null};
 export type RouteRun = {id:string;route_id:string|null;route_title:string;started_at:string;finished_at:string|null};
@@ -24,18 +27,32 @@ function str(v:string, max:number, name:string) {
 export async function listRoutes():Promise<Route[]> {
   const db=await getDatabase();
   return db.getAllAsync<Route>(`SELECT r.*, (SELECT COUNT(*) FROM route_points p WHERE p.route_id=r.id) AS point_count
-    FROM routes r ORDER BY r.area,r.title`);
+    FROM routes r ORDER BY
+      CASE WHEN r.attention_count>0 THEN 0 WHEN r.recurrence_days>0 AND r.next_due_date IS NOT NULL THEN 1 ELSE 2 END,
+      r.next_due_date,r.area,r.title`);
 }
 export async function listRoutePoints(routeId:string):Promise<RoutePoint[]> {
   const db=await getDatabase();
   return db.getAllAsync<RoutePoint>(`SELECT p.*,a.name asset_name,a.code asset_code,a.area asset_area
     FROM route_points p LEFT JOIN assets a ON a.id=p.asset_id WHERE p.route_id=? ORDER BY p.position,p.id`,routeId);
 }
-export async function createRoute(title:string,area:string):Promise<void> {
+export async function createRoute(title:string,area:string,recurrence='0',due:string|null=null):Promise<void> {
   const name=str(title,200,'o nome da rota');
   if(area.length>200)throw new Error('Setor muito longo.');
+  const plan=routePlanInput(recurrence,due);
   const db=await getDatabase();
-  await db.runAsync('INSERT INTO routes(id,title,area,created_at) VALUES(?,?,?,?)',id(),name,area.trim(),new Date().toISOString());
+  await db.runAsync(`INSERT INTO routes
+    (id,title,area,created_at,recurrence_days,next_due_date,attention_count,attention_at)
+    VALUES(?,?,?,?,?,?,0,NULL)`,id(),name,area.trim(),new Date().toISOString(),
+      plan.recurrence_days,plan.next_due_date);
+}
+export async function updateRouteSchedule(routeId:string,recurrence:string,due:string|null):Promise<void>{
+  const plan=routePlanInput(recurrence,due);
+  const db=await getDatabase();
+  // Não ocultar uma anomalia aberta alterando manualmente a programação.
+  const changed=await db.runAsync(`UPDATE routes SET recurrence_days=?,next_due_date=?
+    WHERE id=?`,plan.recurrence_days,plan.next_due_date,routeId);
+  if(changed.changes!==1)throw new Error('Rota não encontrada.');
 }
 export async function addRoutePoint(routeId:string,assetId:string,title:string,lubricant:string,quantity:string):Promise<void> {
   const task=str(title,200,'o ponto da rota');
@@ -133,13 +150,28 @@ export async function recordRoutePoint(
 export async function finishRouteRun(runId:string):Promise<void> {
   const db=await getDatabase();
   await db.withExclusiveTransactionAsync(async tx=>{
-    const remaining=await tx.getFirstAsync<{n:number}>(`SELECT COUNT(*) n FROM route_run_items
-      WHERE run_id=? AND status='pending'`,runId);
-    if(remaining?.n)throw new Error(`Existem ${remaining.n} pontos sem registro. Conclua ou marque como não executados.`);
-    const count=await tx.getFirstAsync<{n:number}>('SELECT COUNT(*) n FROM route_run_items WHERE run_id=?',runId);
-    if(!count?.n)throw new Error('Execução sem pontos.');
+    const run=await tx.getFirstAsync<RouteRun>('SELECT * FROM route_runs WHERE id=?',runId);
+    if(!run||run.finished_at!==null)throw new Error('Rota inexistente ou já finalizada.');
+    const stats=await tx.getFirstAsync<{total:number;pending:number;anomaly:number;skipped:number}>(`
+      SELECT COUNT(*) AS total,
+        COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END),0) AS pending,
+        COALESCE(SUM(CASE WHEN status='anomaly' THEN 1 ELSE 0 END),0) AS anomaly,
+        COALESCE(SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END),0) AS skipped
+      FROM route_run_items WHERE run_id=?`,runId);
+    if(!stats?.total)throw new Error('Execução sem pontos.');
+    if(stats.pending)throw new Error(`Existem ${stats.pending} pontos sem registro. Conclua ou marque como não executados.`);
+    const finishedAt=new Date().toISOString();
     const changed=await tx.runAsync('UPDATE route_runs SET finished_at=? WHERE id=? AND finished_at IS NULL',
-      new Date().toISOString(),runId);
+      finishedAt,runId);
     if(changed.changes!==1)throw new Error('Esta rota já foi finalizada.');
+    if(run.route_id) {
+      const route=await tx.getFirstAsync<Route>('SELECT * FROM routes WHERE id=?',run.route_id);
+      if(route) {
+        const plan=planAfterRouteRun(route,stats.anomaly,stats.skipped,localDate());
+        await tx.runAsync(`UPDATE routes SET next_due_date=?,attention_count=?,attention_at=?
+          WHERE id=?`,plan.next_due_date,plan.attention_count,
+          plan.attention_count?finishedAt:null,route.id);
+      }
+    }
   });
 }
