@@ -58,7 +58,7 @@ def open_sqlite(legacy=False, legacy_routes=False):
     for name,statement in route_migrations:
         if name not in route_fields:
             conn.execute(statement)
-    for name in ['block_reason', 'blocked_at', 'partial_reason', 'partial_at']:
+    for name in ['block_reason', 'blocked_at', 'partial_reason', 'partial_at','archived_at','archive_reason']:
         existing = [row[1] for row in conn.execute('PRAGMA table_info(work_orders)')]
         if name not in existing:
             if name == 'block_reason':
@@ -67,8 +67,12 @@ def open_sqlite(legacy=False, legacy_routes=False):
                 conn.execute('ALTER TABLE work_orders ADD COLUMN blocked_at TEXT')
             elif name == 'partial_reason':
                 conn.execute("ALTER TABLE work_orders ADD COLUMN partial_reason TEXT NOT NULL DEFAULT ''")
-            else:
+            elif name == 'partial_at':
                 conn.execute('ALTER TABLE work_orders ADD COLUMN partial_at TEXT')
+            elif name == 'archived_at':
+                conn.execute('ALTER TABLE work_orders ADD COLUMN archived_at TEXT')
+            else:
+                conn.execute("ALTER TABLE work_orders ADD COLUMN archive_reason TEXT NOT NULL DEFAULT ''")
     fields = [row[1] for row in conn.execute('PRAGMA table_info(executions)')]
     if 'result' not in fields:
         conn.execute("ALTER TABLE executions ADD COLUMN result TEXT NOT NULL DEFAULT 'completed' CHECK(result IN ('completed','partial'))")
@@ -184,10 +188,51 @@ def test_reminder_settings_migrate_without_dropping_data():
 
 
 
+def test_soft_archive_preserves_execution_photos_and_can_restore():
+    db=open_sqlite(legacy=True)
+    assert db.execute("SELECT archived_at,archive_reason FROM work_orders WHERE id='o'").fetchone()==(None,'')
+    db.execute("""INSERT INTO executions(id,order_id,order_title,notes,executed_at,previous_due_date,
+        next_due_date,asset_label,category,result)
+        VALUES('hist','o','Lubrificação','Serviço realizado','2026-10-21T11:00:00Z','2026-10-20',
+        '2026-11-19','M-01','Lubrificação','completed')""")
+    db.execute("""INSERT INTO execution_photos(id,execution_id,filename,mime_type,created_at)
+        VALUES('pic','hist','pic_archive.jpg','image/jpeg','2026-10-21T11:00:00Z')""")
+    db.execute("""UPDATE work_orders SET archived_at='2026-10-21T12:00:00Z',
+        archive_reason='Equipamento temporariamente inativo' WHERE id='o'""")
+    assert db.execute("SELECT COUNT(*) FROM work_orders WHERE archived_at IS NULL").fetchone()[0]==0
+    assert db.execute("SELECT COUNT(*) FROM work_orders WHERE archived_at IS NOT NULL").fetchone()[0]==1
+    assert db.execute("SELECT COUNT(*) FROM executions WHERE order_id='o'").fetchone()[0]==1
+    assert db.execute("SELECT COUNT(*) FROM execution_photos WHERE id='pic'").fetchone()[0]==1
+    assert db.execute("PRAGMA quick_check").fetchone()[0]=='ok'
+    assert db.execute("PRAGMA foreign_key_check").fetchall()==[]
+    db.execute("UPDATE work_orders SET archived_at=NULL,archive_reason='' WHERE id='o'")
+    assert db.execute("SELECT COUNT(*) FROM work_orders WHERE archived_at IS NULL").fetchone()[0]==1
+    assert db.execute("SELECT COUNT(*) FROM executions WHERE order_id='o'").fetchone()[0]==1
+
+
+def test_archived_orders_restore_snapshot_transaction():
+    db=open_sqlite(legacy=True)
+    db.execute("""UPDATE work_orders SET archived_at='2026-10-21T12:00:00Z',
+        archive_reason='Plano substituído por nova rotina' WHERE id='o'""")
+    db.commit()
+    try:
+        with db:
+            db.execute("DELETE FROM work_orders")
+            db.execute("INSERT INTO work_orders(id,title,status) VALUES('bad','X','not-a-state')")
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError('Backup inválido deveria dar rollback')
+    assert db.execute("SELECT archived_at FROM work_orders WHERE id='o'").fetchone()[0]=='2026-10-21T12:00:00Z'
+
+
+
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
     test_routes_and_snapshot_history()
     test_old_route_migration_and_schedule()
     test_reminder_settings_migrate_without_dropping_data()
+    test_soft_archive_preserves_execution_photos_and_can_restore()
+    test_archived_orders_restore_snapshot_transaction()
     print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')
