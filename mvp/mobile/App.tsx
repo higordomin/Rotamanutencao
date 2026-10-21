@@ -5,7 +5,8 @@ import {
 } from 'react-native';
 import {
   initializeDatabase, listAssets, listExecutions, listOrders, localDate,
-  completeOrder, removeAsset, removeOrder, saveAsset, saveOrder, validDate, listAllPhotos,
+  completeOrder, removeAsset, archiveOrder, restoreArchivedOrder, listArchivedOrders,
+  saveAsset, saveOrder, validDate, listAllPhotos,
   setImpediment, releaseImpediment, listRecentEvents,
 } from './src/db';
 import type {Asset, AssetDraft, Category, Execution, ExecutionPhoto, PhotoDraft, OrderDraft, Priority, WorkOrder, OrderEvent, ExecutionResult} from './src/types';
@@ -29,8 +30,8 @@ const COLORS = {
   red: '#FF7D8B', yellow: '#FFD075',
 };
 type Tab = 'Início' | 'Atividades' | 'Rotas' | 'Ativos' | 'Histórico' | 'Dados';
-type ModalType = 'asset' | 'order' | 'complete' | 'block' | null;
-type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Concluídas';
+type ModalType = 'asset' | 'order' | 'complete' | 'block' | 'archive' | null;
+type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Concluídas' | 'Arquivadas';
 type ActivityListItem = {kind:'order';value:WorkOrder}|{kind:'execution';value:Execution};
 const categories: Category[] = ['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção'];
 const priorities: Priority[] = ['Baixa', 'Média', 'Alta'];
@@ -95,6 +96,7 @@ export default function App() {
   const [selectedRouteId,setSelectedRouteId] = useState<string|null>(null);
   const [showAllBoard,setShowAllBoard]=useState(false);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [archivedOrders,setArchivedOrders]=useState<WorkOrder[]>([]);
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [evidence, setEvidence] = useState<ExecutionPhoto[]>([]);
   const [events, setEvents] = useState<OrderEvent[]>([]);
@@ -117,6 +119,7 @@ export default function App() {
   const [completionNotes, setCompletionNotes] = useState('');
   const [completionResult, setCompletionResult] = useState<ExecutionResult>('completed');
   const [blockReason, setBlockReason] = useState('');
+  const [archiveReason,setArchiveReason]=useState('');
   const [draftPhotos, setDraftPhotos] = useState<PhotoDraft[]>([]);
 
   useEffect(() => {
@@ -137,10 +140,12 @@ export default function App() {
   };
 
   const refresh = useCallback(async () => {
-    const [a, o, e, p, ev, r] = await Promise.all([
+    const [a, o, e, p, ev, r, archived] = await Promise.all([
       listAssets(), listOrders(), listExecutions(), listAllPhotos(), listRecentEvents(), listRoutes(),
+      listArchivedOrders(),
     ]);
     setAssets(a); setOrders(o); setExecutions(e); setEvidence(p); setEvents(ev); setRoutes(r);
+    setArchivedOrders(archived);
     void syncLocalReminders().catch(err=>console.warn('Lembretes não atualizados:',String(err)));
   }, []);
 
@@ -181,7 +186,7 @@ export default function App() {
       const state = taskState(order, today);
       if (orderFilter === 'Pendentes' && ['completed', 'blocked'].includes(state)) return false;
       if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
-      if (orderFilter === 'Concluídas') return false; // A aba Concluídas mostra execuções históricas, não estados de OS.
+      if (orderFilter === 'Concluídas' || orderFilter === 'Arquivadas') return false; // A aba Concluídas mostra execuções históricas, não estados de OS.
       return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason, order.partial_reason]
         .some(value => value.toLocaleLowerCase('pt-BR').includes(term));
     });
@@ -190,10 +195,18 @@ export default function App() {
   const completedExecutions = useMemo(
     ()=>filterCompletedExecutions(executions,search),[executions,search],
   );
+  const archivedVisible=useMemo(()=>{
+    const term=search.trim().toLocaleLowerCase('pt-BR');
+    return archivedOrders.filter(o=>!term ||
+      [o.title,o.description,o.asset_code||'',o.asset_name||'',o.asset_area||'',o.archive_reason]
+        .some(value=>value.toLocaleLowerCase('pt-BR').includes(term)));
+  },[archivedOrders,search]);
   const activityList:ActivityListItem[]=useMemo(()=>orderFilter==='Concluídas'
     ?completedExecutions.map(value=>({kind:'execution' as const,value}))
-    :visibleOrders.map(value=>({kind:'order' as const,value})),
-    [orderFilter,completedExecutions,visibleOrders],
+    :orderFilter==='Arquivadas'
+      ?archivedVisible.map(value=>({kind:'order' as const,value}))
+      :visibleOrders.map(value=>({kind:'order' as const,value})),
+    [orderFilter,completedExecutions,archivedVisible,visibleOrders],
   );
 
   const handle = async (action: () => Promise<void>) => {
@@ -261,11 +274,17 @@ export default function App() {
     );
   }); };
 
-  const confirmDeleteOrder = (order: WorkOrder) => Alert.alert(
-    'Excluir atividade?', 'A atividade e todo o seu histórico de execução serão apagados do aparelho.',
-    [{text: 'Cancelar', style: 'cancel'}, {text: 'Excluir', style: 'destructive',
-      onPress: () => { void handle(() => removeOrder(order.id)); }}],
+  const openArchiveOrder=(order:WorkOrder)=>{
+    setCompletingOrder(order);
+    setArchiveReason('');
+    setDialog('archive');
+  };
+  const confirmRestoreOrder=(order:WorkOrder)=>Alert.alert(
+    'Reativar OS?',`A OS "${order.title}" voltará ao planejamento, mantendo o histórico anterior.`,
+    [{text:'Cancelar',style:'cancel'},
+      {text:'Reativar',onPress:()=>{void handle(()=>restoreArchivedOrder(order.id));}}],
   );
+
   const confirmDeleteAsset = (asset: Asset) => Alert.alert(
     'Excluir equipamento?', 'As atividades vinculadas serão mantidas, mas perderão o vínculo com o equipamento.',
     [{text: 'Cancelar', style: 'cancel'}, {text: 'Excluir', style: 'destructive',
@@ -273,6 +292,7 @@ export default function App() {
   );
 
   function orderCard(order: WorkOrder) {
+    const archived=!!order.archived_at;
     const state = stateOf(order);
     const overdueOrder = state === 'overdue';
     const done = state === 'completed';
@@ -284,9 +304,14 @@ export default function App() {
           <Text style={styles.cardTitle}>{order.title}</Text>
           <Text style={styles.detail}>{[order.asset_code, order.asset_name].filter(Boolean).join(' · ') || 'Sem equipamento'} · {order.category}</Text>
         </View>
-        <Pill text={done ? 'Concluída' : isBlocked ? 'Impedida' : isPartial ? 'Parcial' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
+        <Pill text={archived ? 'Arquivada' : done ? 'Concluída' : isBlocked ? 'Impedida' : isPartial ? 'Parcial' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
           tone={done ? 'green' : isBlocked || overdueOrder ? 'red' : isPartial || order.due_date === today ? 'yellow' : 'blue'}/>
       </View>
+      {archived&&<View style={styles.blockAlert}>
+        <Text style={{color:COLORS.yellow,fontWeight:'800'}}>OS ARQUIVADA — HISTÓRICO PRESERVADO</Text>
+        <Text style={styles.description}>Motivo: {order.archive_reason}</Text>
+        <Text style={styles.detail}>Arquivada em {new Date(order.archived_at!).toLocaleString('pt-BR')}</Text>
+      </View>}
       {!!order.description && <Text style={styles.description}>{order.description}</Text>}
       {isPartial && <View style={[styles.blockAlert, {backgroundColor: '#2B2B3B'}]}>
         <Text style={{color: COLORS.yellow, fontWeight: '800'}}>↻ EXECUÇÃO PARCIAL — PENDÊNCIA ABERTA</Text>
@@ -299,14 +324,20 @@ export default function App() {
         <Pill text={`Prioridade ${order.priority}`} tone={order.priority === 'Alta' ? 'red' : 'blue'}/>
       </View>
       <View style={styles.cardActions}>
-        {!done && !isBlocked && <Action label="✓ Executar" onPress={() => openComplete(order)}/>}
-        {!done && (isBlocked
-          ? <Action label="Liberar" secondary disabled={busy} onPress={() => { void handle(() => releaseImpediment(order.id)); }}/>
-          : <Action label="⚠ Impedimento" secondary disabled={busy} onPress={() => openBlock(order)}/>)}
-        <Action label="Editar" secondary onPress={() => openOrder(order)}/>
-        <Pressable accessibilityRole="button" onPress={() => confirmDeleteOrder(order)} style={{padding: 11}}>
-          <Text style={{color: COLORS.red, fontWeight: '700'}}>Excluir</Text>
-        </Pressable>
+        {archived?
+          <Action label="Reativar OS" secondary disabled={busy}
+            onPress={()=>confirmRestoreOrder(order)}/>:
+          <>
+            {!done && !isBlocked && <Action label="✓ Executar" onPress={() => openComplete(order)}/>}
+            {!done && (isBlocked
+              ? <Action label="Liberar" secondary disabled={busy}
+                  onPress={() => { void handle(() => releaseImpediment(order.id)); }}/>
+              : <Action label="⚠ Impedimento" secondary disabled={busy}
+                  onPress={() => openBlock(order)}/>)}
+            <Action label="Editar" secondary onPress={() => openOrder(order)}/>
+            <Action label="Arquivar" dangerous disabled={busy}
+              onPress={()=>openArchiveOrder(order)}/>
+          </>}
       </View>
     </View>;
   }
@@ -532,7 +563,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.13.1 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.14 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
@@ -565,12 +596,14 @@ export default function App() {
             <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Rotas e atividades</Text>
               <Text style={styles.detail}>{orderFilter==='Concluídas'
                 ?`${completedExecutions.length} execução(ões) concluída(s)`
-                :`${orders.length} cadastradas`}</Text></View>
+                :orderFilter==='Arquivadas'
+                ?`${archivedVisible.length} OS arquivada(s)`
+                :`${orders.length} ativas • ${archivedOrders.length} arquivadas`}</Text></View>
               <Action label="+ Nova" onPress={() => openOrder()}/></View>
             <TextInput accessibilityLabel="Buscar atividades" placeholder="Buscar por TAG, equipamento ou atividade..."
               placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch} style={styles.searchField}/>
             <View style={styles.filters}>
-              {(['Todas', 'Pendentes', 'Impedidas', 'Concluídas'] as const).map(filter =>
+              {(['Todas', 'Pendentes', 'Impedidas', 'Concluídas', 'Arquivadas'] as const).map(filter =>
                 <Pressable key={filter} accessibilityRole="button" accessibilityState={{selected: orderFilter === filter}}
                   onPress={() => setOrderFilter(filter)} style={[styles.choice, orderFilter === filter && styles.choiceActive]}>
                   <Text style={{color: orderFilter === filter ? COLORS.bg : COLORS.text, fontWeight: '700', fontSize: 12}}>{filter}</Text>
@@ -578,8 +611,10 @@ export default function App() {
             </View>
           </>}
           ListEmptyComponent={<Text style={styles.empty}>{orderFilter==='Concluídas'
-            ? 'Nenhuma execução concluída encontrada. OS recorrentes já executadas aparecem aqui, mesmo quando voltam a ficar pendentes para a próxima manutenção.'
-            : 'Nenhuma atividade encontrada. Ajuste a busca ou crie uma atividade.'}</Text>}
+            ? 'Nenhuma execução concluída encontrada. OS recorrentes já executadas aparecem aqui.'
+            :orderFilter==='Arquivadas'
+            ?'Nenhuma OS arquivada. As OS arquivadas podem ser reativadas sem perda de fotos ou histórico.'
+            :'Nenhuma atividade encontrada. Ajuste a busca ou crie uma atividade.'}</Text>}
         />
       : <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content()}</ScrollView>}
     <View style={styles.nav}>
@@ -601,7 +636,7 @@ export default function App() {
           <View style={styles.modalHeader}>
             <Text style={styles.sectionTitle}>{calendarOpen ? 'Selecionar data' : dialog === 'asset' ? (editingAsset ? 'Editar equipamento' : 'Novo equipamento')
               : dialog === 'order' ? (editingOrder ? 'Editar atividade' : 'Nova atividade')
-              : dialog === 'block' ? 'Registrar impedimento' : 'Registrar execução'}</Text>
+              : dialog === 'block' ? 'Registrar impedimento' : dialog==='archive' ? 'Arquivar OS' : 'Registrar execução'}</Text>
             <Pressable accessibilityRole="button" accessibilityLabel={calendarOpen ? 'Voltar ao formulário' : 'Fechar formulário'}
               onPress={closeDialog}><Text style={{color: COLORS.muted, fontSize: 24}}>{calendarOpen ? '‹' : '×'}</Text></Pressable>
           </View>
@@ -655,6 +690,18 @@ export default function App() {
               <Text style={[styles.hint, {marginBottom: 15}]}>Ao executar uma atividade recorrente, a próxima data será calculada a partir do dia da execução.</Text>
               <Action disabled={busy || !validDate(orderDraft.due_date) || !/^\d+$/.test(recurrenceInput)} label={busy ? 'Salvando...' : 'Salvar atividade'}
                 onPress={() => { void handle(() => saveOrder({...orderDraft, recurrence_days: Number(recurrenceInput)}, editingOrder)); }}/>
+            </>}
+            {dialog === 'archive' && completingOrder && <>
+              <Text style={styles.cardTitle}>{completingOrder.title}</Text>
+              <Text style={styles.description}>Esta OS será removida do planejamento e das notificações,
+                mas todas as execuções, fotos e registros anteriores serão preservados.
+                Você poderá reativá-la no filtro Arquivadas.</Text>
+              <FormField label="Motivo do arquivamento *" multiline
+                placeholder="Ex.: Equipamento desativado, plano preventivo substituído"
+                value={archiveReason} onChangeText={setArchiveReason}/>
+              <Action disabled={busy||archiveReason.trim().length<10||archiveReason.length>500}
+                label={busy?'Arquivando...':'Confirmar arquivamento'}
+                onPress={()=>{void handle(()=>archiveOrder(completingOrder.id,archiveReason));}}/>
             </>}
             {dialog === 'block' && completingOrder && <>
               <Text style={[styles.cardTitle, {marginBottom: 10}]}>{completingOrder.title}</Text>
