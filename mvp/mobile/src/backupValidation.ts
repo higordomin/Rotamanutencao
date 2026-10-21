@@ -12,8 +12,8 @@ const ident = (v: unknown): v is string => str(v, 100) && v.length > 0;
 const iso = (v: unknown): v is string => str(v, 50) && !Number.isNaN(Date.parse(v));
 
 export function validateBackup(data: unknown): asserts data is BackupData {
-  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7, 8].includes(data.version as number))
-    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6, v7 ou v8.');
+  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7, 8, 9].includes(data.version as number))
+    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6, v7, v8 ou v9.');
   if (!Array.isArray(data.assets) || data.assets.length > MAX_RECORDS) throw new Error('Equipamentos inválidos.');
   if (!Array.isArray(data.work_orders) || data.work_orders.length > MAX_RECORDS) throw new Error('Atividades inválidas.');
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
@@ -52,7 +52,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       || ((data.version as number) >= 3 && (!str(o.block_reason, 500) || (o.blocked_at !== null && !iso(o.blocked_at))
         || (!!o.block_reason !== !!o.blocked_at)
         || (o.status === 'completed' && !!o.block_reason)))
-      || (data.version === 8 && (
+      || ((data.version as number) >= 8 && (
         (o.archived_at!==null && !iso(o.archived_at))
         || !str(o.archive_reason,500)
         || (!!o.archived_at !== !!o.archive_reason)
@@ -69,6 +69,8 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       || !str(e.notes, 10000) || !iso(e.executed_at) || !validDate(e.previous_due_date)
       || (e.next_due_date !== null && !validDate(e.next_due_date))
       || !str(e.asset_label, 300) || !str(e.category, 100)
+      // Histórico pode referenciar um ativo posteriormente excluído do cadastro.
+      || ((data.version as number) >= 9 && !(e.asset_id === null || ident(e.asset_id)))
       || ((data.version as number) >= 4 && (!['partial','completed'].includes(e.result)
         || (e.result === 'partial' && (e.notes.trim().length < 10 || e.notes.trim().length > 1000
           || e.next_due_date !== null)))))
