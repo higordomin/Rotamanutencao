@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {searchAssets,preselectAsset,executionBelongsToAssetSnapshot} from '../src/assetWorkflow.ts';
+import {searchAssets,preselectAsset,executionBelongsToAssetSnapshot,buildLegacyAssetIndex,inferLegacyAssetId,assetSnapshot} from '../src/assetWorkflow.ts';
 
 const assets=[
   {id:'a1',code:'M-101',name:'Motor da esteira',area:'Área de miúdos'},
@@ -36,4 +36,34 @@ test('histórico por equipamento não muda registros nem vincula duas TAGs iguai
   assert.equal(executionBelongsToAssetSnapshot(execution,first),true);
   assert.equal(executionBelongsToAssetSnapshot(execution,other),false);
   assert.equal(execution.asset_label,'T-25 · Esteira A · Sala 1');
+});
+
+test('execução com asset_id continua vinculada após alterar TAG, nome ou setor',()=>{
+  const historical={asset_id:'a1',asset_label:'M-101 · Motor da esteira · Área de miúdos'};
+  const renamed={...assets[0],code:'NOVO-01',name:'Motor substituído',area:'Nova linha'};
+  assert.equal(executionBelongsToAssetSnapshot(historical,renamed),true);
+  assert.equal(executionBelongsToAssetSnapshot(historical,assets[1]),false);
+});
+test('registro identificado por ID nunca muda de equipamento por coincidir texto',()=>{
+  const record={asset_id:'a2',asset_label:assetSnapshot(assets[0])};
+  assert.equal(executionBelongsToAssetSnapshot(record,assets[0]),false);
+  assert.equal(executionBelongsToAssetSnapshot(record,assets[1]),true);
+});
+test('migração associa somente snapshots idênticos e sem conflito',()=>{
+  const index=buildLegacyAssetIndex([...assets,{id:'duplicate',code:'M-101',name:'Motor da esteira',area:'Área de miúdos'}]);
+  assert.equal(inferLegacyAssetId(assetSnapshot(assets[0]),index),null);
+  assert.equal(inferLegacyAssetId(assetSnapshot(assets[1]),index),'a2');
+  assert.equal(inferLegacyAssetId('M-10',index),null);
+  assert.equal(inferLegacyAssetId('M-101 · Motor antigo · Área de miúdos',index),null);
+});
+test('histórico legado sem ID continua acessível por retrato sem fabricar vínculo',()=>{
+  const legacy={asset_label:assetSnapshot(assets[0]),asset_id:null};
+  assert.equal(executionBelongsToAssetSnapshot(legacy,assets[0]),true);
+  assert.equal(executionBelongsToAssetSnapshot(legacy,{...assets[0],name:'Editado'}),false);
+  assert.equal(inferLegacyAssetId(assetSnapshot(assets[0]),buildLegacyAssetIndex(assets)),'a1');
+});
+test('ativo excluído preserva ID do histórico, mas não faz correspondência textual com outra TAG',()=>{
+  const record={asset_id:'id-excluido',asset_label:'TAG · Motor · Setor'};
+  assert.equal(executionBelongsToAssetSnapshot(record,{id:'novo',code:'TAG',name:'Motor',area:'Setor'}),false);
+  assert.equal(record.asset_id,'id-excluido');
 });
