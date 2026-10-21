@@ -39,7 +39,7 @@ test('versões futuras preservam ID QA e incrementam somente versionCode', () =>
     const next = {...base,android:{...base.android,versionCode:132}};
     const result = resolveAppConfig({config: next});
     assert.equal(result.android.package, 'br.com.rotamanutencao.qa');
-    assert.equal(result.android.versionCode, 131);
+    assert.equal(result.android.versionCode, 132);
   } finally {
     if (previous === undefined) delete process.env.ROTA_PREVIEW;
     else process.env.ROTA_PREVIEW = previous;
