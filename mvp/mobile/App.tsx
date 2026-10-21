@@ -18,7 +18,7 @@ import {inspectBackup} from './src/backupInspection';
 import {CalendarPicker} from './src/CalendarPicker';
 import {brazilianDate} from './src/calendar';
 import {RoutesScreen} from './src/RoutesScreen';
-import {listRoutes,type Route} from './src/routes';
+import {listRoutes,listAssetRouteHistory,type AssetRouteHistoryItem,type Route} from './src/routes';
 import {buildOperationalBoard,type BoardEntry} from './src/operationalBoard';
 import {ReminderSettings} from './src/ReminderSettings';
 import {syncLocalReminders} from './src/localReminders';
@@ -108,6 +108,9 @@ export default function App() {
   const [assetFilterId, setAssetFilterId] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('Todas');
   const [historyPageSize, setHistoryPageSize] = useState(40);
+  const [routeHistoryPageSize,setRouteHistoryPageSize] = useState(25);
+  const [routeHistory,setRouteHistory] = useState<AssetRouteHistoryItem[]>([]);
+  const [routeHistoryLoading,setRouteHistoryLoading] = useState(false);
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -175,6 +178,20 @@ export default function App() {
     [assets, assetFilterId]);
   const visibleAssets = useMemo(() => searchAssets(assets, assetSearch), [assets, assetSearch]);
   const legacyAssetIndex = useMemo(() => buildLegacyAssetIndex(assets),[assets]);
+  useEffect(()=>{
+    let cancelled=false;
+    setRouteHistory([]);
+    if(!selectedAsset || tab!=='Histórico') {
+      setRouteHistoryLoading(false);
+      return ()=>{cancelled=true;};
+    }
+    setRouteHistoryLoading(true);
+    void listAssetRouteHistory(selectedAsset,assets)
+      .then(rows=>{if(!cancelled)setRouteHistory(rows);})
+      .catch(err=>{if(!cancelled)Alert.alert('Histórico de rotas indisponível',String(err));})
+      .finally(()=>{if(!cancelled)setRouteHistoryLoading(false);});
+    return ()=>{cancelled=true;};
+  },[selectedAsset,assets,tab]);
   const today = localDate();
   const stateOf = (order: WorkOrder) => taskState(order, today);
   const counts = useMemo(() => taskSummary(orders, today), [orders, today]);
@@ -406,6 +423,7 @@ export default function App() {
     setAssetFilterId(asset.id);
     setSearch('');
     setHistoryPageSize(40);
+    setRouteHistoryPageSize(25);
     if (view === 'orders') { setOrderFilter('Todas'); setTab('Atividades'); }
     else setTab('Histórico');
   };
@@ -596,7 +614,7 @@ export default function App() {
         <Text style={styles.description}>Substitui TODOS os registros existentes, depois de sua confirmação. Antes disso, exporte uma cópia do estado atual.</Text>
         <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
       </View>
-      <Text style={styles.hint}>Formato local versão 9 (restaura também versões 2 a 8) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+      <Text style={styles.hint}>Formato local versão 10 (restaura também versões 2 a 9) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
@@ -627,6 +645,28 @@ export default function App() {
           </View>
         </View>)}
       {historyExecutions.length > historyPageSize && <Action secondary label={`Carregar mais registros (${historyExecutions.length - historyPageSize} restantes)`} onPress={() => setHistoryPageSize(n => n + 40)}/> }
+      {selectedAsset && <>
+        <Text style={[styles.sectionTitle,{marginTop:26}]}>Pontos de rota deste equipamento</Text>
+        <Text style={styles.detail}>Execuções de lubrificação e inspeção por ID estável da TAG, com fotos e ocorrências. Até 300 registros recentes por consulta.</Text>
+        {routeHistoryLoading ? <ActivityIndicator color={COLORS.accent} style={{marginTop:16}}/> :
+          routeHistory.length===0 ? <Text style={styles.empty}>Nenhum ponto de rota vinculado a esta TAG. Registros antigos ambíguos permanecem no histórico geral das rotas.</Text> :
+          routeHistory.slice(0,routeHistoryPageSize).map(item=><View key={item.id} style={styles.card}>
+            <Text style={styles.cardTitle}>{item.point_title}</Text>
+            <Text style={styles.detail}>{item.route_title} · {new Date(item.started_at).toLocaleString('pt-BR')}</Text>
+            <Text style={styles.detail}>Equipamento na execução: {item.asset_label||'Sem identificação no retrato'}</Text>
+            <View style={styles.chips}>
+              <Pill text={item.status==='done'?'Executado':item.status==='anomaly'?'Anomalia':item.status==='skipped'?'Não executado':'Pendente'}
+                tone={item.status==='done'?'green':item.status==='anomaly'?'red':'yellow'}/>
+              <Pill text={item.quantity_grams+' g'}/>
+            </View>
+            {!!item.lubricant&&<Text style={styles.description}>Lubrificante: {item.lubricant}</Text>}
+            {!!item.notes&&<Text style={styles.description}>Registro: {item.notes}</Text>}
+            <Text style={styles.detail}>{item.photo_count} foto(s) anexada(s)</Text>
+            {!!item.first_photo&&<Image source={{uri:evidenceUri(item.first_photo)}} style={styles.thumb}/>}
+          </View>)}
+        {routeHistory.length>routeHistoryPageSize&&<Action secondary label={`Carregar mais pontos (${routeHistory.length-routeHistoryPageSize} restantes)`}
+          onPress={()=>setRouteHistoryPageSize(size=>size+25)}/>}
+      </>}
       {!assetFilterId && events.length > 0 && <>
         <Text style={[styles.sectionTitle, {marginTop: 26}]}>Ocorrências / impedimentos</Text>
         <Text style={styles.detail}>Registros de bloqueio, liberação e execução (últimos 250 eventos).</Text>
@@ -643,7 +683,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.17 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.18 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
