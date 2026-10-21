@@ -125,3 +125,34 @@ test('backup v5 rejeita referências órfãs em rota e execução',()=>{
   delete d.route_points;
   rejects(d,/Dados das rotas/);
 });
+
+test('backup v6 inclui imagens dos pontos e mantém compatibilidade v5',()=>{
+  const d=fixture();d.version=6;
+  d.work_orders[0].partial_reason='';d.work_orders[0].partial_at=null;
+  d.routes=[{id:'r',title:'Rota foto',area:'Setor',created_at:stamp}];
+  d.route_points=[{id:'p',route_id:'r',asset_id:'a1',title:'Mancal',
+    lubricant:'Graxa de teste',quantity_grams:2,position:0}];
+  d.route_runs=[{id:'run',route_id:'r',route_title:'Rota foto',started_at:stamp,finished_at:stamp}];
+  d.route_run_items=[{id:'item',run_id:'run',point_id:'p',point_title:'Mancal',
+    asset_label:'MC-01',lubricant:'Graxa de teste',quantity_grams:2,status:'done',
+    notes:'Inspecionado',recorded_at:stamp,position:0}];
+  const photo={id:'photo1',item_id:'item',filename:'route_01.jpg',
+    mime_type:'image/jpeg',created_at:stamp,base64:'/9j/AAAAAA=='};
+  d.route_photos=[photo];
+  check(d);
+  d.route_photos=[...Array.from({length:4},(_,i)=>({...photo,id:'ph'+i,filename:'r'+i+'.jpg'}))];
+  check(d);
+  d.route_photos.push({...photo,id:'ph5',filename:'r5.jpg'});
+  rejects(d,/mais de 4 fotos/);
+});
+test('backup v6 recusa foto órfã, malformada e arquivo sem coleção obrigatória',()=>{
+  const d=fixture();d.version=6;
+  d.work_orders[0].partial_reason='';d.work_orders[0].partial_at=null;
+  d.routes=[];d.route_points=[];d.route_runs=[];d.route_run_items=[];d.route_photos=[];
+  check(d);
+  d.route_photos=[{id:'x',item_id:'missing',filename:'a.jpg',mime_type:'image/jpeg',
+    created_at:stamp,base64:'/9j/AAAAAA=='}];
+  rejects(d,/Foto de ponto inválida/);
+  d.route_photos=[];delete d.route_photos;
+  rejects(d,/Fotos dos pontos/);
+});
