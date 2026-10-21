@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {Alert,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import DateTimePicker,{DateTimePickerAndroid} from '@react-native-community/datetimepicker';
-import {activateReminders,chooseReminderTime,countScheduledReminders,
+import {activateReminders,chooseReminderTime,getReminderScheduleBreakdown,
   deactivateReminders,getReminderSettings,scheduleReminderTest,syncLocalReminders} from './localReminders';
 import {reminderTimeLabel} from './reminderPlan';
 
@@ -12,14 +12,14 @@ export function ReminderSettings(){
   const [enabled,setEnabled]=useState(false);
   const [hour,setHour]=useState(14);
   const [minute,setMinute]=useState(0);
-  const [count,setCount]=useState(0);
+  const [schedule,setSchedule]=useState({total:0,daily:0,priority:0});
   const [loading,setLoading]=useState(true);
   const [working,setWorking]=useState(false);
   const [iosClock,setIosClock]=useState(false);
   const [testTime,setTestTime]=useState<string|null>(null);
   const load=async()=>{
-    const [settings,scheduled]=await Promise.all([getReminderSettings(),countScheduledReminders()]);
-    setEnabled(settings.enabled);setHour(settings.hour);setMinute(settings.minute);setCount(scheduled);
+    const [settings,scheduled]=await Promise.all([getReminderSettings(),getReminderScheduleBreakdown()]);
+    setEnabled(settings.enabled);setHour(settings.hour);setMinute(settings.minute);setSchedule(scheduled);
   };
   useEffect(()=>{
     let live=true;
@@ -67,12 +67,13 @@ export function ReminderSettings(){
   };
   return <View style={s.card}>
     <Text style={s.heading}>Lembretes locais de manutenção</Text>
-    <Text style={s.note}>Opcional, sem internet e sem login. Avisos para OS e rotas próximas do prazo,
-      vencidas, impedidas ou com pendências. Sem envio de dados para servidores.</Text>
+    <Text style={s.note}>Um resumo diário da programação e alertas individuais somente para
+      situações prioritárias: anomalias, impedimentos, atrasos e OS de prioridade Alta.
+      Funciona sem internet, login ou envio de dados para servidores.</Text>
     <Text style={[s.state,{color:enabled?C.green:C.muted}]}>
       {loading?'Carregando…':enabled?'● Lembretes ativados':'○ Lembretes desativados'}
     </Text>
-    <Text style={s.note}>Horário diário dos avisos (relógio Android)</Text>
+    <Text style={s.note}>Horário do resumo diário (relógio Android)</Text>
     <Pressable accessibilityRole="button" accessibilityLabel="Escolher horário do lembrete"
       disabled={working||loading} onPress={openClock} style={s.clockButton}>
       <Text style={s.clockIcon}>◷</Text>
@@ -116,8 +117,16 @@ export function ReminderSettings(){
       </Pressable>
       {!!testTime&&<Text style={[s.note,{color:C.green}]}>Teste programado para aproximadamente {testTime}. Confira a bandeja de notificações.</Text>}
     </View>}
-    <Text style={s.note}>{count} lembrete(s) de manutenção agendado(s). Se estiver em 0, verifique se há
-      OS ou rotas próximas do prazo ou pendências. O teste acima não entra nessa contagem.</Text>
+    <View style={s.testBox}>
+      <Text style={[s.note,{color:C.text,fontWeight:'800'}]}>Agendamentos no Android</Text>
+      <Text style={s.note}>📅 {schedule.daily} resumo(s) diários programados para os próximos sete dias.</Text>
+      <Text style={s.note}>⚠ {schedule.priority} alerta(s) prioritários individuais programados.</Text>
+      <Text style={s.note}>Total: {schedule.total} notificações de manutenção. O teste de dois minutos
+        não faz parte dessa contagem.</Text>
+    </View>
+    <Text style={s.note}>O texto dos resumos é preparado a partir das OS e rotas registradas quando
+      você abre o aplicativo ou altera uma manutenção. Dados modificados com o aplicativo fechado
+      só serão refletidos após uma nova sincronização local.</Text>
     <Text style={s.note}>Se o horário escolhido já passou hoje, o aviso de hoje não é enviado retroativamente:
       um aviso pendente será programado para o próximo horário possível, normalmente amanhã.</Text>
     <Text style={[s.note,{color:C.yellow}]}>O Android pode atrasar avisos devido às permissões e
