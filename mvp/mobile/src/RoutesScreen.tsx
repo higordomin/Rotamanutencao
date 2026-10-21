@@ -111,7 +111,8 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
     {disabled&&!!item.notes&&<Text style={s.note}>{item.notes}</Text>}
   </View>;
 }
-export function RoutesScreen({assets,onDataChanged}:{assets:Asset[];onDataChanged?:()=>void}){
+export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset[];
+  onDataChanged?:()=>void;initialRouteId?:string|null}){
   const [routes,setRoutes]=useState<Route[]>([]);
   const [runs,setRuns]=useState<RouteRun[]>([]);
   const [points,setPoints]=useState<RoutePoint[]>([]);
@@ -135,6 +136,15 @@ export function RoutesScreen({assets,onDataChanged}:{assets:Asset[];onDataChange
       setItems(parts);setSavedPhotos(images);}
   },[selected,activeRun]);
   useEffect(()=>{void refresh().catch(e=>Alert.alert('Erro ao carregar rotas',String(e)));},[refresh]);
+  useEffect(()=>{
+    if(initialRouteId){
+      setSelected(initialRouteId);
+      setActiveRun(null);
+      void listRoutePoints(initialRouteId).then(setPoints).catch(e=>{
+        Alert.alert('Rota não disponível',String(e));
+      });
+    }
+  },[initialRouteId]);
   const current=routes.find(r=>r.id===selected);
   const overdueCount=routes.filter(r=>routePlanningState(r)==='overdue').length;
   const attentionCount=routes.filter(r=>routePlanningState(r)==='attention').length;
