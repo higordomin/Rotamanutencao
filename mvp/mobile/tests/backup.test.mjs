@@ -156,3 +156,38 @@ test('backup v6 recusa foto órfã, malformada e arquivo sem coleção obrigató
   d.route_photos=[];delete d.route_photos;
   rejects(d,/Fotos dos pontos/);
 });
+
+test('backup v7 exige campos de programação e preserva fotos dos pontos',()=>{
+  const d=fixture();d.version=7;
+  d.work_orders[0].partial_reason='';d.work_orders[0].partial_at=null;
+  d.routes=[{id:'route',title:'Lubrificação',area:'Setor',created_at:stamp,
+    recurrence_days:30,next_due_date:'2026-11-20',attention_count:0,attention_at:null}];
+  d.route_points=[{id:'point',route_id:'route',asset_id:'a1',title:'Mancal',
+    lubricant:'',quantity_grams:0,position:0}];
+  d.route_runs=[{id:'run7',route_id:'route',route_title:'Lubrificação',started_at:stamp,finished_at:stamp}];
+  d.route_run_items=[{id:'item7',run_id:'run7',point_id:'point',point_title:'Mancal',
+    asset_label:'MC-01',lubricant:'',quantity_grams:0,status:'done',notes:'',
+    recorded_at:stamp,position:0}];
+  d.route_photos=[{id:'photo7',item_id:'item7',filename:'route_7.jpg',
+    mime_type:'image/jpeg',created_at:stamp,base64:'/9j/AAAAAA=='}];
+  check(d);
+  d.routes[0].attention_count=1;
+  rejects(d,/Rota com dados inválidos/);
+  d.routes[0].attention_at=stamp;check(d);
+  d.routes[0].recurrence_days=0;
+  rejects(d,/Rota com dados inválidos/);
+  d.routes[0].recurrence_days=30;
+  d.routes[0].next_due_date='2026-02-30';
+  rejects(d,/Rota com dados inválidos/);
+});
+
+test('backup v7 recusa recorrência negativa e exige data da rota preventiva',()=>{
+  const d=fixture(); d.version=7;
+  d.work_orders[0].partial_reason='';d.work_orders[0].partial_at=null;
+  d.routes=[{id:'r1',title:'Rota',area:'A',created_at:stamp,recurrence_days:7,
+    next_due_date:null,attention_count:0,attention_at:null}];
+  d.route_points=[];d.route_runs=[];d.route_run_items=[];d.route_photos=[];
+  rejects(d,/Rota com dados inválidos/);
+  d.routes[0].next_due_date='2026-10-21';check(d);
+  d.routes[0].recurrence_days=-1;rejects(d,/Rota com dados inválidos/);
+});
