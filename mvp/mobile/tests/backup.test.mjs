@@ -191,3 +191,43 @@ test('backup v7 recusa recorrência negativa e exige data da rota preventiva',()
   d.routes[0].next_due_date='2026-10-21';check(d);
   d.routes[0].recurrence_days=-1;rejects(d,/Rota com dados inválidos/);
 });
+
+test('backup v8 preserva arquivo de OS inativa e suas execuções históricas',()=>{
+  const d=fixture();d.version=8;
+  d.work_orders[0].partial_reason='';d.work_orders[0].partial_at=null;
+  d.work_orders[0].archived_at=stamp;
+  d.work_orders[0].archive_reason='Equipamento retirado para manutenção prolongada';
+  d.routes=[];d.route_points=[];d.route_runs=[];d.route_run_items=[];d.route_photos=[];
+  d.executions=[{id:'oldExec',order_id:'ord1',order_title:'Lubrificar motor',
+    notes:'Engraxamento realizado',executed_at:stamp,
+    previous_due_date:'2026-10-20',next_due_date:'2026-11-19',
+    asset_label:'MC-01',category:'Lubrificação',result:'completed'}];
+  check(d);
+  // Campos de archive de v8 devem sempre estar presentes com coerência interna.
+  delete d.work_orders[0].archive_reason;
+  rejects(d,/Atividade com dados/);
+  d.work_orders[0].archive_reason='Equipamento retirado para manutenção prolongada';
+  d.work_orders[0].archived_at=null;
+  rejects(d,/Atividade com dados/);
+  d.work_orders[0].archive_reason='';
+  check(d);
+});
+test('backup v8 exige justificativa de arquivamento e campos de OS ativas',()=>{
+  const d=fixture();d.version=8;
+  d.work_orders[0].partial_reason='';d.work_orders[0].partial_at=null;
+  d.work_orders[0].archived_at=null;
+  d.work_orders[0].archive_reason='';
+  d.routes=[];d.route_points=[];d.route_runs=[];d.route_run_items=[];d.route_photos=[];
+  check(d);
+  d.work_orders[0].archived_at=stamp;
+  d.work_orders[0].archive_reason='Curto';
+  rejects(d,/Atividade com dados/);
+  d.work_orders[0].archive_reason='Retirado definitivamente de uso';
+  check(d);
+});
+test('backup antigo v7 continua importável sem campos de arquivamento',()=>{
+  const d=fixture();d.version=7;
+  d.work_orders[0].partial_reason='';d.work_orders[0].partial_at=null;
+  d.routes=[];d.route_points=[];d.route_runs=[];d.route_run_items=[];d.route_photos=[];
+  check(d);
+});
