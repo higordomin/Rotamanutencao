@@ -49,9 +49,12 @@ export function inferLegacyAssetId(snapshot:string, index:ReadonlyMap<string,str
 export function executionBelongsToAssetSnapshot(
   execution:Pick<Execution,'asset_label'> & Partial<Pick<Execution,'asset_id'>>,
   asset:Pick<Asset,'id'|'code'|'name'|'area'>,
+  legacyIndex?:ReadonlyMap<string,string|null>,
 ):boolean {
   if(execution.asset_id!==null && execution.asset_id!==undefined)
     return execution.asset_id===asset.id;
   const snapshot=assetSnapshot(asset);
-  return snapshot.length>0 && execution.asset_label===snapshot;
+  if(snapshot.length===0 || execution.asset_label!==snapshot)return false;
+  // Na visão por TAG, um retrato de dois ativos não pode ser atribuído a ambos.
+  return legacyIndex === undefined || legacyIndex.get(snapshot) === asset.id;
 }
