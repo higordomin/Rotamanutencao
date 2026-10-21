@@ -4,6 +4,7 @@ import {getDatabase} from './db';
 import {gramAmount,routeResult,appliedGrams} from './routeRules';
 import {localDate} from './logic';
 import {routePlanInput,planAfterRouteRun} from './routeSchedule';
+import {assetSnapshot,buildLegacyAssetIndex} from './assetWorkflow';
 
 export type Route = {id:string;title:string;area:string;created_at:string;point_count?:number;
   recurrence_days:number;next_due_date:string|null;attention_count:number;attention_at:string|null};
@@ -13,8 +14,14 @@ export type RouteRun = {id:string;route_id:string|null;route_title:string;starte
 export type RouteRunPhoto = {id:string;item_id:string;filename:string;
   mime_type:'image/jpeg'|'image/png';created_at:string};
 export type RouteRunItem = {id:string;run_id:string;point_id:string;point_title:string;asset_label:string;
+  asset_id:string|null; // snapshot persistente, independente do cadastro atual
   lubricant:string;quantity_grams:number;status:'pending'|'done'|'anomaly'|'skipped';notes:string;
   recorded_at:string|null;position:number};
+/** Registro de ponto por ativo no histórico, inclusive de rotas excluídas. */
+export type AssetRouteHistoryItem = RouteRunItem & {
+  route_title:string;started_at:string;finished_at:string|null;
+  photo_count:number;first_photo:string|null;
+};
 export const MAX_ROUTE_PHOTOS = 4;
 export type RouteBackupRows = {routes:Route[];route_points:RoutePoint[];route_runs:RouteRun[];route_run_items:RouteRunItem[]};
 
@@ -91,6 +98,28 @@ export async function listRunPhotos(runId:string):Promise<RouteRunPhoto[]> {
   return db.getAllAsync<RouteRunPhoto>(`SELECT p.* FROM route_run_photos p
     JOIN route_run_items i ON i.id=p.item_id WHERE i.run_id=? ORDER BY p.created_at,p.id`,runId);
 }
+/**
+ * Histórico por TAG com vínculo por ID. Backups legados sem vínculo só entram
+ * se o retrato for inequívoco entre os equipamentos atualmente cadastrados.
+ */
+export async function listAssetRouteHistory(
+  asset:Pick<Asset,'id'|'code'|'name'|'area'>,
+  allAssets:ReadonlyArray<Pick<Asset,'id'|'code'|'name'|'area'>>,
+):Promise<AssetRouteHistoryItem[]> {
+  const db=await getDatabase();
+  const label=assetSnapshot(asset);
+  const legacy=buildLegacyAssetIndex(allAssets).get(label)===asset.id?label:null;
+  return db.getAllAsync<AssetRouteHistoryItem>(`
+    SELECT i.*, r.route_title,r.started_at,r.finished_at,
+       (SELECT COUNT(*) FROM route_run_photos p WHERE p.item_id=i.id) AS photo_count,
+       (SELECT filename FROM route_run_photos p WHERE p.item_id=i.id
+        ORDER BY p.created_at,p.id LIMIT 1) AS first_photo
+    FROM route_run_items i JOIN route_runs r ON r.id=i.run_id
+    WHERE i.asset_id=? OR (i.asset_id IS NULL AND ? IS NOT NULL AND i.asset_label=?)
+    ORDER BY r.started_at DESC,i.position LIMIT 300
+  `,asset.id,legacy,legacy);
+}
+
 export async function startRouteRun(routeId:string):Promise<string> {
   const db=await getDatabase();
   const runId=id(),started=new Date().toISOString();
@@ -107,9 +136,9 @@ export async function startRouteRun(routeId:string):Promise<string> {
     for(const point of points) {
       const label=[point.asset_code,point.asset_name,point.asset_area].filter(Boolean).join(' · ').slice(0,300);
       await tx.runAsync(`INSERT INTO route_run_items
-      (id,run_id,point_id,point_title,asset_label,lubricant,quantity_grams,status,notes,recorded_at,position)
-      VALUES(?,?,?,?,?,?,?,'pending','',NULL,?)`,
-      id(),runId,point.id,point.title,label,point.lubricant,point.quantity_grams,point.position);
+      (id,run_id,point_id,point_title,asset_label,lubricant,quantity_grams,status,notes,recorded_at,position,asset_id)
+      VALUES(?,?,?,?,?,?,?,'pending','',NULL,?,?)`,
+      id(),runId,point.id,point.title,label,point.lubricant,point.quantity_grams,point.position,point.asset_id);
     }
   });
   return runId;

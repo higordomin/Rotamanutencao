@@ -272,3 +272,45 @@ test('backup v9 não aceita ausência de campos de arquivamento que eram obrigat
   const d=fixtureV9();
   delete d.work_orders[0].archive_reason;rejects(d,/Atividade com dados/);
 });
+
+function routeFixtureV10() {
+  const data=fixture();
+  data.version=10;
+  Object.assign(data.work_orders[0],{partial_reason:'',partial_at:null,archived_at:null,archive_reason:''});
+  data.routes=[];data.route_points=[];
+  data.route_runs=[{id:'run10',route_id:null,route_title:'Rota removida',started_at:stamp,finished_at:stamp}];
+  data.route_run_items=[{
+    id:'item10',run_id:'run10',point_id:'ponto-removido',point_title:'Mancal dianteiro',
+    asset_label:'MC-01 · Motor · Utilidades',asset_id:'a1',
+    lubricant:'Graxa HD2T',quantity_grams:3,status:'done',notes:'',
+    recorded_at:stamp,position:0,
+  }];
+  data.route_photos=[];
+  return data;
+}
+test('backup v10 inclui identidade estável dos pontos de rota mesmo sem rota cadastrada',()=>{
+  const data=routeFixtureV10();
+  check(data);
+  data.assets[0].code='TAG-NOVA';
+  data.assets[0].name='Motor renomeado';
+  check(data);
+  data.route_run_items[0].asset_id='equipamento-excluido';
+  check(data); // sem FK histórico, não exige que o cadastro ainda exista
+});
+test('backup v10 rejeita ausência ou tipo incorreto de ID de rota executada',()=>{
+  const data=routeFixtureV10();
+  delete data.route_run_items[0].asset_id;
+  rejects(data,/Registro de checklist inválido/);
+  data.route_run_items[0].asset_id=10;
+  rejects(data,/Registro de checklist inválido/);
+  data.route_run_items[0].asset_id='';
+  rejects(data,/Registro de checklist inválido/);
+  data.route_run_items[0].asset_id=null;
+  check(data);
+});
+test('backup v9 permanece importável sem asset_id nos pontos históricos',()=>{
+  const data=routeFixtureV10();
+  data.version=9;
+  delete data.route_run_items[0].asset_id;
+  check(data);
+});

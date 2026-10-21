@@ -111,6 +111,7 @@ export async function initializeDatabase(): Promise<void> {
       point_id TEXT NOT NULL,
       point_title TEXT NOT NULL,
       asset_label TEXT NOT NULL DEFAULT '',
+      asset_id TEXT, -- vínculo histórico sem FK para preservar a identidade do ativo excluído
       lubricant TEXT NOT NULL DEFAULT '',
       quantity_grams REAL NOT NULL DEFAULT 0 CHECK(quantity_grams >= 0 AND quantity_grams <= 100000),
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done','anomaly','skipped')),
@@ -178,6 +179,22 @@ export async function initializeDatabase(): Promise<void> {
     });
   }
   await db.execAsync('CREATE INDEX IF NOT EXISTS idx_executions_asset_id ON executions(asset_id,executed_at DESC)');
+  const routeItemFields=await db.getAllAsync<{name:string}>('PRAGMA table_info(route_run_items)');
+  if (!routeItemFields.some(field=>field.name==='asset_id')) {
+    await db.execAsync('ALTER TABLE route_run_items ADD COLUMN asset_id TEXT');
+    const catalog=await db.getAllAsync<Asset>('SELECT * FROM assets');
+    const index=buildLegacyAssetIndex(catalog);
+    await db.withExclusiveTransactionAsync(async tx=>{
+      const old=await tx.getAllAsync<{id:string;asset_label:string}>(`
+        SELECT id,asset_label FROM route_run_items WHERE asset_id IS NULL AND asset_label!=''`);
+      for(const point of old) {
+        const safeId=inferLegacyAssetId(point.asset_label,index);
+        if(safeId!==null)
+          await tx.runAsync('UPDATE route_run_items SET asset_id=? WHERE id=? AND asset_id IS NULL',safeId,point.id);
+      }
+    });
+  }
+  await db.execAsync('CREATE INDEX IF NOT EXISTS idx_route_run_items_asset ON route_run_items(asset_id,run_id)');
 }
 
 export async function listAssets(): Promise<Asset[]> {
@@ -422,11 +439,15 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
       await tx.runAsync('INSERT INTO route_runs(id,route_id,route_title,started_at,finished_at) VALUES(?,?,?,?,?)',
         run.id,run.route_id,run.route_title,run.started_at,run.finished_at);
     }
+    const legacyRouteIndex=buildLegacyAssetIndex(data.assets);
     for (const item of data.route_run_items ?? []) {
+      // v10 preserva o ID mesmo se o cadastro foi removido; v5-v9 inferem apenas por retrato único.
+      const historicalAssetId=data.version>=10 ? item.asset_id
+        :inferLegacyAssetId(item.asset_label,legacyRouteIndex);
       await tx.runAsync(`INSERT INTO route_run_items(id,run_id,point_id,point_title,asset_label,lubricant,
-        quantity_grams,status,notes,recorded_at,position) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+        quantity_grams,status,notes,recorded_at,position,asset_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
         item.id,item.run_id,item.point_id,item.point_title,item.asset_label,item.lubricant,item.quantity_grams,
-        item.status,item.notes,item.recorded_at,item.position);
+        item.status,item.notes,item.recorded_at,item.position,historicalAssetId);
     }
     for (const photo of data.route_photos ?? []) {
       const filename=filenames.get('route:'+photo.id);

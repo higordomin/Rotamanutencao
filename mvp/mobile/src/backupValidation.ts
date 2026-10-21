@@ -12,8 +12,8 @@ const ident = (v: unknown): v is string => str(v, 100) && v.length > 0;
 const iso = (v: unknown): v is string => str(v, 50) && !Number.isNaN(Date.parse(v));
 
 export function validateBackup(data: unknown): asserts data is BackupData {
-  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7, 8, 9].includes(data.version as number))
-    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6, v7, v8 ou v9.');
+  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7, 8, 9, 10].includes(data.version as number))
+    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6, v7, v8, v9 ou v10.');
   if (!Array.isArray(data.assets) || data.assets.length > MAX_RECORDS) throw new Error('Equipamentos inválidos.');
   if (!Array.isArray(data.work_orders) || data.work_orders.length > MAX_RECORDS) throw new Error('Atividades inválidas.');
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
@@ -128,6 +128,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
     for (const i of d.route_run_items!) {
       if(!ident(i.run_id)||!runIds.has(i.run_id)||!ident(i.point_id)
         || !str(i.point_title,200)||!i.point_title.trim()||!str(i.asset_label,300)
+        || ((data.version as number) >= 10 && !(i.asset_id===null || ident(i.asset_id)))
         || !str(i.lubricant,200)||!Number.isFinite(i.quantity_grams)||i.quantity_grams<0||i.quantity_grams>100000
         || !['pending','done','anomaly','skipped'].includes(i.status)
         || (i.status==='skipped'&&i.quantity_grams!==0)

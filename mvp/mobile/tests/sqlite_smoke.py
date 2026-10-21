@@ -14,7 +14,7 @@ schema = match.group(1)
 assert '${' not in schema, 'O schema extraído não pode conter interpolação dinâmica'
 
 
-def open_sqlite(legacy=False, legacy_routes=False, legacy_history=False):
+def open_sqlite(legacy=False, legacy_routes=False, legacy_history=False, legacy_route_items=False):
     conn = sqlite3.connect(':memory:')
     conn.execute('PRAGMA foreign_keys=ON')
     if legacy:
@@ -51,6 +51,23 @@ def open_sqlite(legacy=False, legacy_routes=False, legacy_history=False):
           area TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL);
         INSERT INTO routes(id,title,area,created_at)
           VALUES('old-route','Lubrificação preventiva','Setor A','2026-10-20T12:00:00Z');
+        """)
+    if legacy_route_items:
+        # Simula banco 0.17 em que o checklist não tinha a coluna asset_id.
+        conn.executescript("""
+        CREATE TABLE route_runs(
+          id TEXT PRIMARY KEY,route_id TEXT,route_title TEXT,
+          started_at TEXT,finished_at TEXT
+        );
+        INSERT INTO route_runs VALUES('legacy-run',NULL,'Rota antiga','2026-10-20T12:00:00Z',NULL);
+        CREATE TABLE route_run_items(
+          id TEXT PRIMARY KEY,run_id TEXT REFERENCES route_runs(id) ON DELETE CASCADE,
+          point_id TEXT,point_title TEXT,asset_label TEXT,lubricant TEXT,
+          quantity_grams REAL,status TEXT,notes TEXT,recorded_at TEXT,position INTEGER
+        );
+        INSERT INTO route_run_items VALUES('legacy-point','legacy-run','old-point','Mancal A',
+          'M-01 · Motor 01 · Produção','Graxa',2,'done','',
+          '2026-10-20T12:01:00Z',0);
         """)
     conn.executescript(schema)
     route_fields=[row[1] for row in conn.execute('PRAGMA table_info(routes)')]
@@ -98,6 +115,19 @@ def open_sqlite(legacy=False, legacy_routes=False, legacy_history=False):
             if matched is not None:
                 conn.execute('UPDATE executions SET asset_id=? WHERE id=?',(matched,execution_id))
     conn.execute('CREATE INDEX IF NOT EXISTS idx_executions_asset_id ON executions(asset_id,executed_at DESC)')
+    route_item_fields=[row[1] for row in conn.execute('PRAGMA table_info(route_run_items)')]
+    if 'asset_id' not in route_item_fields:
+        conn.execute('ALTER TABLE route_run_items ADD COLUMN asset_id TEXT')
+        matches={}
+        for asset_id,code,name,area in conn.execute('SELECT id,code,name,area FROM assets'):
+            label=' · '.join(part for part in (code,name,area) if part)[:300]
+            matches[label]=None if label in matches else asset_id
+        for item_id,label in conn.execute(
+                "SELECT id,asset_label FROM route_run_items WHERE asset_id IS NULL AND asset_label!=''").fetchall():
+            safe_id=matches.get(label)
+            if safe_id is not None:
+                conn.execute('UPDATE route_run_items SET asset_id=? WHERE id=?',(safe_id,item_id))
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_route_run_items_asset ON route_run_items(asset_id,run_id)')
     return conn
 
 
@@ -279,6 +309,25 @@ def test_migration_preserves_unique_legacy_asset_link():
     assert db.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
 
 
+def test_route_history_identity_and_photos_survive_changes():
+    db=open_sqlite(legacy=True,legacy_route_items=True)
+    assert db.execute("SELECT asset_id FROM route_run_items WHERE id='legacy-point'").fetchone()==('a',)
+    db.execute("""INSERT INTO route_run_photos(id,item_id,filename,mime_type,created_at)
+        VALUES('old-photo','legacy-point','old_photo.jpg','image/jpeg','2026-10-20T12:01:00Z')""")
+    db.execute("UPDATE assets SET code='TAG-NOVA',name='Novo motor',area='Nova linha' WHERE id='a'")
+    assert db.execute("SELECT asset_id FROM route_run_items WHERE id='legacy-point'").fetchone()==('a',)
+    db.execute("DELETE FROM assets WHERE id='a'")
+    assert db.execute("SELECT asset_id FROM route_run_items WHERE id='legacy-point'").fetchone()==('a',)
+    assert db.execute("SELECT filename FROM route_run_photos WHERE id='old-photo'").fetchone()==('old_photo.jpg',)
+    assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+    assert db.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+    query="""SELECT i.id,r.route_title,
+        (SELECT COUNT(*) FROM route_run_photos p WHERE p.item_id=i.id) AS photo_count
+        FROM route_run_items i JOIN route_runs r ON r.id=i.run_id
+        WHERE i.asset_id=? ORDER BY r.started_at DESC LIMIT 300"""
+    assert db.execute(query,('a',)).fetchone()==('legacy-point','Rota antiga',1)
+
+
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
@@ -289,4 +338,5 @@ if __name__ == '__main__':
     test_archived_orders_restore_snapshot_transaction()
     test_asset_id_keeps_identity_after_rename_and_deletion()
     test_migration_preserves_unique_legacy_asset_link()
+    test_route_history_identity_and_photos_survive_changes()
     print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')
