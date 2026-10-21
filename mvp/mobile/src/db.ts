@@ -292,25 +292,54 @@ export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 
   let executions: BackupData['executions'] = [];
   let photos: ExecutionPhoto[] = [];
   let order_events: OrderEvent[] = [];
+  let routes: NonNullable<BackupData['routes']> = [];
+  let route_points: NonNullable<BackupData['route_points']> = [];
+  let route_runs: NonNullable<BackupData['route_runs']> = [];
+  let route_run_items: NonNullable<BackupData['route_run_items']> = [];
   await db.withExclusiveTransactionAsync(async tx => {
     assets = await tx.getAllAsync<Asset>('SELECT * FROM assets');
     work_orders = await tx.getAllAsync<BackupData['work_orders'][number]>('SELECT * FROM work_orders');
     executions = await tx.getAllAsync<BackupData['executions'][number]>('SELECT * FROM executions');
     photos = await tx.getAllAsync<ExecutionPhoto>('SELECT * FROM execution_photos');
     order_events = await tx.getAllAsync<OrderEvent>('SELECT * FROM order_events');
+    routes = await tx.getAllAsync<NonNullable<BackupData['routes']>[number]>('SELECT * FROM routes');
+    route_points = await tx.getAllAsync<NonNullable<BackupData['route_points']>[number]>('SELECT * FROM route_points');
+    route_runs = await tx.getAllAsync<NonNullable<BackupData['route_runs']>[number]>('SELECT * FROM route_runs');
+    route_run_items = await tx.getAllAsync<NonNullable<BackupData['route_run_items']>[number]>('SELECT * FROM route_run_items');
   });
-  return {assets, work_orders, executions, photos, order_events};
+  return {assets, work_orders, executions, photos, order_events, routes, route_points, route_runs, route_run_items};
 }
 
 // Os dados são validados pelo módulo de backup antes de chegar à transação.
 export async function restoreDatabaseRows(data: BackupData, filenames: Map<string, string>): Promise<void> {
   const db = await database();
   await db.withExclusiveTransactionAsync(async (tx) => {
+    // Backup legado restaura rotas vazias; tudo é transacional para garantir rollback.
+    await tx.runAsync('DELETE FROM route_run_items');
+    await tx.runAsync('DELETE FROM route_runs');
+    await tx.runAsync('DELETE FROM routes');
     await tx.runAsync('DELETE FROM work_orders'); // CASCADE -> execuções e fotos
     await tx.runAsync('DELETE FROM assets');
     for (const a of data.assets) {
       await tx.runAsync('INSERT INTO assets (id,code,name,area,created_at) VALUES (?,?,?,?,?)',
         a.id, a.code, a.name, a.area, a.created_at);
+    }
+    for (const r of data.routes ?? []) {
+      await tx.runAsync('INSERT INTO routes(id,title,area,created_at) VALUES(?,?,?,?)', r.id,r.title,r.area,r.created_at);
+    }
+    for (const p of data.route_points ?? []) {
+      await tx.runAsync(`INSERT INTO route_points(id,route_id,asset_id,title,lubricant,quantity_grams,position)
+        VALUES(?,?,?,?,?,?,?)`,p.id,p.route_id,p.asset_id,p.title,p.lubricant,p.quantity_grams,p.position);
+    }
+    for (const run of data.route_runs ?? []) {
+      await tx.runAsync('INSERT INTO route_runs(id,route_id,route_title,started_at,finished_at) VALUES(?,?,?,?,?)',
+        run.id,run.route_id,run.route_title,run.started_at,run.finished_at);
+    }
+    for (const item of data.route_run_items ?? []) {
+      await tx.runAsync(`INSERT INTO route_run_items(id,run_id,point_id,point_title,asset_label,lubricant,
+        quantity_grams,status,notes,recorded_at,position) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+        item.id,item.run_id,item.point_id,item.point_title,item.asset_label,item.lubricant,item.quantity_grams,
+        item.status,item.notes,item.recorded_at,item.position);
     }
     for (const o of data.work_orders) {
       await tx.runAsync(`INSERT INTO work_orders
