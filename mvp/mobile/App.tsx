@@ -21,6 +21,7 @@ import {listRoutes,type Route} from './src/routes';
 import {buildOperationalBoard,type BoardEntry} from './src/operationalBoard';
 import {ReminderSettings} from './src/ReminderSettings';
 import {syncLocalReminders} from './src/localReminders';
+import {filterCompletedExecutions} from './src/completedExecutions';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -30,6 +31,7 @@ const COLORS = {
 type Tab = 'Início' | 'Atividades' | 'Rotas' | 'Ativos' | 'Histórico' | 'Dados';
 type ModalType = 'asset' | 'order' | 'complete' | 'block' | null;
 type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Concluídas';
+type ActivityListItem = {kind:'order';value:WorkOrder}|{kind:'execution';value:Execution};
 const categories: Category[] = ['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção'];
 const priorities: Priority[] = ['Baixa', 'Média', 'Alta'];
 const initialOrder = (): OrderDraft => ({
@@ -179,11 +181,20 @@ export default function App() {
       const state = taskState(order, today);
       if (orderFilter === 'Pendentes' && ['completed', 'blocked'].includes(state)) return false;
       if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
-      if (orderFilter === 'Concluídas' && state !== 'completed') return false;
+      if (orderFilter === 'Concluídas') return false; // A aba Concluídas mostra execuções históricas, não estados de OS.
       return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason, order.partial_reason]
         .some(value => value.toLocaleLowerCase('pt-BR').includes(term));
     });
   }, [orders, search, orderFilter, today]);
+
+  const completedExecutions = useMemo(
+    ()=>filterCompletedExecutions(executions,search),[executions,search],
+  );
+  const activityList:ActivityListItem[]=useMemo(()=>orderFilter==='Concluídas'
+    ?completedExecutions.map(value=>({kind:'execution' as const,value}))
+    :visibleOrders.map(value=>({kind:'order' as const,value})),
+    [orderFilter,completedExecutions,visibleOrders],
+  );
 
   const handle = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -296,6 +307,33 @@ export default function App() {
         <Pressable accessibilityRole="button" onPress={() => confirmDeleteOrder(order)} style={{padding: 11}}>
           <Text style={{color: COLORS.red, fontWeight: '700'}}>Excluir</Text>
         </Pressable>
+      </View>
+    </View>;
+  }
+
+  function completedExecutionCard(execution:Execution) {
+    const photos=evidenceByExecution.get(execution.id)??[];
+    return <View style={styles.card}>
+      <View style={{flexDirection:'row',justifyContent:'space-between',gap:10,alignItems:'center'}}>
+        <Text style={[styles.cardTitle,{flex:1}]}>{execution.order_title}</Text>
+        <Pill text="✓ Concluída" tone="green"/>
+      </View>
+      <Text style={styles.detail}>{execution.category}{execution.asset_label?' · '+execution.asset_label:''}</Text>
+      <Text style={styles.detail}>Realizada em: {new Date(execution.executed_at).toLocaleString('pt-BR')}</Text>
+      <Text style={styles.detail}>Prazo executado: {brazilianDate(execution.previous_due_date)}</Text>
+      {execution.next_due_date?
+        <Text style={styles.detail}>Próxima manutenção: {brazilianDate(execution.next_due_date)}
+          {' (OS recorrente continua pendente)'}</Text>
+        :<Text style={styles.detail}>OS avulsa concluída</Text>}
+      {!!execution.notes&&<Text style={styles.description}>{execution.notes}</Text>}
+      <Text style={styles.detail}>{photos.length} foto(s) da execução</Text>
+      {!!photos.length&&<View style={styles.photoRow}>
+        {photos.map(photo=><Image key={photo.id} source={{uri:evidenceUri(photo.filename)}}
+          style={styles.thumb}/>)}
+      </View>}
+      <View style={styles.cardActions}>
+        <Action label="Gerar PDF" secondary disabled={busy}
+          onPress={()=>{void runExtra(()=>exportExecutionPdf(execution,photos));}}/>
       </View>
     </View>;
   }
@@ -494,7 +532,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.13 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.13.1 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
@@ -514,9 +552,10 @@ export default function App() {
             void refresh().catch(err=>console.warn('Falha ao atualizar painel:',String(err)));
           }}/>
       : tab === 'Atividades' ? <FlatList
-          data={visibleOrders}
-          keyExtractor={item => item.id}
-          renderItem={({item}) => orderCard(item)}
+          data={activityList}
+          keyExtractor={item => item.kind+':'+item.value.id}
+          renderItem={({item}) => item.kind==='execution'
+            ? completedExecutionCard(item.value) : orderCard(item.value)}
           initialNumToRender={12}
           maxToRenderPerBatch={12}
           windowSize={7}
@@ -524,7 +563,9 @@ export default function App() {
           contentContainerStyle={styles.scroll}
           ListHeaderComponent={<>
             <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Rotas e atividades</Text>
-              <Text style={styles.detail}>{orders.length} cadastradas</Text></View>
+              <Text style={styles.detail}>{orderFilter==='Concluídas'
+                ?`${completedExecutions.length} execução(ões) concluída(s)`
+                :`${orders.length} cadastradas`}</Text></View>
               <Action label="+ Nova" onPress={() => openOrder()}/></View>
             <TextInput accessibilityLabel="Buscar atividades" placeholder="Buscar por TAG, equipamento ou atividade..."
               placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch} style={styles.searchField}/>
@@ -536,7 +577,9 @@ export default function App() {
                 </Pressable>)}
             </View>
           </>}
-          ListEmptyComponent={<Text style={styles.empty}>Nenhuma atividade encontrada. Ajuste a busca ou crie uma atividade.</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>{orderFilter==='Concluídas'
+            ? 'Nenhuma execução concluída encontrada. OS recorrentes já executadas aparecem aqui, mesmo quando voltam a ficar pendentes para a próxima manutenção.'
+            : 'Nenhuma atividade encontrada. Ajuste a busca ou crie uma atividade.'}</Text>}
         />
       : <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content()}</ScrollView>}
     <View style={styles.nav}>
