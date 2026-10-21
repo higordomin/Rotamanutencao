@@ -231,3 +231,44 @@ test('backup antigo v7 continua importável sem campos de arquivamento',()=>{
   d.routes=[];d.route_points=[];d.route_runs=[];d.route_run_items=[];d.route_photos=[];
   check(d);
 });
+
+function fixtureV9() {
+  const d=fixture();
+  d.version=9;
+  Object.assign(d.work_orders[0],{
+    partial_reason:'',partial_at:null,archived_at:null,archive_reason:'',
+  });
+  d.routes=[];d.route_points=[];d.route_runs=[];d.route_run_items=[];d.route_photos=[];
+  d.executions=[{
+    id:'execution1',order_id:'ord1',order_title:'Lubrificar motor',
+    notes:'Lubrificação realizada',executed_at:stamp,
+    previous_due_date:'2026-10-20',next_due_date:'2026-11-19',
+    asset_label:'MC-01 · Motor · Utilidades',
+    asset_id:'a1',category:'Lubrificação',result:'completed',
+  }];
+  return d;
+}
+test('backup v9 preserva identidade estável das execuções',()=>{
+  const d=fixtureV9();check(d);
+  assert.equal(d.executions[0].asset_id,'a1');
+  d.assets[0].code='RENOMEADO';
+  d.assets[0].name='Motor B';
+  check(d); // snapshot pode divergir do cadastro, ID é a referência permanente
+});
+test('backup v9 aceita histórico de ativo removido do cadastro mas rejeita ID inválido',()=>{
+  const d=fixtureV9();
+  d.executions[0].asset_id='equipamento-removido';check(d);
+  d.executions[0].asset_id=null;check(d);
+  delete d.executions[0].asset_id;rejects(d,/Execução com dados/);
+  d.executions[0].asset_id='';rejects(d,/Execução com dados/);
+  d.executions[0].asset_id=42;rejects(d,/Execução com dados/);
+});
+test('backup v8 não precisa do novo asset_id, mantendo importação legada',()=>{
+  const d=fixtureV9();d.version=8;
+  delete d.executions[0].asset_id;
+  check(d);
+});
+test('backup v9 não aceita ausência de campos de arquivamento que eram obrigatórios no v8',()=>{
+  const d=fixtureV9();
+  delete d.work_orders[0].archive_reason;rejects(d,/Atividade com dados/);
+});
