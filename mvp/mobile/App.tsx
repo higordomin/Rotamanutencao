@@ -369,7 +369,8 @@ export default function App() {
             Alert.alert('Backup reconhecido',
               `Versão: ${summary.version}\nExportado em: ${new Date(summary.exportedAt).toLocaleString('pt-BR')}\n` +
               `Equipamentos: ${summary.assets}\nAtividades: ${summary.orders}\nImpedimentos ativos: ${summary.impediments}\n` +
-              `Execuções: ${summary.executions}\nFotos: ${summary.photos}\nEventos: ${summary.events}\n\n` +
+              `Execuções: ${summary.executions}\nFotos: ${summary.photos}\nEventos: ${summary.events}\n` +
+              `Rotas: ${summary.routes}\nPontos: ${summary.routePoints}\nExecuções de rota: ${summary.routeRuns}\n\n` +
               'Verificação estrutural aprovada. Não houve restauração nem alteração dos seus dados. ' +
               'Esta verificação não comprova que o arquivo pode ser restaurado integralmente em qualquer aparelho.');
           }); }}/></View>
@@ -379,7 +380,7 @@ export default function App() {
         <Text style={styles.description}>Substitui TODOS os registros existentes, depois de sua confirmação. Antes disso, exporte uma cópia do estado atual.</Text>
         <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
       </View>
-      <Text style={styles.hint}>Formato local versão 4 (restaura também versões 2 e 3) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+      <Text style={styles.hint}>Formato local versão 5 (restaura também versões 2, 3 e 4) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
