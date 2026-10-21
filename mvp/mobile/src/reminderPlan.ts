@@ -17,13 +17,17 @@ export type ReminderCandidate={
   date:Date;
 };
 export const MAX_REMINDERS=40;
-export const REMINDER_HOURS=[8,14,19] as const;
-export function isReminderHour(hour:number):boolean{
-  return (REMINDER_HOURS as readonly number[]).includes(hour);
+export function validReminderTime(hour:number,minute:number):boolean {
+  return Number.isSafeInteger(hour)&&hour>=0&&hour<=23
+    && Number.isSafeInteger(minute)&&minute>=0&&minute<=59;
 }
-function atLocalHour(day:string,hour:number):Date{
+export function reminderTimeLabel(hour:number,minute:number):string{
+  if(!validReminderTime(hour,minute))throw new Error('Horário de lembrete inválido.');
+  return String(hour).padStart(2,'0')+':'+String(minute).padStart(2,'0');
+}
+function atLocalHour(day:string,hour:number,minute:number):Date{
   const [year,month,date]=day.split('-').map(Number);
-  return new Date(year,month-1,date,hour,0,0,0);
+  return new Date(year,month-1,date,hour,minute,0,0);
 }
 function daysBetween(from:string,to:string):number {
   const a=from.split('-').map(Number), b=to.split('-').map(Number);
@@ -39,8 +43,8 @@ function addOne(day:string):string {
  * agenda somente notificações pontuais para prazos conhecidos. Nunca simula
  * consulta em background a banco local.
  */
-export function planReminders(items:ReminderInput[],now:Date,hour:number):ReminderCandidate[]{
-  if(!isReminderHour(hour))throw new Error('Horário de lembrete não suportado.');
+export function planReminders(items:ReminderInput[],now:Date,hour:number,minute=0):ReminderCandidate[]{
+  if(!validReminderTime(hour,minute))throw new Error('Horário de lembrete inválido.');
   const today=localDate(now);
   const tomorrow=addOne(today);
   const planned:ReminderCandidate[]=[];
@@ -59,9 +63,9 @@ export function planReminders(items:ReminderInput[],now:Date,hour:number):Remind
     else if(late!==null&&late<0)kind='overdue';
     else if(late===0)kind='due';
     else kind='soon';
-    let date=atLocalHour(kind==='soon' ? item.dueDate! : today,hour);
+    let date=atLocalHour(kind==='soon' ? item.dueDate! : today,hour,minute);
     if(date.getTime()<=now.getTime()){
-      date=atLocalHour(tomorrow,hour);
+      date=atLocalHour(tomorrow,hour,minute);
       if(!pending&&late===0)kind='overdue';
     }
     planned.push({key:item.type+':'+item.id,type:item.type,title:item.title.slice(0,120),kind,date});
