@@ -22,6 +22,10 @@ export async function initializeDatabase(): Promise<void> {
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS assets (
       id TEXT PRIMARY KEY NOT NULL,
       code TEXT NOT NULL DEFAULT '',
