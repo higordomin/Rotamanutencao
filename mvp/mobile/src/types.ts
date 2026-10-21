@@ -54,6 +54,7 @@ export type Execution = {
   previous_due_date: string;
   next_due_date: string | null;
   asset_label: string;
+  asset_id: string | null; // identidade histórica imutável; pode sobreviver à exclusão do cadastro
   category: string;
   photo_count: number;
 };
@@ -74,7 +75,7 @@ export type OrderDraft = Pick<WorkOrder,
 
 export type BackupData = {
   format: 'rotamanutencao-offline';
-  version: 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   exported_at: string;
   assets: Asset[];
   work_orders: Omit<WorkOrder, 'asset_name' | 'asset_code' | 'asset_area'>[];
