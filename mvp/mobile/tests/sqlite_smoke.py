@@ -328,6 +328,39 @@ def test_route_history_identity_and_photos_survive_changes():
     assert db.execute(query,('a',)).fetchone()==('legacy-point','Rota antiga',1)
 
 
+
+def test_quick_route_action_is_atomic_and_preserves_other_points():
+    db=open_sqlite(legacy=True)
+    db.execute("""INSERT INTO routes(id,title,area,created_at)
+        VALUES('r-fast','Inspeção de campo','Produção','2026-10-22T09:00:00Z')""")
+    db.execute("""INSERT INTO route_runs(id,route_id,route_title,started_at,finished_at)
+        VALUES('run-fast','r-fast','Inspeção de campo','2026-10-22T09:01:00Z',NULL)""")
+    db.execute("""INSERT INTO route_run_items(id,run_id,point_id,point_title,asset_label,lubricant,
+        quantity_grams,status,notes,recorded_at,position,asset_id)
+        VALUES('fast-item','run-fast','point1','Mancal A','TAG · Equipamento','Graxa HD2T',
+        3.5,'pending','',NULL,0,'a')""")
+    db.execute("""INSERT INTO route_run_items(id,run_id,point_id,point_title,asset_label,lubricant,
+        quantity_grams,status,notes,recorded_at,position,asset_id)
+        VALUES('other-item','run-fast','point2','Mancal B','TAG · Equipamento','Graxa HD2T',
+        5,'pending','',NULL,1,'a')""")
+    statement="""UPDATE route_run_items SET status=?,notes=?,recorded_at=?
+        WHERE id=? AND status='pending' AND recorded_at IS NULL AND EXISTS (
+        SELECT 1 FROM route_runs r WHERE r.id=route_run_items.run_id AND r.finished_at IS NULL)"""
+    cur=db.execute(statement,('done','','2026-10-22T09:04:00Z','fast-item'))
+    assert cur.rowcount==1
+    assert db.execute("""SELECT status,notes,lubricant,quantity_grams,recorded_at
+        FROM route_run_items WHERE id='fast-item'""").fetchone()==(
+        'done','','Graxa HD2T',3.5,'2026-10-22T09:04:00Z')
+    assert db.execute("SELECT status FROM route_run_items WHERE id='other-item'").fetchone()==('pending',)
+    assert db.execute(statement,('done','','2026-10-22T09:05:00Z','fast-item')).rowcount==0
+    assert db.execute(statement,('done','','2026-10-22T09:05:00Z','unknown-item')).rowcount==0
+    db.execute("UPDATE route_runs SET finished_at='2026-10-22T09:06:00Z' WHERE id='run-fast'")
+    assert db.execute(statement,('done','','2026-10-22T09:07:00Z','other-item')).rowcount==0
+    assert db.execute("SELECT status FROM route_run_items WHERE id='other-item'").fetchone()==('pending',)
+    assert db.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+    assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+
+
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
@@ -339,4 +372,5 @@ if __name__ == '__main__':
     test_asset_id_keeps_identity_after_rename_and_deletion()
     test_migration_preserves_unique_legacy_asset_link()
     test_route_history_identity_and_photos_survive_changes()
+    test_quick_route_action_is_atomic_and_preserves_other_points()
     print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')

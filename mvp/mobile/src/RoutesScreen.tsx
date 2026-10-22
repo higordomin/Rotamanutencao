@@ -3,7 +3,7 @@ import {Alert,KeyboardAvoidingView,Platform,Pressable,ScrollView,StyleSheet,Text
 import type {Asset,PhotoDraft} from './types';
 import {selectPhoto,evidenceUri} from './evidence';
 import {addRoutePoint,createRoute,deleteRoute,deleteRoutePoint,finishRouteRun,
-  listRoutePoints,listRouteRuns,listRoutes,listRunItems,listRunPhotos,recordRoutePoint,startRouteRun,MAX_ROUTE_PHOTOS,
+  listRoutePoints,listRouteRuns,listRoutes,listRunItems,listRunPhotos,recordRoutePoint,quickCompleteRoutePoint,startRouteRun,MAX_ROUTE_PHOTOS,
   type Route,type RoutePoint,type RouteRun,type RouteRunItem,type RouteRunPhoto} from './routes';
 import {exportRoutePdf} from './routeReport';
 import {CalendarPicker} from './CalendarPicker';
@@ -11,6 +11,7 @@ import {brazilianDate} from './calendar';
 import {localDate} from './logic';
 import {routePlanningState} from './routeSchedule';
 import {updateRouteSchedule} from './routes';
+import {routeProgress,visibleRouteItems} from './quickRouteActions';
 
 const c={bg:'#08101E',panel:'#111E31',field:'#16273D',line:'#24394F',text:'#EFF6FF',
   muted:'#9CB0C8',blue:'#47B7F6',amber:'#FFD075',red:'#FF7D8B',green:'#5DD7AC'};
@@ -53,7 +54,21 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
   const [lubricant,setLubricant]=useState(item.lubricant);
   const [grams,setGrams]=useState(String(item.quantity_grams));
   const [working,setWorking]=useState(false);
+  const [expanded,setExpanded]=useState(false);
   const [draftPhotos,setDraftPhotos]=useState<PhotoDraft[]>([]);
+  const pristine=status===item.status && notes===item.notes
+    && lubricant===item.lubricant && grams===String(item.quantity_grams)
+    && draftPhotos.length===0;
+  const quickSave=async()=>{
+    if(working || disabled || !pristine || item.status!=='pending')return;
+    setWorking(true);
+    try{
+      await quickCompleteRoutePoint(item.id);
+      await onSaved();
+    }catch(e){
+      Alert.alert('Registro rápido não realizado',e instanceof Error?e.message:String(e));
+    }finally{setWorking(false);}
+  };
   const addPhoto=async(camera:boolean)=>{
     if(working || photos.length+draftPhotos.length>=MAX_ROUTE_PHOTOS)return;
     try {
@@ -74,6 +89,20 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
     <Text style={s.sub}>{item.asset_label||'Equipamento removido do cadastro'}</Text>
     <Text style={s.sub}>Resultado atual: {item.status==='pending'?'Pendente':item.status==='done'?'Executado':item.status==='anomaly'?'Anomalia':'Não executado'}</Text>
     {!disabled&&<>
+      {item.status==='pending'&&<View style={{marginTop:10}}>
+        <Text style={s.sub}>Execução rápida: grava {item.quantity_grams} g de {item.lubricant||'lubrificante não informado'}.</Text>
+        <Text style={[s.sub,{color:c.amber}]}>Toque somente DEPOIS de executar o serviço; sem fotos ou observações automáticas.</Text>
+        <View style={s.row}>
+          <Btn text={working?'Salvando...':'✓ Registrar executado (previsto)'}
+            disabled={working||!pristine} onPress={()=>{void quickSave();}}/>
+        </View>
+        {!pristine&&<Text style={s.sub}>Há dados editados ou fotos não salvas. Salve os detalhes para preservá-los.</Text>}
+      </View>}
+      <View style={s.row}>
+        <Btn text={expanded?'Fechar detalhes':item.status==='pending'?'Registrar com detalhes / anomalia':'Editar registro'}
+          outline disabled={working} onPress={()=>setExpanded(v=>!v)}/>
+      </View>
+      {expanded&&<>
       <View style={s.row}>
         {(['done','anomaly','skipped'] as const).map(st=><Pressable key={st}
           accessibilityRole="button" accessibilityState={{selected:status===st}}
@@ -103,6 +132,7 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
         </Pressable>)}
       </View>}
       <View style={{marginTop:12}}><Btn text={working?'Salvando...':'Salvar registro do ponto'} disabled={working} onPress={()=>{void save();}}/></View>
+      </>}
     </>}
     {photos.length>0&&<View style={s.row}>
       {photos.map(photo=><Image key={photo.id} source={{uri:evidenceUri(photo.filename)}} style={s.thumbnail}/>)}
@@ -120,6 +150,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const [savedPhotos,setSavedPhotos]=useState<RouteRunPhoto[]>([]);
   const [selected,setSelected]=useState<string|null>(null);
   const [activeRun,setActiveRun]=useState<string|null>(null);
+  const [runFilter,setRunFilter]=useState<'all'|'pending'|'attention'>('all');
   const [name,setName]=useState(''),[area,setArea]=useState('');
   const [period,setPeriod]=useState('0'),[firstDue,setFirstDue]=useState(localDate());
   const [editingSchedule,setEditingSchedule]=useState(false);
@@ -151,9 +182,12 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const todayCount=routes.filter(r=>routePlanningState(r)==='today').length;
   const run=runs.find(r=>r.id===activeRun);
   const visible=useMemo(()=>assets.filter(a=>[a.code,a.name,a.area].join(' ').toLowerCase().includes(assetSearch.trim().toLowerCase())).slice(0,12),[assets,assetSearch]);
-  const pending=items.filter(i=>i.status==='pending').length;
+  const {pending,attention}=routeProgress(items);
   const anomalies=items.filter(i=>i.status==='anomaly').length;
   const skipped=items.filter(i=>i.status==='skipped').length;
+  // Em rota finalizada os filtros de apontamento não aparecem; mostrar sempre o histórico completo.
+  const filteredItems=useMemo(()=>visibleRouteItems(items,run?.finished_at?'all':runFilter),
+    [items,runFilter,run?.finished_at]);
   const execute=async(action:()=>Promise<void>)=>{
     if(busy)return;
     setBusy(true);
@@ -167,7 +201,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         <View style={{flex:1}}><Text style={s.heading}>Rotas de manutenção</Text>
           <Text style={s.sub}>Checklists offline • rotas programadas</Text></View>
         {(selected||activeRun)&&<Btn text="← Voltar" outline onPress={()=>{
-          if(activeRun)setActiveRun(null);else setSelected(null);setItems([]);setSavedPhotos([]);
+          if(activeRun)setActiveRun(null);else setSelected(null);setRunFilter('all');setItems([]);setSavedPhotos([]);
         }}/>}
       </View>
       {activeRun&&run?<>
@@ -184,7 +218,21 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
               <Btn text="Finalizar rota" disabled={pending>0||busy} onPress={()=>{void execute(async()=>{await finishRouteRun(run.id);await refresh();});}}/>}
           </View>
         </View>
-        {items.map(item=><RunItem key={item.id} item={item} disabled={!!run.finished_at}
+        {!run.finished_at&&<View style={s.card}>
+          <Text style={s.title}>Exibir pontos da rota</Text>
+          <View style={s.row}>
+            <Btn text={`Todos (${items.length})`} outline={runFilter!=='all'} onPress={()=>setRunFilter('all')}/>
+            <Btn text={`Pendentes (${pending})`} outline={runFilter!=='pending'} onPress={()=>setRunFilter('pending')}/>
+            <Btn text={`Ocorrências (${attention})`} outline={runFilter!=='attention'} onPress={()=>setRunFilter('attention')}/>
+          </View>
+        </View>}
+        {filteredItems.length===0&&<Text style={s.note}>
+          {runFilter==='pending'?'Nenhum ponto pendente neste momento.':
+            runFilter==='attention'?'Nenhuma anomalia ou ponto não executado registrado.':
+            'Esta execução ainda não contém pontos.'}
+        </Text>}
+        {filteredItems.map(item=><RunItem key={item.id+':'+(item.recorded_at??'pending')}
+          item={item} disabled={!!run.finished_at}
           photos={savedPhotos.filter(photo=>photo.item_id===item.id)} onSaved={refresh}/>)}
       </>:selected&&current?<>
         <View style={s.card}>
@@ -217,7 +265,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           </View>}
           <View style={s.row}>
             <Btn disabled={busy||points.length===0} text="▶ Iniciar rota" onPress={()=>{void execute(async()=>{
-              const id=await startRouteRun(selected);setActiveRun(id);setItems(await listRunItems(id));
+              const id=await startRouteRun(selected);setRunFilter('all');setActiveRun(id);setItems(await listRunItems(id));
             });}}/>
             <Btn outline text="Excluir rota" disabled={busy} onPress={()=>Alert.alert('Excluir rota?', 'Os históricos já registrados serão preservados, mas os pontos atuais serão removidos.',[
               {text:'Cancelar',style:'cancel'},{text:'Excluir',style:'destructive',onPress:()=>{void execute(async()=>{await deleteRoute(selected);setSelected(null);setPoints([]);});}}
@@ -227,7 +275,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         {runs.filter(r=>r.route_id===selected).slice(0,8).map(r=><View key={r.id} style={s.card}>
           <Text style={s.title}>Execução em {new Date(r.started_at).toLocaleString('pt-BR')}</Text>
           <Text style={s.sub}>{r.finished_at?'Finalizada':'Em andamento'}</Text>
-          <Btn outline text={r.finished_at?'Ver relatório':'Continuar execução'} onPress={()=>{setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
+          <Btn outline text={r.finished_at?'Ver relatório':'Continuar execução'} onPress={()=>{setRunFilter('all');setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
         </View>)}
         <Text style={s.heading}>Pontos cadastrados</Text>
         {points.map(p=><View style={s.card} key={p.id}>
