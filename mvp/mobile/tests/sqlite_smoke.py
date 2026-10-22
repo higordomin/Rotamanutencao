@@ -386,6 +386,65 @@ def test_reprogramming_is_blocked_during_open_run_and_preserves_attention():
     assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
 
 
+
+def test_route_edit_reorder_and_duplicate_preserve_history():
+    db=open_sqlite()
+    db.execute("""INSERT INTO assets(id,code,name,area,created_at) VALUES
+      ('motor-A','M-10','Motor A','Linha 1','2026-10-22'),
+      ('motor-B','M-20','Motor B','Linha 1','2026-10-22')""")
+    db.execute("""INSERT INTO routes
+      (id,title,area,created_at,recurrence_days,next_due_date,attention_count,attention_at)
+      VALUES('route-A','Inspeção','Linha 1','2026-10-22',30,'2026-10-24',1,'2026-10-21')""")
+    for key,title,position in [('p-1','Motor',10),('p-2','Proteção',20),('p-3','Sensores',30)]:
+        db.execute("""INSERT INTO route_points
+          (id,route_id,asset_id,title,lubricant,quantity_grams,position)
+          VALUES(?,'route-A','motor-A',?,'',0,?)""",(key,title,position))
+    db.execute("""INSERT INTO route_runs(id,route_id,route_title,started_at,finished_at)
+      VALUES('history-A','route-A','Inspeção','2026-10-20','2026-10-21')""")
+    db.execute("""INSERT INTO route_run_items
+      (id,run_id,point_id,point_title,asset_label,lubricant,quantity_grams,status,notes,
+       recorded_at,position,asset_id)
+      VALUES('h-1','history-A','p-1','Motor','M-10','',0,'done','Sem falhas',
+       '2026-10-21',0,'motor-A')""")
+    db.execute("""INSERT INTO route_run_photos(id,item_id,filename,mime_type,created_at)
+      VALUES('photo-A','h-1','photo-A.jpg','image/jpeg','2026-10-21')""")
+    # Editar o checklist nunca atualiza snapshots de execuções anteriores.
+    db.execute("UPDATE route_points SET title=?,asset_id=? WHERE id=? AND route_id=?",
+      ('Checar proteção','motor-B','p-2','route-A'))
+    for i,point_id in enumerate(['p-3','p-1','p-2']):
+        db.execute("UPDATE route_points SET position=? WHERE id=? AND route_id=?",
+          (i,point_id,'route-A'))
+    assert db.execute("""SELECT id FROM route_points WHERE route_id='route-A'
+      ORDER BY position,id""").fetchall()==[('p-3',),('p-1',),('p-2',)]
+    assert db.execute("SELECT title,asset_id FROM route_points WHERE id='p-2'").fetchone()==(
+      'Checar proteção','motor-B')
+    # Nova rota é um modelo: sem horário, alerta ou histórico copiado.
+    db.execute("""INSERT INTO routes
+      (id,title,area,created_at,recurrence_days,next_due_date,attention_count,attention_at)
+      VALUES('copy-A','Cópia de Inspeção','Linha 1','2026-10-22',0,NULL,0,NULL)""")
+    points=db.execute("""SELECT asset_id,title FROM route_points WHERE route_id='route-A'
+      ORDER BY position,id""").fetchall()
+    for i,(asset_id,title) in enumerate(points):
+        db.execute("""INSERT INTO route_points
+          (id,route_id,asset_id,title,lubricant,quantity_grams,position)
+          VALUES(?,?,?,?,?,?,?)""",(f'copy-{i}','copy-A',asset_id,title,'',0,i))
+    assert db.execute("""SELECT recurrence_days,next_due_date,attention_count,attention_at
+      FROM routes WHERE id='copy-A'""").fetchone()==(0,None,0,None)
+    assert db.execute("SELECT COUNT(*) FROM route_runs WHERE route_id='copy-A'").fetchone()==(0,)
+    assert db.execute("SELECT COUNT(*) FROM route_points WHERE route_id='copy-A'").fetchone()==(3,)
+    assert db.execute("SELECT point_title,notes FROM route_run_items WHERE id='h-1'").fetchone()==(
+      'Motor','Sem falhas')
+    assert db.execute("SELECT COUNT(*) FROM route_run_photos WHERE id='photo-A'").fetchone()==(1,)
+    db.execute("""INSERT INTO route_runs(id,route_id,route_title,started_at,finished_at)
+      VALUES('running-A','route-A','Inspeção','2026-10-22',NULL)""")
+    assert db.execute("""SELECT id FROM route_runs WHERE route_id='route-A'
+      AND finished_at IS NULL LIMIT 1""").fetchone()==('running-A',)
+    assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
+    assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+
+
+
+
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
@@ -399,4 +458,5 @@ if __name__ == '__main__':
     test_route_history_identity_and_photos_survive_changes()
     test_quick_route_action_is_atomic_and_preserves_other_points()
     test_reprogramming_is_blocked_during_open_run_and_preserves_attention()
+    test_route_edit_reorder_and_duplicate_preserve_history()
     print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')
