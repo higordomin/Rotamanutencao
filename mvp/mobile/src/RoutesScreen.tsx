@@ -9,7 +9,8 @@ import {exportRoutePdf} from './routeReport';
 import {CalendarPicker} from './CalendarPicker';
 import {brazilianDate} from './calendar';
 import {localDate} from './logic';
-import {routePlanningState} from './routeSchedule';
+import {routePlanInput,routePlanningState} from './routeSchedule';
+import {ROUTE_INTERVALS,previewRouteDates,scheduleNeedsConfirmation} from './routeProgramming';
 import {updateRouteSchedule} from './routes';
 import {routeProgress,visibleRouteItems} from './quickRouteActions';
 
@@ -33,17 +34,58 @@ function Input({label,value,onChange,placeholder,numeric=false,multiline=false}:
 function ScheduleSummary({route}:{route:Route}) {
   const state=routePlanningState(route);
   const text=state==='attention'?`⚠ ${route.attention_count} ponto(s) exigem retorno`
-    :state==='overdue'?'● Rota vencida'
-    :state==='today'?'● Vence hoje'
+    :state==='overdue'?'● Rota atrasada'
+    :state==='today'?'● Para hoje'
     :state==='upcoming'?'● Programada':'— Rota avulsa';
   const color=state==='attention'||state==='overdue'?c.red:state==='today'?c.amber:state==='upcoming'?c.green:c.muted;
-  return <View style={{marginTop:7}}>
-    <Text style={[s.note,{color,fontWeight:'800'}]}>{text}</Text>
+  return <View style={{marginTop:7,gap:4}}>
+    <Text style={[s.note,{color,fontWeight:'800',marginTop:2}]}>{text}</Text>
     {route.recurrence_days>0&&<Text style={s.sub}>
-      A cada {route.recurrence_days} dia(s) • Data: {route.next_due_date?brazilianDate(route.next_due_date):'Não definida'}
+      Próximo prazo: {route.next_due_date?brazilianDate(route.next_due_date):'Sem data'} · A cada {route.recurrence_days} dias
     </Text>}
-    {state==='attention'&&<Text style={s.sub}>
-      O prazo permanece em aberto. Verifique as anomalias/não execuções antes de considerar a rota regularizada.
+    {state==='attention'&&<Text style={[s.sub,{color:c.amber}]}>
+      Reprogramar não resolve anomalias; mantenha o retorno pendente.
+    </Text>}
+  </View>;
+}
+/** Presets rápidos sem perder a possibilidade de digitar um intervalo próprio. */
+function ProgrammingFields({recurrence,onRecurrence,date,onDate,pickerOpen,onPickerOpen,onPickerClose,first=false}:{
+  recurrence:string;onRecurrence:(value:string)=>void;
+  date:string;onDate:(value:string)=>void;
+  pickerOpen:boolean;onPickerOpen:()=>void;onPickerClose:()=>void;first?:boolean;
+}){
+  let forecast:string[]=[];let issue='';
+  try{forecast=previewRouteDates(recurrence,recurrence.trim()==='0'?null:date,3);}
+  catch(err){issue=err instanceof Error?err.message:String(err);}
+  return <View style={s.planningBox}>
+    <Text style={s.title}>Programação</Text>
+    <Text style={s.sub}>Defina em quantos dias a manutenção deve voltar a ocorrer.</Text>
+    <View style={s.presetRow}>
+      {ROUTE_INTERVALS.map(item=><Pressable key={item.days} accessibilityRole="button"
+        accessibilityState={{selected:recurrence===String(item.days)}}
+        style={[s.preset,recurrence===String(item.days)&&s.presetActive]}
+        onPress={()=>onRecurrence(String(item.days))}>
+        <Text style={[s.presetText,recurrence===String(item.days)&&{color:c.bg}]}>{item.label}</Text>
+      </Pressable>)}
+    </View>
+    <Input label="Intervalo personalizado (dias)" numeric value={recurrence}
+      onChange={onRecurrence} placeholder="Ex.: 45"/>
+    {recurrence.trim()!=='0'&&<>
+      <Text style={s.label}>{first?'Primeira execução':'Próximo vencimento'}</Text>
+      <Btn outline text={'📅 '+brazilianDate(date)} onPress={onPickerOpen}/>
+      {pickerOpen&&<CalendarPicker value={date} onSelect={value=>{onDate(value);onPickerClose();}}
+        onCancel={onPickerClose}/>}
+    </>}
+    {!!issue&&<Text style={[s.sub,{color:c.red}]}>{issue}</Text>}
+    {!issue&&forecast.length>0&&<View style={s.forecast}>
+      <Text style={[s.label,{color:c.blue}]}>Prévia das datas</Text>
+      {forecast.map((value,index)=><Text key={value} style={s.sub}>
+        {index===0?'Próxima execução':'Estimativa '+index}: {brazilianDate(value)}
+      </Text>)}
+      <Text style={s.hint}>Apenas simulação. O próximo prazo real será calculado quando a rota terminar sem pendências; estas datas não criam serviços na Agenda.</Text>
+    </View>}
+    {recurrence.trim()==='0'&&<Text style={s.hint}>
+      Avulsa: sem vencimento periódico. A rota continua disponível para execução manual.
     </Text>}
   </View>;
 }
@@ -244,28 +286,40 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           <Text style={s.sub}>{current.area||'Sem setor'} • {points.length} ponto(s)</Text>
           <ScheduleSummary route={current}/>
           <View style={{marginTop:8}}>
-            <Btn outline text={editingSchedule?'Fechar programação':'Editar periodicidade e data'} onPress={()=>{
+            <Btn outline text={editingSchedule?'Fechar programação':current.recurrence_days===0?'Programar rota':'Editar programação'} onPress={()=>{
               if(editingSchedule){setEditingSchedule(false);setCalendarMode(null);}
               else {setEditPeriod(String(current.recurrence_days));setEditDue(current.next_due_date??localDate());setEditingSchedule(true);}
             }}/>
           </View>
           {editingSchedule&&<View>
-            <Input label="Repetir a cada quantos dias? (0 = avulsa)" value={editPeriod}
-              onChange={setEditPeriod} numeric/>
-            {editPeriod.trim()!=='0'&&<>
-              <Text style={s.label}>Próxima data da rota</Text>
-              <Btn outline text={brazilianDate(editDue)} onPress={()=>setCalendarMode('edit')}/>
-              {calendarMode==='edit'&&<CalendarPicker value={editDue}
-                onSelect={d=>{setEditDue(d);setCalendarMode(null);}}
-                onCancel={()=>setCalendarMode(null)}/>}
-            </>}
+            <ProgrammingFields recurrence={editPeriod} onRecurrence={setEditPeriod}
+              date={editDue} onDate={setEditDue}
+              pickerOpen={calendarMode==='edit'}
+              onPickerOpen={()=>setCalendarMode('edit')}
+              onPickerClose={()=>setCalendarMode(null)}/>
+            {!!routeInProgress&&<Text style={[s.sub,{color:c.amber}]}>
+              Há uma execução em andamento. Finalize-a antes de reprogramar esta rota.
+            </Text>}
             <View style={{marginTop:12}}>
-              <Btn text="Salvar programação" disabled={busy} onPress={()=>{void execute(async()=>{
-                await updateRouteSchedule(current.id,editPeriod,editPeriod.trim()==='0'?null:editDue);
-                setEditingSchedule(false);setCalendarMode(null);
-              });}}/>
+              <Btn text="Salvar programação" disabled={busy||!!routeInProgress} onPress={()=>{
+                try{
+                  const target=routePlanInput(editPeriod,editPeriod.trim()==='0'?null:editDue);
+                  const warning=scheduleNeedsConfirmation(current,target);
+                  const save=()=>{void execute(async()=>{
+                    await updateRouteSchedule(current.id,editPeriod,target.next_due_date);
+                    setEditingSchedule(false);setCalendarMode(null);
+                  });};
+                  if(warning.needed){
+                    Alert.alert('Confirmar reprogramação',
+                      warning.reason==='attention'?
+                        'Esta rota possui anomalias ou serviços não executados. O aviso de pendência continuará ativo mesmo com a nova data. Deseja salvar?':
+                        'Esta rota está atrasada. Reprogramar para depois pode retirar o aviso de atraso. Confirma a alteração?',
+                      [{text:'Cancelar',style:'cancel'},{text:'Confirmar',onPress:save}]);
+                  }else save();
+                }catch(error){Alert.alert('Programação inválida',error instanceof Error?error.message:String(error));}
+              }}/>
             </View>
-            <Text style={s.sub}>Alterar a data não apaga anomalias nem históricos.</Text>
+            <Text style={s.sub}>O histórico, as fotos e as ocorrências já registradas não serão apagados.</Text>
           </View>}
           <View style={s.row}>
             <Btn disabled={busy||(!routeInProgress&&points.length===0)}
@@ -328,15 +382,11 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           <Text style={s.title}>Nova rota</Text>
           <Input label="Nome da rota *" value={name} onChange={setName} placeholder="Ex.: Lubrificação — Paletização"/>
           <Input label="Setor / área" value={area} onChange={setArea} placeholder="Ex.: Utilidades"/>
-          <Input label="Repetir a cada quantos dias? (0 = avulsa)" value={period}
-            onChange={setPeriod} numeric/>
-          {period.trim()!=='0'&&<>
-            <Text style={[s.label,{marginTop:10}]}>Primeira data da rota</Text>
-            <Btn outline text={'📅 '+brazilianDate(firstDue)} onPress={()=>setCalendarMode('new')}/>
-            {calendarMode==='new'&&<CalendarPicker value={firstDue}
-              onSelect={date=>{setFirstDue(date);setCalendarMode(null);}}
-              onCancel={()=>setCalendarMode(null)}/>}
-          </>}
+          <ProgrammingFields recurrence={period} onRecurrence={setPeriod}
+            date={firstDue} onDate={setFirstDue} first
+            pickerOpen={calendarMode==='new'}
+            onPickerOpen={()=>setCalendarMode('new')}
+            onPickerClose={()=>setCalendarMode(null)}/>}
           <View style={{marginTop:12}}><Btn text="Criar rota" disabled={busy} onPress={()=>{void execute(async()=>{
             await createRoute(name,area,period,period.trim()==='0'?null:firstDue);
             setName('');setArea('');setPeriod('0');setFirstDue(localDate());setCalendarMode(null);setCreateOpen(false);
@@ -387,6 +437,14 @@ const s=StyleSheet.create({
  note:{fontSize:13,color:c.text,marginTop:8,lineHeight:19},
  input:{color:c.text,backgroundColor:c.field,borderWidth:1,borderColor:c.line,paddingHorizontal:12,minHeight:45,borderRadius:9},
  row:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:9},
+ planningBox:{backgroundColor:c.field,borderRadius:12,padding:12,marginTop:10,gap:6},
+ presetRow:{flexDirection:'row',flexWrap:'wrap',gap:6,marginTop:4},
+ preset:{borderColor:c.line,borderWidth:1,borderRadius:8,paddingHorizontal:11,
+   paddingVertical:10,minHeight:40,justifyContent:'center'},
+ presetActive:{backgroundColor:c.blue,borderColor:c.blue},
+ presetText:{color:c.text,fontWeight:'800',fontSize:12},
+ forecast:{backgroundColor:c.panel,padding:11,borderRadius:10,marginTop:5,gap:4},
+ hint:{fontSize:11,color:c.muted,lineHeight:16,marginTop:3},
  rowHeader:{flexDirection:'row',alignItems:'center',gap:10,marginBottom:5},
  compactCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:11,gap:4},
  pointCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:4},
