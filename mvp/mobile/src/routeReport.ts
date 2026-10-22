@@ -18,7 +18,7 @@ export async function exportRoutePdf(run:RouteRun,items:RouteRunItem[],photos:Ro
   const rows=items.map((i,index)=>`<tr>
     <td>${index+1}</td><td>${esc(i.point_title)}<small>${esc(i.asset_label)}</small></td>
     <td>${i.status==='done'?'Executado':i.status==='anomaly'?'Anomalia':i.status==='skipped'?'Não executado':'Pendente'}</td>
-    <td>${esc(i.lubricant)}</td><td>${i.quantity_grams.toFixed(3)} g</td><td>${esc(i.notes)}</td>
+    <td>${esc(i.lubricant)}</td><td>${esc(i.notes)}</td>
     </tr>`).join('');
   const photoBlocks:string[]=[];
   let photoTotalBytes=0;
@@ -52,8 +52,8 @@ export async function exportRoutePdf(run:RouteRun,items:RouteRunItem[],photos:Ro
   Término: ${esc(new Date(run.finished_at).toLocaleString('pt-BR'))}<br/>
   Resultado: ${counts.done} executado(s); ${counts.anomaly} anomalia(s); ${counts.skipped} não executado(s).</p>
   <table><thead><tr><th style="width:5%">#</th><th style="width:22%">Ponto / equipamento</th>
-  <th style="width:14%">Resultado</th><th style="width:18%">Lubrificante</th>
-  <th style="width:11%">Quantidade</th><th>Observação</th></tr></thead><tbody>${rows}</tbody></table>
+  <th style="width:17%">Resultado</th><th style="width:22%">Lubrificante</th>
+  <th>Observação</th></tr></thead><tbody>${rows}</tbody></table>
   ${photoBlocks.length?`<h2>Fotografias dos pontos (${photoBlocks.length})</h2>${photoBlocks.join('')}`:''}
   <footer>Registro feito localmente no aparelho. Não substitui a liberação, o bloqueio de energia ou os procedimentos de segurança da empresa.</footer>
   </body></html>`;
