@@ -18,6 +18,7 @@ import {inspectBackup} from './src/backupInspection';
 import {CalendarPicker} from './src/CalendarPicker';
 import {brazilianDate} from './src/calendar';
 import {RoutesScreen} from './src/RoutesScreen';
+import {OperationalAgenda} from './src/OperationalAgenda';
 import {listRoutes,listAssetRouteHistory,type AssetRouteHistoryItem,type Route} from './src/routes';
 import {buildOperationalBoard,type BoardEntry} from './src/operationalBoard';
 import {ReminderSettings} from './src/ReminderSettings';
@@ -33,7 +34,7 @@ const COLORS = {
   text: '#EFF6FF', muted: '#9CB0C8', accent: '#47B7F6', green: '#5DD7AC',
   red: '#FF7D8B', yellow: '#FFD075',
 };
-type Tab = 'Início' | 'Atividades' | 'Rotas' | 'Ativos' | 'Histórico' | 'Dados';
+type Tab = 'Início' | 'Agenda' | 'Atividades' | 'Rotas' | 'Ativos' | 'Histórico' | 'Dados';
 type ModalType = 'asset' | 'order' | 'complete' | 'block' | 'archive' | null;
 type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Prioritárias' | 'Concluídas' | 'Arquivadas';
 type ActivityListItem = {kind:'order';value:WorkOrder}|{kind:'execution';value:Execution};
@@ -515,6 +516,9 @@ export default function App() {
           <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.green}]}>{counts.today}</Text><Text style={styles.metricLabel}>Hoje</Text></View>
         </View>
       </View>
+      <View style={{marginTop:16}}>
+        <Action label="📅 Abrir agenda diária, semanal e mensal" onPress={()=>setTab('Agenda')}/>
+      </View>
       <View style={{marginTop:20}}>
         <Text style={styles.sectionTitle}>Painel operacional • Hoje e próximos 7 dias</Text>
         <Text style={styles.description}>OS e rotas reunidas por prioridade. Pendências, bloqueios
@@ -685,7 +689,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.20 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.21 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
@@ -704,7 +708,16 @@ export default function App() {
           onDataChanged={()=>{
             void refresh().catch(err=>console.warn('Falha ao atualizar painel:',String(err)));
           }}/>
-      : tab === 'Atividades' ? <FlatList
+      : tab === 'Agenda' ? <OperationalAgenda orders={orders} routes={routes}
+           onOpenRoute={id=>{setSelectedRouteId(id);setTab('Rotas');}}
+           onOpenOrder={(id,mode)=>{
+             const order=orders.find(o=>o.id===id);
+             if(!order){Alert.alert('OS indisponível','A atividade pode ter sido arquivada ou alterada.');return;}
+             if(mode==='edit')openOrder(order);
+             else if(order.block_reason?.trim())openBlock(order);
+             else openComplete(order);
+           }}/>
+       : tab === 'Atividades' ? <FlatList
           data={activityList}
           keyExtractor={item => item.kind+':'+item.value.id}
           renderItem={({item}) => item.kind==='execution'
@@ -741,7 +754,7 @@ export default function App() {
         />
       : <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content()}</ScrollView>}
     <View style={styles.nav}>
-      {([{label: 'Início', icon: '⌂', caption:'Início'}, {label: 'Atividades', icon: '☑', caption:'OS'},
+      {([{label: 'Início', icon: '⌂', caption:'Início'}, {label: 'Agenda', icon: '▦', caption:'Agenda'}, {label: 'Atividades', icon: '☑', caption:'OS'},
         {label: 'Rotas', icon: '⇢',caption:'Rotas'},
         {label: 'Ativos', icon: '⚙',caption:'Ativos'}, {label: 'Histórico', icon: '◷',caption:'Hist.'}, {label:'Dados',icon:'▣',caption:'Dados'}] as const).map(item =>
         <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{selected: tab === item.label}}
