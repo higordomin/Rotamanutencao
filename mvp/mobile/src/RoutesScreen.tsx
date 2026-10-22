@@ -3,6 +3,7 @@ import {Alert,KeyboardAvoidingView,Platform,Pressable,ScrollView,StyleSheet,Text
 import type {Asset,PhotoDraft} from './types';
 import {selectPhoto,evidenceUri} from './evidence';
 import {addRoutePoint,createRoute,deleteRoute,deleteRoutePoint,finishRouteRun,
+  updateRoutePoint,changeRoutePointOrder,duplicateRouteAsTemplate,
   listRoutePoints,listRouteRuns,listRoutes,listRunItems,listRunPhotos,recordRoutePoint,quickCompleteRoutePoint,startRouteRun,MAX_ROUTE_PHOTOS,
   type Route,type RoutePoint,type RouteRun,type RouteRunItem,type RouteRunPhoto} from './routes';
 import {exportRoutePdf} from './routeReport';
@@ -199,6 +200,10 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const [historyOpen,setHistoryOpen]=useState(false);
   const [archiveOpen,setArchiveOpen]=useState(false);
   const [showAllPoints,setShowAllPoints]=useState(false);
+  const [editPointId,setEditPointId]=useState<string|null>(null);
+  const [editTask,setEditTask]=useState('');
+  const [editAssetId,setEditAssetId]=useState<string|null>(null);
+  const [editAssetSearch,setEditAssetSearch]=useState('');
   const [busy,setBusy]=useState(false);
   const refresh=useCallback(async()=>{
     const [a,b]=await Promise.all([listRoutes(),listRouteRuns()]);
@@ -224,6 +229,11 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const run=runs.find(r=>r.id===activeRun);
   const routeInProgress=runs.find(r=>r.route_id===selected&&r.finished_at===null);
   const visible=useMemo(()=>assets.filter(a=>[a.code,a.name,a.area].join(' ').toLowerCase().includes(assetSearch.trim().toLowerCase())).slice(0,12),[assets,assetSearch]);
+  const visibleEditAssets=useMemo(()=>{
+    const list=assets.filter(a=>[a.code,a.name,a.area].join(' ').toLowerCase().includes(editAssetSearch.trim().toLowerCase())).slice(0,12);
+    const selectedAsset=assets.find(a=>a.id===editAssetId);
+    return selectedAsset&&!list.some(a=>a.id===selectedAsset.id)?[selectedAsset,...list].slice(0,13):list;
+  },[assets,editAssetSearch,editAssetId]);
   const {pending,attention}=routeProgress(items);
   // Em rota finalizada os filtros de apontamento não aparecem; mostrar sempre o histórico completo.
   const filteredItems=useMemo(()=>visibleRouteItems(items,run?.finished_at?'all':runFilter),
@@ -323,6 +333,17 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
                 const id=routeInProgress?.id??await startRouteRun(selected);
                 setRunFilter('pending');setActiveRun(id);setItems(await listRunItems(id));
               });}}/>
+            <Btn outline text="Duplicar como modelo" disabled={busy} onPress={()=>Alert.alert(
+              'Duplicar esta rota?',
+              'Copia os pontos e equipamentos em uma nova rota avulsa, sem prazos, históricos ou anomalias. Depois, você define a programação.',
+              [{text:'Cancelar',style:'cancel'},{text:'Criar cópia',onPress:()=>{
+                void execute(async()=>{
+                  await duplicateRouteAsTemplate(current.id);
+                  Alert.alert('Modelo criado','A cópia está em Suas rotas. Edite os pontos e programe quando quiser.');
+                  setEditingSchedule(false);setEditPointId(null);setSelected(null);setPoints([]);
+                });
+              }}]
+            )}/>
             <Btn outline text="Excluir rota" disabled={busy} onPress={()=>Alert.alert('Excluir rota?', 'Os históricos já registrados serão preservados, mas os pontos atuais serão removidos.',[
               {text:'Cancelar',style:'cancel'},{text:'Excluir',style:'destructive',onPress:()=>{void execute(async()=>{await deleteRoute(selected);setSelected(null);setPoints([]);});}}
             ])}/>
@@ -348,7 +369,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           text={showAllPoints?'Recolher pontos':`Ver todos os ${points.length} pontos`}
           onPress={()=>setShowAllPoints(v=>!v)}/>}
         <Btn outline text={addPointOpen?'Cancelar novo ponto':'+ Adicionar ponto à rota'}
-          onPress={()=>setAddPointOpen(x=>!x)}/>
+          disabled={busy||!!routeInProgress} onPress={()=>{setEditPointId(null);setAddPointOpen(x=>!x);}}/>
         {addPointOpen&&<View style={s.card}>
           <Text style={s.title}>Novo ponto da rota</Text>
           <Input label="Buscar equipamento / TAG" value={assetSearch} onChange={setAssetSearch}/>
@@ -359,7 +380,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           </Pressable>)}
           {!visible.length&&<Text style={s.sub}>Cadastre um equipamento na aba Ativos antes de adicionar pontos.</Text>}
           <Input label="Atividade do ponto *" value={task} onChange={setTask} placeholder="Ex.: Inspecionar motor, verificar proteção ou testar sensores"/>
-          <View style={{marginTop:12}}><Btn text="Adicionar ponto" disabled={busy||!assetId} onPress={()=>{void execute(async()=>{
+          <View style={{marginTop:12}}><Btn text="Adicionar ponto" disabled={busy||!!routeInProgress||!assetId} onPress={()=>{void execute(async()=>{
             await addRoutePoint(selected,assetId||'',task);setTask('');setAddPointOpen(false);setShowAllPoints(true);
           });}}/></View>
         </View>}
@@ -398,7 +419,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           return <Pressable key={r.id} accessibilityRole="button"
             accessibilityLabel={`Abrir rota ${r.title}`}
             style={s.routeLine} onPress={()=>{setSelected(r.id);setHistoryOpen(false);
-              setAddPointOpen(false);setShowAllPoints(false);void listRoutePoints(r.id).then(setPoints);}}>
+              setAddPointOpen(false);setEditPointId(null);setShowAllPoints(false);void listRoutePoints(r.id).then(setPoints);}}>
             <View style={{flex:1,gap:4}}>
               <Text style={s.title}>{r.title}</Text>
               <Text style={s.sub}>{r.area||'Sem setor'} · {r.point_count??0} ponto(s)</Text>
@@ -440,6 +461,11 @@ const s=StyleSheet.create({
  forecast:{backgroundColor:c.panel,padding:11,borderRadius:10,marginTop:5,gap:4},
  hint:{fontSize:11,color:c.muted,lineHeight:16,marginTop:3},
  rowHeader:{flexDirection:'row',alignItems:'center',gap:10,marginBottom:5},
+ editor:{backgroundColor:c.field,padding:10,borderRadius:10,marginTop:8,gap:3},
+ orderControls:{flexDirection:'row',gap:5},
+ orderBtn:{width:36,height:42,alignItems:'center',justifyContent:'center',
+   backgroundColor:c.field,borderWidth:1,borderColor:c.line,borderRadius:8},
+ orderText:{fontSize:20,fontWeight:'800',color:c.blue},
  compactCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:11,gap:4},
  pointCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:4},
  filterCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:3},
