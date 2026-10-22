@@ -1,7 +1,8 @@
 import React,{useCallback,useEffect,useMemo,useState} from 'react';
 import {Alert,KeyboardAvoidingView,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View,Image} from 'react-native';
 import type {Asset,PhotoDraft,Category,Priority} from './types';
-import {createCorrectiveOrder,listRunCorrectives,type CorrectiveView} from './correctiveOrders';
+import {createCorrectiveOrder,listRunCorrectives,listRouteAnomalies,
+  type CorrectiveView,type RouteAnomalyView} from './correctiveOrders';
 import {selectPhoto,evidenceUri} from './evidence';
 import {addRoutePoint,createRoute,deleteRoute,deleteRoutePoint,finishRouteRun,
   updateRoutePoint,changeRoutePointOrder,duplicateRouteAsTemplate,
@@ -244,6 +245,8 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   const [items,setItems]=useState<RouteRunItem[]>([]);
   const [savedPhotos,setSavedPhotos]=useState<RouteRunPhoto[]>([]);
   const [correctives,setCorrectives]=useState<CorrectiveView[]>([]);
+  const [anomalies,setAnomalies]=useState<RouteAnomalyView[]>([]);
+  const [anomaliesOpen,setAnomaliesOpen]=useState(false);
   const [selected,setSelected]=useState<string|null>(null);
   const [activeRun,setActiveRun]=useState<string|null>(null);
   const [runFilter,setRunFilter]=useState<'all'|'pending'|'attention'>('all');
@@ -265,8 +268,8 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   const [editAssetSearch,setEditAssetSearch]=useState('');
   const [busy,setBusy]=useState(false);
   const refresh=useCallback(async()=>{
-    const [a,b]=await Promise.all([listRoutes(),listRouteRuns()]);
-    setRoutes(a);setRuns(b);
+    const [a,b,occurrences]=await Promise.all([listRoutes(),listRouteRuns(),listRouteAnomalies()]);
+    setRoutes(a);setRuns(b);setAnomalies(occurrences);
     if(selected)setPoints(await listRoutePoints(selected));
     if(activeRun){const [parts,images,links]=await Promise.all([
       listRunItems(activeRun),listRunPhotos(activeRun),listRunCorrectives(activeRun),
@@ -529,6 +532,25 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
         <Text style={[s.note,{fontWeight:'800'}]}>
           {attentionCount} com pendências • {overdueCount} vencida(s) • {todayCount} para hoje
         </Text>
+        {anomalies.length>0&&<View style={s.filterCard}>
+          <Btn outline
+            text={anomaliesOpen?'Ocultar ocorrências':`⚠ Ocorrências registradas (${anomalies.length})`}
+            onPress={()=>setAnomaliesOpen(v=>!v)}/>
+          {anomaliesOpen&&<>
+            <Text style={s.hint}>Histórico das últimas 100 anomalias. Uma OS concluída não confirma automaticamente que a condição da rota foi regularizada.</Text>
+            {anomalies.slice(0,20).map(a=><Pressable key={a.item_id} accessibilityRole="button"
+              style={s.compactCard} onPress={()=>{setActiveRun(a.run_id);setRunFilter('all');
+                void listRunItems(a.run_id).then(setItems);}}>
+              <Text style={s.title}>{a.point_title}</Text>
+              <Text style={s.sub}>{a.route_title} · {a.asset_label||'TAG removida'}</Text>
+              <Text style={s.sub} maxFontSizeMultiplier={1.4} numberOfLines={2}>{a.notes}</Text>
+              <Text style={[s.sub,{color:a.order_status==='completed'?c.green:c.amber}]}>
+                {a.order_id?(a.order_archived_at?'OS arquivada':
+                  a.order_status==='completed'?'OS concluída':'OS em aberto'):'Sem OS corretiva'}
+              </Text>
+            </Pressable>)}
+          </>}
+        </View>}
         {!routes.length&&<Text style={s.sub}>Nenhuma rota cadastrada. Toque em “+ Nova rota” para começar.</Text>}
         {routes.map(r=>{
           const state=routePlanningState(r);
