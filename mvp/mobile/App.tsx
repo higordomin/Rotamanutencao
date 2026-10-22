@@ -38,7 +38,7 @@ type Tab = 'Início' | 'Agenda' | 'Atividades' | 'Rotas' | 'Ativos' | 'Históric
 type ModalType = 'asset' | 'order' | 'complete' | 'block' | 'archive' | null;
 type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Prioritárias' | 'Concluídas' | 'Arquivadas';
 type ActivityListItem = {kind:'order';value:WorkOrder}|{kind:'execution';value:Execution};
-const categories: Category[] = ['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção'];
+const categories: Category[] = ['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção', 'Segurança'];
 const priorities: Priority[] = ['Baixa', 'Média', 'Alta'];
 const initialOrder = (): OrderDraft => ({
   title: '', description: '', category: 'Lubrificação', priority: 'Média',
@@ -612,6 +612,7 @@ export default function App() {
           })(); }}/>
         </View>
       : tab === 'Rotas' ? <RoutesScreen assets={assets} initialRouteId={selectedRouteId}
+          onOpenCorrective={title=>{setSearch(title);setOrderFilter('Todas');setTab('Atividades');}}
           onDataChanged={()=>{
             void refresh().catch(err=>console.warn('Falha ao atualizar painel:',String(err)));
           }}/>
