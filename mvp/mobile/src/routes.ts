@@ -75,6 +75,9 @@ export async function addRoutePoint(routeId:string,assetId:string,title:string):
   await db.withExclusiveTransactionAsync(async tx=>{
     const route=await tx.getFirstAsync<{id:string}>('SELECT id FROM routes WHERE id=?',routeId);
     if(!route)throw new Error('Rota não encontrada.');
+    const ongoing=await tx.getFirstAsync<{id:string}>(
+      'SELECT id FROM route_runs WHERE route_id=? AND finished_at IS NULL LIMIT 1',routeId);
+    if(ongoing)throw new Error('Finalize a execução aberta antes de adicionar pontos.');
     const asset=await tx.getFirstAsync<Pick<Asset,'id'>>('SELECT id FROM assets WHERE id=?',assetId);
     if(!asset)throw new Error('Selecione um equipamento cadastrado.');
     const count=await tx.getFirstAsync<{n:number}>('SELECT COUNT(*) n FROM route_points WHERE route_id=?',routeId);
