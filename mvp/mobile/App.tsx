@@ -571,7 +571,7 @@ export default function App() {
             <View style={styles.chips}>
               <Pill text={item.status==='done'?'Executado':item.status==='anomaly'?'Anomalia':item.status==='skipped'?'Não executado':'Pendente'}
                 tone={item.status==='done'?'green':item.status==='anomaly'?'red':'yellow'}/>
-              <Pill text={item.quantity_grams+' g'}/>
+
             </View>
             {!!item.lubricant&&<Text style={styles.description}>Lubrificante: {item.lubricant}</Text>}
             {!!item.notes&&<Text style={styles.description}>Registro: {item.notes}</Text>}
