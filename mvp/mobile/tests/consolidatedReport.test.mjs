@@ -54,10 +54,11 @@ test('PDF HTML contém relatórios, período, dados e aviso do retrato atual',()
   assert.ok(html.includes('19/10/2026'));
   assert.ok(html.includes('21/10/2026'));
 });
-test('relatórios novos não exibem quantidades antigas de lubrificante',()=>{
+test('relatórios novos não exibem campos de produto ou quantidade de rotas',()=>{
   const d=sample();
   const html=buildConsolidatedHtml(d);
-  assert.ok(html.includes('Lubrificante'));
+  assert.ok(!html.includes('<th>Lubrificante</th>'));
+  assert.ok(!html.includes('HD2T'));
   assert.ok(!html.includes('<th>Quantidade</th>'));
   assert.ok(!html.includes('3.50 g'));
   assert.ok(!html.includes('3.5 g'));
