@@ -356,14 +356,66 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           <Text style={s.sub}>{r.finished_at?'Finalizada':'Em andamento'}</Text>
           <Btn outline text={r.finished_at?'Ver relatório':'Continuar execução'} onPress={()=>{setRunFilter('all');setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
         </View>)}
-        <Text style={s.heading}>Pontos cadastrados</Text>
+        <Text style={s.heading}>Pontos cadastrados ({points.length})</Text>
+        <Text style={s.hint}>Edite a atividade ou use ↑ ↓ para definir a sequência da próxima execução. Os históricos não mudam.</Text>
+        {!!routeInProgress&&<Text style={[s.sub,{color:c.amber}]}>
+          Finalize a execução aberta para editar ou reorganizar os pontos.
+        </Text>}
         {points.length===0&&<Text style={s.sub}>Ainda não há pontos cadastrados nesta rota.</Text>}
-        {(showAllPoints?points:points.slice(0,8)).map(p=><View style={s.pointCard} key={p.id}>
-          <Text style={s.title}>{p.position+1}. {p.title}</Text>
-          <Text style={s.sub}>{[p.asset_code,p.asset_name,p.asset_area].filter(Boolean).join(' · ')||'Equipamento removido'}</Text>
-          <Btn outline text="Remover ponto" disabled={busy} onPress={()=>Alert.alert('Remover ponto?','O histórico de execuções anteriores não será alterado.',[
-            {text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{void execute(()=>deleteRoutePoint(p.id));}}
-          ])}/>
+        {(showAllPoints?points:points.slice(0,8)).map((p,index)=><View style={s.pointCard} key={p.id}>
+          <View style={s.rowHeader}>
+            <View style={{flex:1,gap:3}}>
+              <Text style={s.title}>{p.position+1}. {p.title}</Text>
+              <Text style={s.sub}>{[p.asset_code,p.asset_name,p.asset_area].filter(Boolean).join(' · ')||'Equipamento removido'}</Text>
+            </View>
+            <View style={s.orderControls}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Mover ${p.title} para cima`}
+                disabled={busy||!!routeInProgress||index===0}
+                style={[s.orderBtn,(busy||!!routeInProgress||index===0)&&{opacity:.35}]}
+                onPress={()=>{void execute(()=>changeRoutePointOrder(current.id,p.id,'up'));}}>
+                <Text style={s.orderText}>↑</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Mover ${p.title} para baixo`}
+                disabled={busy||!!routeInProgress||p.id===points[points.length-1]?.id}
+                style={[s.orderBtn,(busy||!!routeInProgress||p.id===points[points.length-1]?.id)&&{opacity:.35}]}
+                onPress={()=>{void execute(()=>changeRoutePointOrder(current.id,p.id,'down'));}}>
+                <Text style={s.orderText}>↓</Text>
+              </Pressable>
+            </View>
+          </View>
+          <View style={s.row}>
+            <Btn outline text={editPointId===p.id?'Cancelar edição':'Editar ponto'}
+              disabled={busy||!!routeInProgress} onPress={()=>{
+                if(editPointId===p.id){setEditPointId(null);return;}
+                setEditPointId(p.id);setEditTask(p.title);setEditAssetId(p.asset_id);
+                setEditAssetSearch('');setAddPointOpen(false);
+              }}/>
+            <Btn outline text="Remover" disabled={busy||!!routeInProgress}
+              onPress={()=>Alert.alert('Remover ponto?',
+                'Apenas o checklist atual será alterado. Execuções anteriores serão preservadas.',[
+                {text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{
+                  void execute(async()=>{await deleteRoutePoint(p.id);if(editPointId===p.id)setEditPointId(null);});
+                }}
+              ])}/>
+          </View>
+          {editPointId===p.id&&<View style={s.editor}>
+            <Input label="Atividade do ponto *" value={editTask} onChange={setEditTask}
+              placeholder="Ex.: Inspecionar proteção do motor"/>
+            <Input label="Buscar equipamento / TAG" value={editAssetSearch} onChange={setEditAssetSearch}/>
+            {visibleEditAssets.map(a=><Pressable key={a.id} accessibilityRole="button"
+              accessibilityState={{selected:editAssetId===a.id}}
+              style={[s.asset,editAssetId===a.id&&{borderColor:c.blue}]}
+              onPress={()=>setEditAssetId(a.id)}>
+              <Text style={s.note}>{editAssetId===a.id?'●':'○'} {a.code||'Sem TAG'} · {a.name}</Text>
+              <Text style={s.sub}>{a.area}</Text>
+            </Pressable>)}
+            {!visibleEditAssets.length&&<Text style={s.sub}>Nenhum equipamento encontrado.</Text>}
+            <View style={s.row}><Btn text="Salvar alterações"
+              disabled={busy||!!routeInProgress||!editAssetId||!editTask.trim()}
+              onPress={()=>{void execute(async()=>{
+                await updateRoutePoint(p.id,editAssetId??'',editTask);setEditPointId(null);
+              });}}/></View>
+          </View>}
         </View>)}
         {points.length>8&&<Btn outline
           text={showAllPoints?'Recolher pontos':`Ver todos os ${points.length} pontos`}
