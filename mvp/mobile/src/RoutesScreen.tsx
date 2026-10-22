@@ -92,7 +92,6 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
     </Text>
     {!disabled&&<>
       {item.status==='pending'&&<View style={{marginTop:10}}>
-        <Text style={s.sub}>Confirme este ponto após executar o serviço. Nenhuma quantidade é solicitada.</Text>
         <View style={s.row}>
           <Btn text={working?'Salvando...':'✓ Registrar executado'}
             disabled={working||!pristine} onPress={()=>{void quickSave();}}/>
@@ -211,18 +210,20 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         <View style={s.card}>
           <Text style={s.title}>{run.route_title}</Text>
           <Text style={s.sub}>Iniciada: {new Date(run.started_at).toLocaleString('pt-BR')}</Text>
-          <Text style={s.note}>{items.length-pending}/{items.length} registrados • {anomalies} anomalia(s) • {skipped} não executado(s)</Text>
+          <View style={s.progressTrack}><View style={[s.progressBar,{width:`${items.length?Math.round((items.length-pending)*100/items.length):0}%`}]}/></View>
+          <Text style={s.sub}>{items.length-pending}/{items.length} pontos registrados
+            {attention>0?` · ⚠ ${attention} ocorrência(s)`:''}</Text>
           {run.finished_at?
-            <Text style={[s.note,{color:c.green}]}>Finalizada: {new Date(run.finished_at).toLocaleString('pt-BR')}</Text>:
-            <Text style={[s.note,{color:c.amber}]}>Finalize apenas quando todos os pontos tiverem resultado.</Text>}
+            <Text style={[s.sub,{color:c.green}]}>Finalizada: {new Date(run.finished_at).toLocaleString('pt-BR')}</Text>:
+            <Text style={s.sub}>Confirme cada ponto após a manutenção. Anomalias e não execuções exigem justificativa.</Text>}
           <View style={s.row}>
             {run.finished_at?
               <Btn text="Gerar PDF da rota" onPress={()=>{void execute(()=>exportRoutePdf(run,items,savedPhotos));}}/>:
               <Btn text="Finalizar rota" disabled={pending>0||busy} onPress={()=>{void execute(async()=>{await finishRouteRun(run.id);await refresh();});}}/>}
           </View>
         </View>
-        {!run.finished_at&&<View style={s.card}>
-          <Text style={s.title}>Exibir pontos da rota</Text>
+        {!run.finished_at&&<View style={s.filterCard}>
+          <Text style={s.label}>Filtrar pontos</Text>
           <View style={s.row}>
             <Btn text={`Todos (${items.length})`} outline={runFilter!=='all'} onPress={()=>setRunFilter('all')}/>
             <Btn text={`Pendentes (${pending})`} outline={runFilter!=='pending'} onPress={()=>setRunFilter('pending')}/>
@@ -275,13 +276,16 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
             ])}/>
           </View>
         </View>
-        {runs.filter(r=>r.route_id===selected).slice(0,8).map(r=><View key={r.id} style={s.card}>
+        {runs.some(r=>r.route_id===selected)&&<Btn
+          outline text={historyOpen?'Ocultar execuções anteriores':'Histórico de execuções'} onPress={()=>setHistoryOpen(x=>!x)}/>}
+        {historyOpen&&runs.filter(r=>r.route_id===selected).slice(0,8).map(r=><View key={r.id} style={s.compactCard}>
           <Text style={s.title}>Execução em {new Date(r.started_at).toLocaleString('pt-BR')}</Text>
           <Text style={s.sub}>{r.finished_at?'Finalizada':'Em andamento'}</Text>
           <Btn outline text={r.finished_at?'Ver relatório':'Continuar execução'} onPress={()=>{setRunFilter('all');setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
         </View>)}
         <Text style={s.heading}>Pontos cadastrados</Text>
-        {points.map(p=><View style={s.card} key={p.id}>
+        {points.length===0&&<Text style={s.sub}>Ainda não há pontos cadastrados nesta rota.</Text>}
+        {points.map(p=><View style={s.pointCard} key={p.id}>
           <Text style={s.title}>{p.position+1}. {p.title}</Text>
           <Text style={s.sub}>{[p.asset_code,p.asset_name,p.asset_area].filter(Boolean).join(' · ')||'Equipamento removido'}</Text>
           {!!p.lubricant&&<Text style={s.sub}>Lubrificante: {p.lubricant}</Text>}
@@ -289,8 +293,10 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
             {text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{void execute(()=>deleteRoutePoint(p.id));}}
           ])}/>
         </View>)}
-        <View style={s.card}>
-          <Text style={s.heading}>Adicionar ponto à rota</Text>
+        <Btn outline text={addPointOpen?'Cancelar novo ponto':'+ Adicionar ponto à rota'}
+          onPress={()=>setAddPointOpen(x=>!x)}/>
+        {addPointOpen&&<View style={s.card}>
+          <Text style={s.title}>Novo ponto da rota</Text>
           <Input label="Buscar equipamento / TAG" value={assetSearch} onChange={setAssetSearch}/>
           {visible.map(a=><Pressable key={a.id} style={[s.asset,assetId===a.id&&{borderColor:c.blue}]}
             accessibilityRole="button" accessibilityState={{selected:assetId===a.id}} onPress={()=>setAssetId(a.id)}>
@@ -303,10 +309,18 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           <View style={{marginTop:12}}><Btn text="Adicionar ponto" disabled={busy||!assetId} onPress={()=>{void execute(async()=>{
             await addRoutePoint(selected,assetId||'',task,lubricant);setTask('');setLubricant('');setAddPointOpen(false);
           });}}/></View>
-        </View>
+        </View>}
       </>:<>
-        <View style={s.card}>
-          <Text style={s.heading}>Nova rota</Text>
+        <View style={s.rowHeader}>
+          <View style={{flex:1}}>
+            <Text style={s.heading}>Suas rotas</Text>
+            <Text style={s.sub}>{routes.length} cadastrada(s) · por prazo e pendências</Text>
+          </View>
+          <Btn text={createOpen?'Cancelar':'+ Nova rota'} outline={createOpen}
+            onPress={()=>setCreateOpen(x=>!x)}/>
+        </View>
+        {createOpen&&<View style={s.card}>
+          <Text style={s.title}>Nova rota</Text>
           <Input label="Nome da rota *" value={name} onChange={setName} placeholder="Ex.: Lubrificação — Paletização"/>
           <Input label="Setor / área" value={area} onChange={setArea} placeholder="Ex.: Utilidades"/>
           <Input label="Repetir a cada quantos dias? (0 = avulsa)" value={period}
@@ -320,19 +334,36 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           </>}
           <View style={{marginTop:12}}><Btn text="Criar rota" disabled={busy} onPress={()=>{void execute(async()=>{
             await createRoute(name,area,period,period.trim()==='0'?null:firstDue);
-            setName('');setArea('');setPeriod('0');setFirstDue(localDate());setCalendarMode(null);
+            setName('');setArea('');setPeriod('0');setFirstDue(localDate());setCalendarMode(null);setCreateOpen(false);
           });}}/></View>
-        </View>
+        </View>}
         <Text style={[s.note,{fontWeight:'800'}]}>
           {attentionCount} com pendências • {overdueCount} vencida(s) • {todayCount} para hoje
         </Text>
-        {routes.map(r=><View style={s.card} key={r.id}>
-          <Text style={s.title}>{r.title}</Text>
-          <Text style={s.sub}>{r.area||'Sem setor'} • {r.point_count??0} pontos</Text>
-          <ScheduleSummary route={r}/>
-          <View style={s.row}><Btn text="Abrir rota" outline onPress={()=>{setSelected(r.id);void listRoutePoints(r.id).then(setPoints);}}/></View>
-        </View>)}
-        {runs.filter(r=>r.route_id===null).slice(0,8).map(r=><View key={r.id} style={s.card}>
+        {!routes.length&&<Text style={s.sub}>Nenhuma rota cadastrada. Toque em “+ Nova rota” para começar.</Text>}
+        {routes.map(r=>{
+          const state=routePlanningState(r);
+          const color=state==='attention'||state==='overdue'?c.red:state==='today'?c.amber:c.green;
+          const label=state==='attention'?'Pendência':state==='overdue'?'Vencida':
+            state==='today'?'Hoje':state==='upcoming'?'Programada':'Avulsa';
+          return <Pressable key={r.id} accessibilityRole="button"
+            accessibilityLabel={`Abrir rota ${r.title}`}
+            style={s.routeLine} onPress={()=>{setSelected(r.id);setHistoryOpen(false);
+              setAddPointOpen(false);void listRoutePoints(r.id).then(setPoints);}}>
+            <View style={{flex:1,gap:4}}>
+              <Text style={s.title}>{r.title}</Text>
+              <Text style={s.sub}>{r.area||'Sem setor'} · {r.point_count??0} ponto(s)</Text>
+              <Text style={[s.sub,{color,fontWeight:'800'}]}>{label}
+                {r.next_due_date?' · '+brazilianDate(r.next_due_date):''}
+              </Text>
+            </View>
+            <Text style={[s.title,{color:c.blue}]}>›</Text>
+          </Pressable>;
+        })}
+        {runs.some(r=>r.route_id===null)&&<Btn outline
+          text={archiveOpen?'Ocultar execuções de rotas excluídas':'Ver execuções de rotas excluídas'}
+          onPress={()=>setArchiveOpen(x=>!x)}/>}
+        {archiveOpen&&runs.filter(r=>r.route_id===null).slice(0,8).map(r=><View key={r.id} style={s.compactCard}>
           <Text style={s.title}>Histórico: {r.route_title}</Text>
           <Text style={s.sub}>{new Date(r.started_at).toLocaleString('pt-BR')}</Text>
           <Btn text="Ver execução arquivada" outline onPress={()=>{setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
@@ -350,7 +381,15 @@ const s=StyleSheet.create({
  sub:{fontSize:12,color:c.muted,lineHeight:18},
  note:{fontSize:13,color:c.text,marginTop:8,lineHeight:19},
  input:{color:c.text,backgroundColor:c.field,borderWidth:1,borderColor:c.line,paddingHorizontal:12,minHeight:45,borderRadius:9},
- row:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:12},
+ row:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:9},
+ rowHeader:{flexDirection:'row',alignItems:'center',gap:10,marginBottom:5},
+ compactCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:11,gap:4},
+ pointCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:4},
+ filterCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:3},
+ routeLine:{backgroundColor:c.panel,borderRadius:12,borderWidth:1,borderColor:c.line,
+   padding:13,flexDirection:'row',alignItems:'center',gap:10,minHeight:78},
+ progressTrack:{marginTop:9,height:7,borderRadius:6,backgroundColor:c.field,overflow:'hidden'},
+ progressBar:{height:7,backgroundColor:c.green,borderRadius:6},
  btn:{backgroundColor:c.blue,minHeight:41,borderRadius:10,paddingHorizontal:13,paddingVertical:10,justifyContent:'center',alignItems:'center'},
  btnText:{color:c.bg,fontWeight:'800',fontSize:12},
  outline:{backgroundColor:c.field,borderColor:c.line,borderWidth:1},
