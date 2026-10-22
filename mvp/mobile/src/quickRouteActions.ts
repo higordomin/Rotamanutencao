@@ -1,5 +1,5 @@
 import type {RouteRunItem} from './routes';
-import {gramAmount} from './routeRules';
+import {gramAmount} from './routeRules.ts';
 
 /**
  * Atalho EXPLÍCITO acionado somente após a manutenção física ter sido realizada.
