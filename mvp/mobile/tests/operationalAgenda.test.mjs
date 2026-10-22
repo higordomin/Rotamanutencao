@@ -86,7 +86,9 @@ test('semana começa segunda-feira e cruza ano corretamente',()=>{
     dates:['2026-10-19','2026-10-20','2026-10-21','2026-10-22',
       '2026-10-23','2026-10-24','2026-10-25'],
   });
-  assert.deepEqual(agendaPeriod('2027-01-01','week'),{start:'2026-12-28',end:'2027-01-03'});
+  const yearTurn=agendaPeriod('2027-01-01','week');
+  assert.equal(yearTurn.start,'2026-12-28');
+  assert.equal(yearTurn.end,'2027-01-03');
 });
 test('mês civil mantém fevereiro bissexto e mudança de ano',()=>{
   assert.deepEqual(agendaPeriod('2024-02-20','month'),{start:'2024-02-01',end:'2024-02-29'});
