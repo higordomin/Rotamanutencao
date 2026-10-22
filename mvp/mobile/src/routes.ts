@@ -5,6 +5,7 @@ import {routeResult} from './routeRules';
 import {localDate} from './logic';
 import {routePlanInput,planAfterRouteRun} from './routeSchedule';
 import {quickDoneDraft} from './quickRouteActions';
+import {reorderedPointIds,copyRouteTitle,type MoveDirection} from './routeEditor';
 import {assetSnapshot,buildLegacyAssetIndex} from './assetWorkflow';
 
 export type Route = {id:string;title:string;area:string;created_at:string;point_count?:number;
@@ -74,6 +75,9 @@ export async function addRoutePoint(routeId:string,assetId:string,title:string):
   await db.withExclusiveTransactionAsync(async tx=>{
     const route=await tx.getFirstAsync<{id:string}>('SELECT id FROM routes WHERE id=?',routeId);
     if(!route)throw new Error('Rota não encontrada.');
+    const ongoing=await tx.getFirstAsync<{id:string}>(
+      'SELECT id FROM route_runs WHERE route_id=? AND finished_at IS NULL LIMIT 1',routeId);
+    if(ongoing)throw new Error('Finalize a execução aberta antes de adicionar pontos.');
     const asset=await tx.getFirstAsync<Pick<Asset,'id'>>('SELECT id FROM assets WHERE id=?',assetId);
     if(!asset)throw new Error('Selecione um equipamento cadastrado.');
     const count=await tx.getFirstAsync<{n:number}>('SELECT COUNT(*) n FROM route_points WHERE route_id=?',routeId);
@@ -82,9 +86,81 @@ export async function addRoutePoint(routeId:string,assetId:string,title:string):
       VALUES(?,?,?,?,?,?,?)`,id(),routeId,assetId,task,'',0,count?.n??0);
   });
 }
+/** Evita edição do checklist durante execução; os itens da execução são snapshots. */
+export async function updateRoutePoint(pointId:string,assetId:string,title:string):Promise<void>{
+  const task=str(title,200,'a atividade do ponto');
+  if(!assetId.trim())throw new Error('Selecione um equipamento cadastrado.');
+  const db=await getDatabase();
+  await db.withExclusiveTransactionAsync(async tx=>{
+    const point=await tx.getFirstAsync<{route_id:string}>('SELECT route_id FROM route_points WHERE id=?',pointId);
+    if(!point)throw new Error('Ponto não encontrado.');
+    const ongoing=await tx.getFirstAsync<{id:string}>(`
+      SELECT id FROM route_runs WHERE route_id=? AND finished_at IS NULL LIMIT 1`,point.route_id);
+    if(ongoing)throw new Error('Finalize a execução aberta antes de editar os pontos.');
+    const asset=await tx.getFirstAsync<{id:string}>('SELECT id FROM assets WHERE id=?',assetId);
+    if(!asset)throw new Error('Equipamento não encontrado.');
+    const changed=await tx.runAsync('UPDATE route_points SET title=?,asset_id=? WHERE id=? AND route_id=?',
+      task,assetId,pointId,point.route_id);
+    if(changed.changes!==1)throw new Error('O ponto foi alterado em outra operação.');
+  });
+}
+
+export async function changeRoutePointOrder(routeId:string,pointId:string,direction:MoveDirection):Promise<void>{
+  const db=await getDatabase();
+  await db.withExclusiveTransactionAsync(async tx=>{
+    const route=await tx.getFirstAsync<{id:string}>('SELECT id FROM routes WHERE id=?',routeId);
+    if(!route)throw new Error('Rota não encontrada.');
+    const ongoing=await tx.getFirstAsync<{id:string}>(`
+      SELECT id FROM route_runs WHERE route_id=? AND finished_at IS NULL LIMIT 1`,routeId);
+    if(ongoing)throw new Error('Finalize a execução aberta antes de reordenar os pontos.');
+    const points=await tx.getAllAsync<{id:string;position:number}>(
+      'SELECT id,position FROM route_points WHERE route_id=? ORDER BY position,id',routeId);
+    const ordered=reorderedPointIds(points.map(p=>p.id),pointId,direction);
+    // Normaliza posições legadas repetidas/descontínuas; histórico de execuções não muda.
+    for(let i=0;i<ordered.length;i++){
+      const changed=await tx.runAsync('UPDATE route_points SET position=? WHERE id=? AND route_id=?',
+        i,ordered[i],routeId);
+      if(changed.changes!==1)throw new Error('Falha ao ordenar pontos. Nada foi salvo.');
+    }
+  });
+}
+
+/** Reaproveita checklist sem copiar execução, vencimento, anomalias ou alertas. */
+export async function duplicateRouteAsTemplate(routeId:string):Promise<string>{
+  const db=await getDatabase();
+  const duplicateId=id(),createdAt=new Date().toISOString();
+  await db.withExclusiveTransactionAsync(async tx=>{
+    const route=await tx.getFirstAsync<Route>('SELECT * FROM routes WHERE id=?',routeId);
+    if(!route)throw new Error('Rota de origem não encontrada.');
+    const original=await tx.getAllAsync<RoutePoint>(
+      'SELECT * FROM route_points WHERE route_id=? ORDER BY position,id',routeId);
+    if(original.length>100)throw new Error('A rota possui mais de 100 pontos.');
+    if(original.some(p=>!p.asset_id))
+      throw new Error('A rota possui ponto sem equipamento. Corrija o vínculo antes de duplicar.');
+    await tx.runAsync(`INSERT INTO routes
+      (id,title,area,created_at,recurrence_days,next_due_date,attention_count,attention_at)
+      VALUES(?,?,?,?,0,NULL,0,NULL)`,duplicateId,copyRouteTitle(route.title),route.area,createdAt);
+    for(let i=0;i<original.length;i++){
+      const point=original[i];
+      await tx.runAsync(`INSERT INTO route_points
+        (id,route_id,asset_id,title,lubricant,quantity_grams,position)
+        VALUES(?,?,?,?,?,?,?)`,id(),duplicateId,point.asset_id,point.title,'',0,i);
+    }
+  });
+  return duplicateId;
+}
+
 export async function deleteRoutePoint(pointId:string):Promise<void> {
   const db=await getDatabase();
-  await db.runAsync('DELETE FROM route_points WHERE id=?',pointId);
+  await db.withExclusiveTransactionAsync(async tx=>{
+    const point=await tx.getFirstAsync<{route_id:string}>('SELECT route_id FROM route_points WHERE id=?',pointId);
+    if(!point)throw new Error('Ponto não encontrado.');
+    const ongoing=await tx.getFirstAsync<{id:string}>(`
+      SELECT id FROM route_runs WHERE route_id=? AND finished_at IS NULL LIMIT 1`,point.route_id);
+    if(ongoing)throw new Error('Finalize a execução aberta antes de remover pontos.');
+    const changed=await tx.runAsync('DELETE FROM route_points WHERE id=?',pointId);
+    if(changed.changes!==1)throw new Error('Ponto não encontrado.');
+  });
 }
 export async function deleteRoute(routeId:string):Promise<void> {
   const db=await getDatabase();
