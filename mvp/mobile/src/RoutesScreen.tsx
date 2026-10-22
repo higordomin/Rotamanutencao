@@ -52,12 +52,11 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
   const [status,setStatus]=useState<RouteRunItem['status']>(item.status);
   const [notes,setNotes]=useState(item.notes);
   const [lubricant,setLubricant]=useState(item.lubricant);
-  const [grams,setGrams]=useState(String(item.quantity_grams));
   const [working,setWorking]=useState(false);
   const [expanded,setExpanded]=useState(false);
   const [draftPhotos,setDraftPhotos]=useState<PhotoDraft[]>([]);
   const pristine=status===item.status && notes===item.notes
-    && lubricant===item.lubricant && grams===String(item.quantity_grams)
+    && lubricant===item.lubricant
     && draftPhotos.length===0;
   const quickSave=async()=>{
     if(working || disabled || !pristine || item.status!=='pending')return;
@@ -79,7 +78,7 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
   const save=async()=>{
     if(working)return;
     setWorking(true);
-    try{await recordRoutePoint(item.id,status,notes,lubricant,grams,draftPhotos);
+    try{await recordRoutePoint(item.id,status,notes,lubricant,draftPhotos);
       setDraftPhotos([]);await onSaved();}
     catch(e){Alert.alert('Registro não salvo',e instanceof Error?e.message:String(e));}
     finally{setWorking(false);}
@@ -87,13 +86,14 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
   return <View style={s.card}>
     <Text style={s.title}>{item.position+1}. {item.point_title}</Text>
     <Text style={s.sub}>{item.asset_label||'Equipamento removido do cadastro'}</Text>
-    <Text style={s.sub}>Resultado atual: {item.status==='pending'?'Pendente':item.status==='done'?'Executado':item.status==='anomaly'?'Anomalia':'Não executado'}</Text>
+    <Text style={[s.sub,{color:item.status==='anomaly'||item.status==='skipped'?c.amber:item.status==='done'?c.green:c.muted}]}>
+      {item.status==='pending'?'○ Pendente':item.status==='done'?'✓ Executado':item.status==='anomaly'?'⚠ Anomalia':'— Não executado'}
+      {item.lubricant?' · '+item.lubricant:''}
+    </Text>
     {!disabled&&<>
       {item.status==='pending'&&<View style={{marginTop:10}}>
-        <Text style={s.sub}>Execução rápida: grava {item.quantity_grams} g de {item.lubricant||'lubrificante não informado'}.</Text>
-        <Text style={[s.sub,{color:c.amber}]}>Toque somente DEPOIS de executar o serviço; sem fotos ou observações automáticas.</Text>
         <View style={s.row}>
-          <Btn text={working?'Salvando...':'✓ Registrar executado (previsto)'}
+          <Btn text={working?'Salvando...':'✓ Registrar executado'}
             disabled={working||!pristine} onPress={()=>{void quickSave();}}/>
         </View>
         {!pristine&&<Text style={s.sub}>Há dados editados ou fotos não salvas. Salve os detalhes para preservá-los.</Text>}
@@ -111,8 +111,6 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
         </Pressable>)}
       </View>
       <Input label="Lubrificante utilizado" value={lubricant} onChange={setLubricant} placeholder="Ex.: NEVASTANE HD2T"/>
-      {status==='skipped' ? <Text style={[s.note,{color:c.amber}]}>Não executado: quantidade aplicada será registrada como 0 g.</Text>
-        : <Input label="Quantidade aplicada (g)" value={grams} onChange={setGrams} numeric placeholder="0"/>}
       <Input label={status==='done'?'Observações (opcional)':'Justificativa / anomalia (obrigatória)'}
         value={notes} onChange={setNotes} multiline placeholder="Informe o que foi observado, sem dados confidenciais"/>
       <Text style={[s.label,{marginTop:14}]}>Fotos deste ponto ({photos.length+draftPhotos.length}/{MAX_ROUTE_PHOTOS})</Text>
@@ -157,7 +155,12 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const [editPeriod,setEditPeriod]=useState('0'),[editDue,setEditDue]=useState(localDate());
   const [calendarMode,setCalendarMode]=useState<'new'|'edit'|null>(null);
   const [assetId,setAssetId]=useState<string|null>(null),[assetSearch,setAssetSearch]=useState('');
-  const [task,setTask]=useState(''),[lubricant,setLubricant]=useState(''),[grams,setGrams]=useState('0');
+  const [task,setTask]=useState(''),[lubricant,setLubricant]=useState('');
+  const [createOpen,setCreateOpen]=useState(false);
+  const [addPointOpen,setAddPointOpen]=useState(false);
+  const [historyOpen,setHistoryOpen]=useState(false);
+  const [archiveOpen,setArchiveOpen]=useState(false);
+  const [showAllPoints,setShowAllPoints]=useState(false);
   const [busy,setBusy]=useState(false);
   const refresh=useCallback(async()=>{
     const [a,b]=await Promise.all([listRoutes(),listRouteRuns()]);
@@ -181,10 +184,9 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const attentionCount=routes.filter(r=>routePlanningState(r)==='attention').length;
   const todayCount=routes.filter(r=>routePlanningState(r)==='today').length;
   const run=runs.find(r=>r.id===activeRun);
+  const routeInProgress=runs.find(r=>r.route_id===selected&&r.finished_at===null);
   const visible=useMemo(()=>assets.filter(a=>[a.code,a.name,a.area].join(' ').toLowerCase().includes(assetSearch.trim().toLowerCase())).slice(0,12),[assets,assetSearch]);
   const {pending,attention}=routeProgress(items);
-  const anomalies=items.filter(i=>i.status==='anomaly').length;
-  const skipped=items.filter(i=>i.status==='skipped').length;
   // Em rota finalizada os filtros de apontamento não aparecem; mostrar sempre o histórico completo.
   const filteredItems=useMemo(()=>visibleRouteItems(items,run?.finished_at?'all':runFilter),
     [items,runFilter,run?.finished_at]);
@@ -208,18 +210,20 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         <View style={s.card}>
           <Text style={s.title}>{run.route_title}</Text>
           <Text style={s.sub}>Iniciada: {new Date(run.started_at).toLocaleString('pt-BR')}</Text>
-          <Text style={s.note}>{items.length-pending}/{items.length} registrados • {anomalies} anomalia(s) • {skipped} não executado(s)</Text>
+          <View style={s.progressTrack}><View style={[s.progressBar,{width:`${items.length?Math.round((items.length-pending)*100/items.length):0}%`}]}/></View>
+          <Text style={s.sub}>{items.length-pending}/{items.length} pontos registrados
+            {attention>0?` · ⚠ ${attention} ocorrência(s)`:''}</Text>
           {run.finished_at?
-            <Text style={[s.note,{color:c.green}]}>Finalizada: {new Date(run.finished_at).toLocaleString('pt-BR')}</Text>:
-            <Text style={[s.note,{color:c.amber}]}>Finalize apenas quando todos os pontos tiverem resultado.</Text>}
+            <Text style={[s.sub,{color:c.green}]}>Finalizada: {new Date(run.finished_at).toLocaleString('pt-BR')}</Text>:
+            <Text style={s.sub}>Confirme cada ponto após a manutenção. Anomalias e não execuções exigem justificativa.</Text>}
           <View style={s.row}>
             {run.finished_at?
               <Btn text="Gerar PDF da rota" onPress={()=>{void execute(()=>exportRoutePdf(run,items,savedPhotos));}}/>:
               <Btn text="Finalizar rota" disabled={pending>0||busy} onPress={()=>{void execute(async()=>{await finishRouteRun(run.id);await refresh();});}}/>}
           </View>
         </View>
-        {!run.finished_at&&<View style={s.card}>
-          <Text style={s.title}>Exibir pontos da rota</Text>
+        {!run.finished_at&&<View style={s.filterCard}>
+          <Text style={s.label}>Filtrar pontos</Text>
           <View style={s.row}>
             <Btn text={`Todos (${items.length})`} outline={runFilter!=='all'} onPress={()=>setRunFilter('all')}/>
             <Btn text={`Pendentes (${pending})`} outline={runFilter!=='pending'} onPress={()=>setRunFilter('pending')}/>
@@ -264,30 +268,40 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
             <Text style={s.sub}>Alterar a data não apaga anomalias nem históricos.</Text>
           </View>}
           <View style={s.row}>
-            <Btn disabled={busy||points.length===0} text="▶ Iniciar rota" onPress={()=>{void execute(async()=>{
-              const id=await startRouteRun(selected);setRunFilter('all');setActiveRun(id);setItems(await listRunItems(id));
-            });}}/>
+            <Btn disabled={busy||(!routeInProgress&&points.length===0)}
+              text={routeInProgress?'▶ Continuar rota':'▶ Iniciar rota'} onPress={()=>{void execute(async()=>{
+                const id=routeInProgress?.id??await startRouteRun(selected);
+                setRunFilter('pending');setActiveRun(id);setItems(await listRunItems(id));
+              });}}/>
             <Btn outline text="Excluir rota" disabled={busy} onPress={()=>Alert.alert('Excluir rota?', 'Os históricos já registrados serão preservados, mas os pontos atuais serão removidos.',[
               {text:'Cancelar',style:'cancel'},{text:'Excluir',style:'destructive',onPress:()=>{void execute(async()=>{await deleteRoute(selected);setSelected(null);setPoints([]);});}}
             ])}/>
           </View>
         </View>
-        {runs.filter(r=>r.route_id===selected).slice(0,8).map(r=><View key={r.id} style={s.card}>
+        {runs.some(r=>r.route_id===selected)&&<Btn
+          outline text={historyOpen?'Ocultar execuções anteriores':'Histórico de execuções'} onPress={()=>setHistoryOpen(x=>!x)}/>}
+        {historyOpen&&runs.filter(r=>r.route_id===selected).slice(0,8).map(r=><View key={r.id} style={s.compactCard}>
           <Text style={s.title}>Execução em {new Date(r.started_at).toLocaleString('pt-BR')}</Text>
           <Text style={s.sub}>{r.finished_at?'Finalizada':'Em andamento'}</Text>
           <Btn outline text={r.finished_at?'Ver relatório':'Continuar execução'} onPress={()=>{setRunFilter('all');setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
         </View>)}
         <Text style={s.heading}>Pontos cadastrados</Text>
-        {points.map(p=><View style={s.card} key={p.id}>
+        {points.length===0&&<Text style={s.sub}>Ainda não há pontos cadastrados nesta rota.</Text>}
+        {(showAllPoints?points:points.slice(0,8)).map(p=><View style={s.pointCard} key={p.id}>
           <Text style={s.title}>{p.position+1}. {p.title}</Text>
           <Text style={s.sub}>{[p.asset_code,p.asset_name,p.asset_area].filter(Boolean).join(' · ')||'Equipamento removido'}</Text>
-          <Text style={s.sub}>{p.lubricant||'Sem lubrificante'} • {p.quantity_grams} g</Text>
+          {!!p.lubricant&&<Text style={s.sub}>Lubrificante: {p.lubricant}</Text>}
           <Btn outline text="Remover ponto" disabled={busy} onPress={()=>Alert.alert('Remover ponto?','O histórico de execuções anteriores não será alterado.',[
             {text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{void execute(()=>deleteRoutePoint(p.id));}}
           ])}/>
         </View>)}
-        <View style={s.card}>
-          <Text style={s.heading}>Adicionar ponto à rota</Text>
+        {points.length>8&&<Btn outline
+          text={showAllPoints?'Recolher pontos':`Ver todos os ${points.length} pontos`}
+          onPress={()=>setShowAllPoints(v=>!v)}/>}
+        <Btn outline text={addPointOpen?'Cancelar novo ponto':'+ Adicionar ponto à rota'}
+          onPress={()=>setAddPointOpen(x=>!x)}/>
+        {addPointOpen&&<View style={s.card}>
+          <Text style={s.title}>Novo ponto da rota</Text>
           <Input label="Buscar equipamento / TAG" value={assetSearch} onChange={setAssetSearch}/>
           {visible.map(a=><Pressable key={a.id} style={[s.asset,assetId===a.id&&{borderColor:c.blue}]}
             accessibilityRole="button" accessibilityState={{selected:assetId===a.id}} onPress={()=>setAssetId(a.id)}>
@@ -297,14 +311,21 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           {!visible.length&&<Text style={s.sub}>Cadastre um equipamento na aba Ativos antes de adicionar pontos.</Text>}
           <Input label="Atividade do ponto *" value={task} onChange={setTask} placeholder="Ex.: Engraxar mancal lado acionamento"/>
           <Input label="Lubrificante" value={lubricant} onChange={setLubricant} placeholder="Ex.: NEVASTANE HD2T"/>
-          <Input label="Quantidade prevista (gramas)" numeric value={grams} onChange={setGrams}/>
           <View style={{marginTop:12}}><Btn text="Adicionar ponto" disabled={busy||!assetId} onPress={()=>{void execute(async()=>{
-            await addRoutePoint(selected,assetId||'',task,lubricant,grams);setTask('');setGrams('0');
+            await addRoutePoint(selected,assetId||'',task,lubricant);setTask('');setLubricant('');setAddPointOpen(false);setShowAllPoints(true);
           });}}/></View>
-        </View>
+        </View>}
       </>:<>
-        <View style={s.card}>
-          <Text style={s.heading}>Nova rota</Text>
+        <View style={s.rowHeader}>
+          <View style={{flex:1}}>
+            <Text style={s.heading}>Suas rotas</Text>
+            <Text style={s.sub}>{routes.length} cadastrada(s) · por prazo e pendências</Text>
+          </View>
+          <Btn text={createOpen?'Cancelar':'+ Nova rota'} outline={createOpen}
+            onPress={()=>setCreateOpen(x=>!x)}/>
+        </View>
+        {createOpen&&<View style={s.card}>
+          <Text style={s.title}>Nova rota</Text>
           <Input label="Nome da rota *" value={name} onChange={setName} placeholder="Ex.: Lubrificação — Paletização"/>
           <Input label="Setor / área" value={area} onChange={setArea} placeholder="Ex.: Utilidades"/>
           <Input label="Repetir a cada quantos dias? (0 = avulsa)" value={period}
@@ -318,19 +339,36 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           </>}
           <View style={{marginTop:12}}><Btn text="Criar rota" disabled={busy} onPress={()=>{void execute(async()=>{
             await createRoute(name,area,period,period.trim()==='0'?null:firstDue);
-            setName('');setArea('');setPeriod('0');setFirstDue(localDate());setCalendarMode(null);
+            setName('');setArea('');setPeriod('0');setFirstDue(localDate());setCalendarMode(null);setCreateOpen(false);
           });}}/></View>
-        </View>
+        </View>}
         <Text style={[s.note,{fontWeight:'800'}]}>
           {attentionCount} com pendências • {overdueCount} vencida(s) • {todayCount} para hoje
         </Text>
-        {routes.map(r=><View style={s.card} key={r.id}>
-          <Text style={s.title}>{r.title}</Text>
-          <Text style={s.sub}>{r.area||'Sem setor'} • {r.point_count??0} pontos</Text>
-          <ScheduleSummary route={r}/>
-          <View style={s.row}><Btn text="Abrir rota" outline onPress={()=>{setSelected(r.id);void listRoutePoints(r.id).then(setPoints);}}/></View>
-        </View>)}
-        {runs.filter(r=>r.route_id===null).slice(0,8).map(r=><View key={r.id} style={s.card}>
+        {!routes.length&&<Text style={s.sub}>Nenhuma rota cadastrada. Toque em “+ Nova rota” para começar.</Text>}
+        {routes.map(r=>{
+          const state=routePlanningState(r);
+          const color=state==='attention'||state==='overdue'?c.red:state==='today'?c.amber:c.green;
+          const label=state==='attention'?'Pendência':state==='overdue'?'Vencida':
+            state==='today'?'Hoje':state==='upcoming'?'Programada':'Avulsa';
+          return <Pressable key={r.id} accessibilityRole="button"
+            accessibilityLabel={`Abrir rota ${r.title}`}
+            style={s.routeLine} onPress={()=>{setSelected(r.id);setHistoryOpen(false);
+              setAddPointOpen(false);setShowAllPoints(false);void listRoutePoints(r.id).then(setPoints);}}>
+            <View style={{flex:1,gap:4}}>
+              <Text style={s.title}>{r.title}</Text>
+              <Text style={s.sub}>{r.area||'Sem setor'} · {r.point_count??0} ponto(s)</Text>
+              <Text style={[s.sub,{color,fontWeight:'800'}]}>{label}
+                {r.next_due_date?' · '+brazilianDate(r.next_due_date):''}
+              </Text>
+            </View>
+            <Text style={[s.title,{color:c.blue}]}>›</Text>
+          </Pressable>;
+        })}
+        {runs.some(r=>r.route_id===null)&&<Btn outline
+          text={archiveOpen?'Ocultar execuções de rotas excluídas':'Ver execuções de rotas excluídas'}
+          onPress={()=>setArchiveOpen(x=>!x)}/>}
+        {archiveOpen&&runs.filter(r=>r.route_id===null).slice(0,8).map(r=><View key={r.id} style={s.compactCard}>
           <Text style={s.title}>Histórico: {r.route_title}</Text>
           <Text style={s.sub}>{new Date(r.started_at).toLocaleString('pt-BR')}</Text>
           <Btn text="Ver execução arquivada" outline onPress={()=>{setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
@@ -348,7 +386,15 @@ const s=StyleSheet.create({
  sub:{fontSize:12,color:c.muted,lineHeight:18},
  note:{fontSize:13,color:c.text,marginTop:8,lineHeight:19},
  input:{color:c.text,backgroundColor:c.field,borderWidth:1,borderColor:c.line,paddingHorizontal:12,minHeight:45,borderRadius:9},
- row:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:12},
+ row:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:9},
+ rowHeader:{flexDirection:'row',alignItems:'center',gap:10,marginBottom:5},
+ compactCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:11,gap:4},
+ pointCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:4},
+ filterCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:3},
+ routeLine:{backgroundColor:c.panel,borderRadius:12,borderWidth:1,borderColor:c.line,
+   padding:13,flexDirection:'row',alignItems:'center',gap:10,minHeight:78},
+ progressTrack:{marginTop:9,height:7,borderRadius:6,backgroundColor:c.field,overflow:'hidden'},
+ progressBar:{height:7,backgroundColor:c.green,borderRadius:6},
  btn:{backgroundColor:c.blue,minHeight:41,borderRadius:10,paddingHorizontal:13,paddingVertical:10,justifyContent:'center',alignItems:'center'},
  btnText:{color:c.bg,fontWeight:'800',fontSize:12},
  outline:{backgroundColor:c.field,borderColor:c.line,borderWidth:1},

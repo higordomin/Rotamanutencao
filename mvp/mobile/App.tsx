@@ -571,7 +571,7 @@ export default function App() {
             <View style={styles.chips}>
               <Pill text={item.status==='done'?'Executado':item.status==='anomaly'?'Anomalia':item.status==='skipped'?'Não executado':'Pendente'}
                 tone={item.status==='done'?'green':item.status==='anomaly'?'red':'yellow'}/>
-              <Pill text={item.quantity_grams+' g'}/>
+
             </View>
             {!!item.lubricant&&<Text style={styles.description}>Lubrificante: {item.lubricant}</Text>}
             {!!item.notes&&<Text style={styles.description}>Registro: {item.notes}</Text>}
@@ -597,7 +597,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.21.2 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.21.3 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>

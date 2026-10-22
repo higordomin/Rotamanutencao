@@ -54,6 +54,15 @@ test('PDF HTML contém relatórios, período, dados e aviso do retrato atual',()
   assert.ok(html.includes('19/10/2026'));
   assert.ok(html.includes('21/10/2026'));
 });
+test('relatórios novos não exibem quantidades antigas de lubrificante',()=>{
+  const d=sample();
+  const html=buildConsolidatedHtml(d);
+  assert.ok(html.includes('Lubrificante'));
+  assert.ok(!html.includes('<th>Quantidade</th>'));
+  assert.ok(!html.includes('3.50 g'));
+  assert.ok(!html.includes('3.5 g'));
+});
+
 test('escapa entradas de texto de OS e rota evitando HTML embutido no relatório',()=>{
   const html=buildConsolidatedHtml(sample());
   assert.ok(html.includes('Lubrificação &lt;mancal&gt;'));
