@@ -36,7 +36,7 @@ async function readReportRows(start:string,end:string,includePhotos:boolean):Pro
       AND date(finished_at,'localtime') BETWEEN ? AND ?
       ORDER BY finished_at DESC,id LIMIT 101`,start,end);
     const routeItems=await tx.getAllAsync<ReportRouteItem>(`
-      SELECT i.id,i.run_id,i.point_title,i.asset_label,i.status,i.notes,i.lubricant,i.quantity_grams
+      SELECT i.id,i.run_id,i.point_title,i.asset_label,i.status,i.notes,i.lubricant
       FROM route_run_items i JOIN route_runs r ON r.id=i.run_id
       WHERE r.finished_at IS NOT NULL AND date(r.finished_at,'localtime') BETWEEN ? AND ?
       ORDER BY r.finished_at DESC,i.position,i.id LIMIT ?`,start,end,MAX_REPORT_ROUTE_ITEMS+1);
