@@ -1,7 +1,7 @@
 import type {Asset,PhotoDraft} from './types';
 import {persistPhoto,deletePhotoFile} from './evidence';
 import {getDatabase} from './db';
-import {gramAmount,routeResult,appliedGrams} from './routeRules';
+import {routeResult} from './routeRules';
 import {localDate} from './logic';
 import {routePlanInput,planAfterRouteRun} from './routeSchedule';
 import {quickDoneDraft} from './quickRouteActions';
@@ -62,9 +62,8 @@ export async function updateRouteSchedule(routeId:string,recurrence:string,due:s
     WHERE id=?`,plan.recurrence_days,plan.next_due_date,routeId);
   if(changed.changes!==1)throw new Error('Rota não encontrada.');
 }
-export async function addRoutePoint(routeId:string,assetId:string,title:string,lubricant:string,quantity:string):Promise<void> {
+export async function addRoutePoint(routeId:string,assetId:string,title:string,lubricant:string):Promise<void> {
   const task=str(title,200,'o ponto da rota');
-  const amount=gramAmount(quantity);
   if(lubricant.length>200)throw new Error('Nome do lubrificante muito longo.');
   const db=await getDatabase();
   await db.withExclusiveTransactionAsync(async tx=>{
@@ -75,7 +74,7 @@ export async function addRoutePoint(routeId:string,assetId:string,title:string,l
     const count=await tx.getFirstAsync<{n:number}>('SELECT COUNT(*) n FROM route_points WHERE route_id=?',routeId);
     if((count?.n??0)>=100)throw new Error('Limite de 100 pontos por rota.');
     await tx.runAsync(`INSERT INTO route_points(id,route_id,asset_id,title,lubricant,quantity_grams,position)
-      VALUES(?,?,?,?,?,?,?)`,id(),routeId,assetId,task,lubricant.trim(),amount,count?.n??0);
+      VALUES(?,?,?,?,?,?,?)`,id(),routeId,assetId,task,lubricant.trim(),0,count?.n??0);
   });
 }
 export async function deleteRoutePoint(pointId:string):Promise<void> {
@@ -139,7 +138,7 @@ export async function startRouteRun(routeId:string):Promise<string> {
       await tx.runAsync(`INSERT INTO route_run_items
       (id,run_id,point_id,point_title,asset_label,lubricant,quantity_grams,status,notes,recorded_at,position,asset_id)
       VALUES(?,?,?,?,?,?,?,'pending','',NULL,?,?)`,
-      id(),runId,point.id,point.title,label,point.lubricant,point.quantity_grams,point.position,point.asset_id);
+      id(),runId,point.id,point.title,label,point.lubricant,0,point.position,point.asset_id);
     }
   });
   return runId;
@@ -160,7 +159,7 @@ export async function quickCompleteRoutePoint(itemId:string):Promise<void> {
       throw new Error('A rota já foi encerrada ou o ponto não existe.');
     const draft=quickDoneDraft(item);
     const result=await tx.runAsync(`
-      UPDATE route_run_items SET status=?,notes=?,recorded_at=?
+      UPDATE route_run_items SET status=?,notes=?,quantity_grams=0,recorded_at=?
       WHERE id=? AND status='pending' AND recorded_at IS NULL AND EXISTS (
         SELECT 1 FROM route_runs r WHERE r.id=route_run_items.run_id AND r.finished_at IS NULL
       )`,draft.status,draft.notes,new Date().toISOString(),itemId);
@@ -170,10 +169,10 @@ export async function quickCompleteRoutePoint(itemId:string):Promise<void> {
 }
 
 export async function recordRoutePoint(
-  itemId:string,status:RouteRunItem['status'],notes:string,lubricant:string,quantity:string,
+  itemId:string,status:RouteRunItem['status'],notes:string,lubricant:string,
   attachments:PhotoDraft[]=[]
 ):Promise<void> {
-  const message=routeResult(status,notes),grams=appliedGrams(status,quantity);
+  const message=routeResult(status,notes);
   if(lubricant.length>200)throw new Error('Nome do lubrificante muito longo.');
   if(attachments.length>MAX_ROUTE_PHOTOS)throw new Error('Limite de 4 fotos por ponto.');
   const db=await getDatabase();
@@ -187,9 +186,10 @@ export async function recordRoutePoint(
         FROM route_run_items i JOIN route_runs r ON r.id=i.run_id WHERE i.id=?`,itemId);
       if(!current || current.finished_at!==null)throw new Error('Ponto não encontrado ou rota já encerrada.');
       if(current.n+savedFiles.length>MAX_ROUTE_PHOTOS)throw new Error('Cada ponto permite até 4 fotos.');
-      const changed=await tx.runAsync(`UPDATE route_run_items SET status=?,notes=?,lubricant=?,quantity_grams=?,recorded_at=?
+      const changed=await tx.runAsync(`UPDATE route_run_items SET status=?,notes=?,lubricant=?,
+          quantity_grams=CASE WHEN status='pending' THEN 0 ELSE quantity_grams END,recorded_at=?
         WHERE id=? AND EXISTS(SELECT 1 FROM route_runs r WHERE r.id=route_run_items.run_id AND r.finished_at IS NULL)`,
-        status,message,lubricant.trim(),grams,new Date().toISOString(),itemId);
+        status,message,lubricant.trim(),new Date().toISOString(),itemId);
       if(changed.changes!==1)throw new Error('Ponto não encontrado ou rota já encerrada.');
       for(let i=0;i<savedFiles.length;i++) {
         await tx.runAsync('INSERT INTO route_run_photos(id,item_id,filename,mime_type,created_at) VALUES(?,?,?,?,?)',
