@@ -10,7 +10,7 @@ import {
   setImpediment, releaseImpediment, listRecentEvents,
 } from './src/db';
 import type {Asset, AssetDraft, Category, Execution, ExecutionPhoto, PhotoDraft, OrderDraft, Priority, WorkOrder, OrderEvent, ExecutionResult} from './src/types';
-import {taskState, taskSummary} from './src/logic';
+import {taskState} from './src/logic';
 import {evidenceUri, selectPhoto, MAX_PHOTOS_PER_EXECUTION} from './src/evidence';
 import {exportExecutionPdf} from './src/report';
 import {exportBackup, pickBackupFile, restoreBackup} from './src/backup';
@@ -20,7 +20,7 @@ import {brazilianDate} from './src/calendar';
 import {RoutesScreen} from './src/RoutesScreen';
 import {OperationalAgenda} from './src/OperationalAgenda';
 import {listRoutes,listAssetRouteHistory,type AssetRouteHistoryItem,type Route} from './src/routes';
-import {buildOperationalBoard,type BoardEntry} from './src/operationalBoard';
+import {HomeScreen} from './src/HomeScreen';
 import {ReminderSettings} from './src/ReminderSettings';
 import {ConsolidatedReportPanel} from './src/ConsolidatedReportPanel';
 import {syncLocalReminders} from './src/localReminders';
@@ -99,7 +99,6 @@ export default function App() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selectedRouteId,setSelectedRouteId] = useState<string|null>(null);
-  const [showAllBoard,setShowAllBoard]=useState(false);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [archivedOrders,setArchivedOrders]=useState<WorkOrder[]>([]);
   const [executions, setExecutions] = useState<Execution[]>([]);
@@ -196,14 +195,6 @@ export default function App() {
   },[selectedAsset,assets,tab]);
   const today = localDate();
   const stateOf = (order: WorkOrder) => taskState(order, today);
-  const counts = useMemo(() => taskSummary(orders, today), [orders, today]);
-  const board = useMemo(()=>buildOperationalBoard(orders,routes,today),[orders,routes,today]);
-  const overdue = orders.filter(o => stateOf(o) === 'overdue');
-  const todayTasks = orders.filter(o => stateOf(o) === 'today');
-  const upcoming = orders.filter(o => stateOf(o) === 'upcoming');
-  const blocked = orders.filter(o => stateOf(o) === 'blocked');
-  const partialOrders = orders.filter(o => o.status === 'pending' && !!o.partial_reason?.trim());
-  const partialAvailable = partialOrders.filter(o => stateOf(o) !== 'blocked');
   const evidenceByExecution = useMemo(() => {
     const grouped = new Map<string, ExecutionPhoto[]>();
     for (const photo of evidence) grouped.set(photo.execution_id, [...(grouped.get(photo.execution_id) ?? []), photo]);
@@ -458,102 +449,19 @@ export default function App() {
     </View>;
   }
 
-  const section = (name: string, items: WorkOrder[], empty: string) => <View style={{marginTop: 21}}>
-    <Text style={styles.sectionTitle}>{name} <Text style={{color: COLORS.muted}}>({items.length})</Text></Text>
-    {items.length === 0 ? <Text style={styles.empty}>{empty}</Text> : items.slice(0, 8).map(orderCard)}
-    {items.length > 8 && <Action secondary label={`Ver outras ${items.length - 8} atividades`} onPress={() => {
-      setOrderFilter(name.startsWith('Impedidas') ? 'Impedidas' : 'Pendentes'); setTab('Atividades');
-    }}/>}
-  </View>;
-
-  function boardEntryCard(entry:BoardEntry){
-    const stateLabel=entry.state==='attention'?'⚠ Rota com pendência'
-      :entry.state==='blocked'?'⚠ Impedida'
-      :entry.state==='overdue'?'● Vencida'
-      :entry.state==='today'?'● Hoje':'● Próximos dias';
-    const tone=entry.state==='attention'||entry.state==='blocked'?'yellow':
-      entry.state==='overdue'?'red':entry.state==='today'?'green':'blue';
-    const linkedOrder=entry.type==='order'?orders.find(o=>o.id===entry.id):undefined;
-    return <View key={entry.type+':'+entry.id} style={styles.card}>
-      <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
-        <Text style={[styles.detail,{fontWeight:'800'}]}>{entry.type==='route'?'ROTA':'ORDEM DE SERVIÇO'}</Text>
-        <Pill text={stateLabel} tone={tone}/>
-      </View>
-      <Text style={styles.cardTitle}>{entry.title}</Text>
-      <Text style={styles.description}>{entry.subtitle}</Text>
-      <View style={styles.chips}>
-        {entry.date&&<Pill text={'📅 '+brazilianDate(entry.date)}/>}
-        {entry.priority==='Alta'&&<Pill tone="red" text="Prioridade Alta"/>}
-        {entry.partial&&<Pill tone="yellow" text="Execução parcial"/>}
-      </View>
-      <View style={styles.cardActions}>
-        {entry.type==='route'?
-          <Action label="Abrir rota" onPress={()=>{
-            setSelectedRouteId(entry.id);setTab('Rotas');
-          }}/>:
-          linkedOrder ? <>
-            {linkedOrder.block_reason?.trim()?
-              <Action label="Ver impedimento" secondary onPress={()=>openBlock(linkedOrder)}/>:
-              <Action label="Executar OS" onPress={()=>openComplete(linkedOrder)}/>}
-            <Action label="Editar OS" secondary onPress={()=>openOrder(linkedOrder)}/>
-          </>:null}
-      </View>
-    </View>;
-  }
-
   const content = () => {
-    if (tab === 'Início') return <>
-      <View style={styles.hero}>
-        <Text style={styles.heroEyebrow}>RESUMO DA SUA MANUTENÇÃO</Text>
-        <Text style={styles.heroTitle}>Sua rotina, sob controle.</Text>
-        <Text style={styles.heroSub}>Rotas e serviços organizados, mesmo sem internet.</Text>
-        {blocked.some(o => o.due_date < today) && <Text style={[styles.detail, {color: COLORS.yellow, marginBottom: 9}]}>
-          {blocked.filter(o => o.due_date < today).length} atividade(s) impedida(s) também estão vencidas.
-        </Text>}
-        <View style={styles.metrics}>
-          <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.red}]}>{counts.overdue}</Text><Text style={styles.metricLabel}>Atrasadas</Text></View>
-          <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.yellow}]}>{counts.blocked}</Text><Text style={styles.metricLabel}>Impedidas</Text></View>
-          <View style={styles.metric}><Text style={[styles.metricValue, {color: COLORS.green}]}>{counts.today}</Text><Text style={styles.metricLabel}>Hoje</Text></View>
-        </View>
-      </View>
-      <View style={{marginTop:16}}>
-        <Action label="📅 Abrir agenda diária, semanal e mensal" onPress={()=>setTab('Agenda')}/>
-      </View>
-      <View style={{marginTop:20}}>
-        <Text style={styles.sectionTitle}>Painel operacional • Hoje e próximos 7 dias</Text>
-        <Text style={styles.description}>OS e rotas reunidas por prioridade. Pendências, bloqueios
-          e serviços atrasados aparecem primeiro; sem internet ou sincronização.</Text>
-        <View style={styles.metrics}>
-          <View style={styles.metric}><Text style={[styles.metricValue,{color:COLORS.yellow}]}>{board.counts.attention+board.counts.blocked}</Text>
-            <Text style={styles.metricLabel}>Pendências</Text></View>
-          <View style={styles.metric}><Text style={[styles.metricValue,{color:COLORS.red}]}>{board.counts.overdue}</Text>
-            <Text style={styles.metricLabel}>Vencidas</Text></View>
-          <View style={styles.metric}><Text style={[styles.metricValue,{color:COLORS.green}]}>{board.counts.today}</Text>
-            <Text style={styles.metricLabel}>Para hoje</Text></View>
-        </View>
-        <Text style={styles.detail}>{board.counts.orders} OS · {board.counts.routes} rotas no planejamento</Text>
-        {board.entries.length===0?
-          <Text style={styles.empty}>Nenhuma manutenção pendente ou programada para os próximos 7 dias.</Text>:
-          (showAllBoard?board.entries:board.entries.slice(0,8)).map(boardEntryCard)}
-        {board.entries.length>8&&<View style={{marginTop:8}}>
-          <Action secondary label={showAllBoard?'Mostrar menos':'Ver mais '+(board.entries.length-8)+' serviços'}
-            onPress={()=>setShowAllBoard(!showAllBoard)}/>
-        </View>}
-      </View>
-      {partialOrders.length > 0 && <Text style={[styles.detail, {color: COLORS.yellow, marginTop: 8}]}>
-        {partialOrders.length} atividade(s) com execução parcial e pendência registrada.
-      </Text>}
-      <View style={styles.quickActions}>
-        <Action label="+ Nova atividade" onPress={() => openOrder()}/>
-        <Action label="+ Equipamento" secondary onPress={() => openAsset()}/>
-      </View>
-      {section('Impedidas / aguardando liberação', blocked, 'Nenhuma atividade impedida.')}
-      {partialAvailable.length > 0 && section('Execuções parciais / pendências', partialAvailable, '')}
-      {section('Atrasadas', overdue, 'Nenhuma atividade atrasada.')}
-      {section('Para hoje', todayTasks, 'Nenhuma atividade programada para hoje.')}
-      {section('Próximas', upcoming.slice(0, 5), 'Sem atividades futuras.')}
-      <Text style={styles.hint}>Atividades impedidas continuam registradas e não desaparecem do planejamento. O histórico fica armazenado neste aparelho.</Text>
-    </>;
+    if (tab === 'Início') return <HomeScreen
+      orders={orders} routes={routes}
+      onOpenAgenda={()=>setTab('Agenda')}
+      onNewOrder={()=>openOrder()}
+      onOpenRoute={id=>{setSelectedRouteId(id);setTab('Rotas');}}
+      onOpenOrder={id=>{
+        const order=orders.find(o=>o.id===id);
+        if(!order){Alert.alert('OS não encontrada','Atualize a lista de atividades.');return;}
+        if(order.block_reason?.trim())openBlock(order);
+        else openComplete(order);
+      }}
+    />;
     if (tab === 'Ativos') return <>
       <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Equipamentos</Text><Text style={styles.detail}>{assets.length} cadastrados</Text></View>
         <Action label="+ Novo" onPress={() => openAsset()}/></View>
@@ -689,7 +597,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.21 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.21.1 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
