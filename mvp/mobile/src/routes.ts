@@ -57,10 +57,16 @@ export async function createRoute(title:string,area:string,recurrence='0',due:st
 export async function updateRouteSchedule(routeId:string,recurrence:string,due:string|null):Promise<void>{
   const plan=routePlanInput(recurrence,due);
   const db=await getDatabase();
-  // Não ocultar uma anomalia aberta alterando manualmente a programação.
-  const changed=await db.runAsync(`UPDATE routes SET recurrence_days=?,next_due_date=?
-    WHERE id=?`,plan.recurrence_days,plan.next_due_date,routeId);
-  if(changed.changes!==1)throw new Error('Rota não encontrada.');
+  await db.withExclusiveTransactionAsync(async tx=>{
+    // A execução aberta deve terminar com a programação que estava em vigor no início.
+    const running=await tx.getFirstAsync<{id:string}>(`
+      SELECT id FROM route_runs WHERE route_id=? AND finished_at IS NULL LIMIT 1`,routeId);
+    if(running)throw new Error('Esta rota possui execução em andamento. Finalize-a antes de alterar a programação.');
+    // Atualizar somente periodicidade/prazo. Não zerar anomalias, histórico nem fotos.
+    const changed=await tx.runAsync(`UPDATE routes SET recurrence_days=?,next_due_date=?
+      WHERE id=?`,plan.recurrence_days,plan.next_due_date,routeId);
+    if(changed.changes!==1)throw new Error('Rota não encontrada.');
+  });
 }
 export async function addRoutePoint(routeId:string,assetId:string,title:string,lubricant:string):Promise<void> {
   const task=str(title,200,'o ponto da rota');
