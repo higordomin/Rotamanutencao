@@ -25,7 +25,7 @@ test('QA 0.21.3 usa ID fixo, separado da produção e versões legadas', () => {
     const result = resolveAppConfig({config: base});
     assert.equal(result.android.package, 'br.com.rotamanutencao.qa');
     assert.equal(result.name, 'RotaManutenção');
-    assert.equal(result.android.versionCode, 212);
+    assert.equal(result.android.versionCode, 213);
     assert.equal(base.android.package, 'br.com.rotamanutencao.app');
   } finally {
     if (previous === undefined) delete process.env.ROTA_PREVIEW;
