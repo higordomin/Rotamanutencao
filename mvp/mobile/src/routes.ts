@@ -4,6 +4,7 @@ import {getDatabase} from './db';
 import {gramAmount,routeResult,appliedGrams} from './routeRules';
 import {localDate} from './logic';
 import {routePlanInput,planAfterRouteRun} from './routeSchedule';
+import {quickDoneDraft} from './quickRouteActions';
 import {assetSnapshot,buildLegacyAssetIndex} from './assetWorkflow';
 
 export type Route = {id:string;title:string;area:string;created_at:string;point_count?:number;
@@ -143,6 +144,31 @@ export async function startRouteRun(routeId:string):Promise<string> {
   });
   return runId;
 }
+/**
+ * Apontamento rápido e atômico: SOMENTE para ponto pendente de uma rota aberta.
+ * Grava a quantidade e o lubrificante já previstos; sem notas inventadas ou fotos.
+ * Uma segunda tentativa falha, evitando regravação por toque duplo.
+ */
+export async function quickCompleteRoutePoint(itemId:string):Promise<void> {
+  if(!itemId.trim())throw new Error('Ponto inválido.');
+  const db=await getDatabase();
+  await db.withExclusiveTransactionAsync(async tx=>{
+    const item=await tx.getFirstAsync<RouteRunItem & {finished_at:string|null}>(`
+      SELECT i.*,r.finished_at FROM route_run_items i
+      JOIN route_runs r ON r.id=i.run_id WHERE i.id=?`,itemId);
+    if(!item || item.finished_at!==null)
+      throw new Error('A rota já foi encerrada ou o ponto não existe.');
+    const draft=quickDoneDraft(item);
+    const result=await tx.runAsync(`
+      UPDATE route_run_items SET status=?,notes=?,recorded_at=?
+      WHERE id=? AND status='pending' AND recorded_at IS NULL AND EXISTS (
+        SELECT 1 FROM route_runs r WHERE r.id=route_run_items.run_id AND r.finished_at IS NULL
+      )`,draft.status,draft.notes,new Date().toISOString(),itemId);
+    if(result.changes!==1)
+      throw new Error('Este ponto já foi registrado em outra ação. Atualize a rota.');
+  });
+}
+
 export async function recordRoutePoint(
   itemId:string,status:RouteRunItem['status'],notes:string,lubricant:string,quantity:string,
   attachments:PhotoDraft[]=[]
