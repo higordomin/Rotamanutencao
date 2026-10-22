@@ -386,7 +386,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
             date={firstDue} onDate={setFirstDue} first
             pickerOpen={calendarMode==='new'}
             onPickerOpen={()=>setCalendarMode('new')}
-            onPickerClose={()=>setCalendarMode(null)}/>}
+            onPickerClose={()=>setCalendarMode(null)}/>
           <View style={{marginTop:12}}><Btn text="Criar rota" disabled={busy} onPress={()=>{void execute(async()=>{
             await createRoute(name,area,period,period.trim()==='0'?null:firstDue);
             setName('');setArea('');setPeriod('0');setFirstDue(localDate());setCalendarMode(null);setCreateOpen(false);
