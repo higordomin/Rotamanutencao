@@ -314,3 +314,39 @@ test('backup v9 permanece importável sem asset_id nos pontos históricos',()=>{
   delete data.route_run_items[0].asset_id;
   check(data);
 });
+
+function linkedAnomalyV11(){
+  const d=routeFixtureV10();
+  d.version=11;
+  d.route_run_items[0].status='anomaly';
+  d.route_run_items[0].notes='Vazamento identificado no redutor da esteira';
+  d.route_run_items[0].quantity_grams=0;
+  d.route_corrective_links=[{item_id:'item10',order_id:'ord1',created_at:stamp}];
+  return d;
+}
+test('backup v11 conserva relação entre anomalia, OS e TAG, inclusive após renomear equipamento',()=>{
+  const d=linkedAnomalyV11();
+  check(d);
+  d.assets[0].name='Motor renomeado';
+  check(d);
+  assert.equal(d.route_corrective_links[0].item_id,'item10');
+});
+test('backup v11 exige links e rejeita OS órfã, repetição ou origem não anômala',()=>{
+  const d=linkedAnomalyV11();
+  delete d.route_corrective_links;rejects(d,/Vínculos/);
+  d.route_corrective_links=[{item_id:'item10',order_id:'nao-existe',created_at:stamp}];
+  rejects(d,/Vínculo/);
+  d.route_corrective_links=[{item_id:'nao-existe',order_id:'ord1',created_at:stamp}];
+  rejects(d,/Vínculo/);
+  d.route_corrective_links=[{item_id:'item10',order_id:'ord1',created_at:stamp},
+    {item_id:'item10',order_id:'ord1',created_at:stamp}];
+  rejects(d,/Vínculo/);
+  d.route_corrective_links=[{item_id:'item10',order_id:'ord1',created_at:stamp}];
+  d.route_run_items[0].status='done';
+  rejects(d,/Vínculo/);
+});
+test('backup antigo v10 continua válido e pode ser restaurado sem links',()=>{
+  const d=routeFixtureV10();
+  check(d);
+  assert.equal(d.route_corrective_links,undefined);
+});

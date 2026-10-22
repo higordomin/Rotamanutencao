@@ -17,7 +17,7 @@ const C={bg:'#08101E',panel:'#111E31',field:'#16273D',line:'#24394F',
 const MONTHS=['janeiro','fevereiro','março','abril','maio','junho','julho',
   'agosto','setembro','outubro','novembro','dezembro'];
 const WEEKDAYS=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
-const SPECIALTIES:AgendaSpecialty[]=['Todas','Lubrificação','Mecânica','Elétrica','Inspeção'];
+const SPECIALTIES:AgendaSpecialty[]=['Todas','Lubrificação','Mecânica','Elétrica','Inspeção','Segurança'];
 
 function Chip({title,selected,onPress}:{title:string;selected:boolean;onPress:()=>void}){
   return <Pressable accessibilityRole="button" accessibilityState={{selected}}

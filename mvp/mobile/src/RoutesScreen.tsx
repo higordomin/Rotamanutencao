@@ -1,6 +1,8 @@
 import React,{useCallback,useEffect,useMemo,useState} from 'react';
 import {Alert,KeyboardAvoidingView,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View,Image} from 'react-native';
-import type {Asset,PhotoDraft} from './types';
+import type {Asset,PhotoDraft,Category,Priority} from './types';
+import {createCorrectiveOrder,listRunCorrectives,listRouteAnomalies,
+  type CorrectiveView,type RouteAnomalyView} from './correctiveOrders';
 import {selectPhoto,evidenceUri} from './evidence';
 import {addRoutePoint,createRoute,deleteRoute,deleteRoutePoint,finishRouteRun,
   updateRoutePoint,changeRoutePointOrder,duplicateRouteAsTemplate,
@@ -90,13 +92,21 @@ function ProgrammingFields({recurrence,onRecurrence,date,onDate,pickerOpen,onPic
     </Text>}
   </View>;
 }
-function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>Promise<void>;
-  disabled:boolean;photos:RouteRunPhoto[]}){
+function RunItem({item,onSaved,disabled,photos,corrective,onCreateCorrective,onOpenCorrective}:{
+  item:RouteRunItem;onSaved:()=>Promise<void>;disabled:boolean;photos:RouteRunPhoto[];
+  corrective?:CorrectiveView;
+  onCreateCorrective:(itemId:string,category:Category,priority:Priority)=>Promise<void>;
+  onOpenCorrective?:(title:string)=>void;
+}){
   const [status,setStatus]=useState<RouteRunItem['status']>(item.status);
   const [notes,setNotes]=useState(item.notes);
   const [working,setWorking]=useState(false);
   const [expanded,setExpanded]=useState(false);
   const [draftPhotos,setDraftPhotos]=useState<PhotoDraft[]>([]);
+  const [creatingCorrective,setCreatingCorrective]=useState(false);
+  const [correctiveOpen,setCorrectiveOpen]=useState(false);
+  const [correctiveCategory,setCorrectiveCategory]=useState<Category>('Inspeção');
+  const [correctivePriority,setCorrectivePriority]=useState<Priority>('Média');
   const pristine=status===item.status && notes===item.notes
     && draftPhotos.length===0;
   const quickSave=async()=>{
@@ -174,17 +184,69 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
     {photos.length>0&&<View style={s.row}>
       {photos.map(photo=><Image key={photo.id} source={{uri:evidenceUri(photo.filename)}} style={s.thumbnail}/>)}
     </View>}
+    {item.status==='anomaly'&&<View style={s.correctiveBox}>
+      <Text style={[s.title,{color:c.amber}]}>⚠ Ocorrência de manutenção</Text>
+      {corrective?<View style={{gap:4}}>
+        <Text style={s.sub}>OS vinculada: {corrective.order_title}</Text>
+        <Text style={[s.note,{color:corrective.order_status==='completed'?c.green:c.amber}]}>
+          {corrective.order_archived_at?'Arquivada':corrective.order_status==='completed'?'✓ OS concluída':
+            corrective.order_block_reason?'OS impedida':corrective.order_partial_reason?'OS parcial':'OS em aberto'}
+          {' · '+corrective.order_priority+' · '+corrective.order_category}
+        </Text>
+        <Text style={s.hint}>Concluir a OS não elimina automaticamente a pendência da rota. Verifique a condição em campo.</Text>
+        {!!onOpenCorrective&&<Btn outline text="Abrir em Atividades" onPress={()=>onOpenCorrective(corrective.order_title)}/>}
+      </View>:<>
+        <Text style={s.sub}>Crie uma OS somente se a anomalia exigir acompanhamento. Um ponto pode ter uma OS vinculada.</Text>
+        <Btn outline disabled={creatingCorrective}
+          text={correctiveOpen?'Cancelar criação da OS':'+ Gerar OS corretiva'}
+          onPress={()=>setCorrectiveOpen(x=>!x)}/>
+        {correctiveOpen&&<View style={{gap:6}}>
+          <Text style={s.label}>Especialidade da OS</Text>
+          <View style={s.row}>{(['Mecânica','Elétrica','Segurança','Inspeção','Lubrificação'] as const).map(cat=>
+            <Pressable key={cat} accessibilityRole="button"
+              accessibilityState={{selected:correctiveCategory===cat}}
+              style={[s.chip,correctiveCategory===cat&&s.chipActive]}
+              onPress={()=>setCorrectiveCategory(cat)}>
+              <Text style={[s.chipText,correctiveCategory===cat&&{color:c.bg}]}>{cat}</Text>
+            </Pressable>)}</View>
+          <Text style={s.label}>Prioridade</Text>
+          <View style={s.row}>{(['Baixa','Média','Alta'] as const).map(level=>
+            <Pressable key={level} accessibilityRole="button"
+              accessibilityState={{selected:correctivePriority===level}}
+              style={[s.chip,correctivePriority===level&&s.chipActive]}
+              onPress={()=>setCorrectivePriority(level)}>
+              <Text style={[s.chipText,correctivePriority===level&&{color:c.bg}]}>{level}</Text>
+            </Pressable>)}</View>
+          <Btn text={creatingCorrective?'Criando...':'Confirmar criação da OS'} disabled={creatingCorrective}
+            onPress={()=>Alert.alert('Criar OS corretiva?',
+              'Será criada uma atividade avulsa para hoje, vinculada à TAG e à anomalia deste ponto. Confirma?',
+              [{text:'Cancelar',style:'cancel'},{text:'Criar OS',onPress:()=>{
+                if(creatingCorrective)return;
+                setCreatingCorrective(true);
+                void onCreateCorrective(item.id,correctiveCategory,correctivePriority)
+                  .then(()=>setCorrectiveOpen(false))
+                  .catch(error=>Alert.alert('OS não criada',error instanceof Error?error.message:String(error)))
+                  .finally(()=>setCreatingCorrective(false));
+              }}])}/>
+        </View>}
+      </>}
+    </View>}
     {!!item.recorded_at&&<Text style={s.sub}>Registrado em {new Date(item.recorded_at).toLocaleString('pt-BR')}</Text>}
     {disabled&&!!item.notes&&<Text style={s.note}>{item.notes}</Text>}
   </View>;
 }
-export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset[];
-  onDataChanged?:()=>void;initialRouteId?:string|null}){
+export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrective}:{
+  assets:Asset[];onDataChanged?:()=>void;initialRouteId?:string|null;
+  onOpenCorrective?:(title:string)=>void;
+}){
   const [routes,setRoutes]=useState<Route[]>([]);
   const [runs,setRuns]=useState<RouteRun[]>([]);
   const [points,setPoints]=useState<RoutePoint[]>([]);
   const [items,setItems]=useState<RouteRunItem[]>([]);
   const [savedPhotos,setSavedPhotos]=useState<RouteRunPhoto[]>([]);
+  const [correctives,setCorrectives]=useState<CorrectiveView[]>([]);
+  const [anomalies,setAnomalies]=useState<RouteAnomalyView[]>([]);
+  const [anomaliesOpen,setAnomaliesOpen]=useState(false);
   const [selected,setSelected]=useState<string|null>(null);
   const [activeRun,setActiveRun]=useState<string|null>(null);
   const [runFilter,setRunFilter]=useState<'all'|'pending'|'attention'>('all');
@@ -206,11 +268,14 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const [editAssetSearch,setEditAssetSearch]=useState('');
   const [busy,setBusy]=useState(false);
   const refresh=useCallback(async()=>{
-    const [a,b]=await Promise.all([listRoutes(),listRouteRuns()]);
-    setRoutes(a);setRuns(b);
+    const [a,b,occurrences]=await Promise.all([listRoutes(),listRouteRuns(),listRouteAnomalies()]);
+    setRoutes(a);setRuns(b);setAnomalies(occurrences);
     if(selected)setPoints(await listRoutePoints(selected));
-    if(activeRun){const [parts,images]=await Promise.all([listRunItems(activeRun),listRunPhotos(activeRun)]);
-      setItems(parts);setSavedPhotos(images);}
+    if(activeRun){const [parts,images,links]=await Promise.all([
+      listRunItems(activeRun),listRunPhotos(activeRun),listRunCorrectives(activeRun),
+    ]);
+      setItems(parts);setSavedPhotos(images);setCorrectives(links);}
+    else setCorrectives([]);
   },[selected,activeRun]);
   useEffect(()=>{void refresh().catch(e=>Alert.alert('Erro ao carregar rotas',String(e)));},[refresh]);
   useEffect(()=>{
@@ -285,7 +350,12 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         </Text>}
         {filteredItems.map(item=><RunItem key={item.id+':'+(item.recorded_at??'pending')}
           item={item} disabled={!!run.finished_at}
-          photos={savedPhotos.filter(photo=>photo.item_id===item.id)} onSaved={refresh}/>)}
+          photos={savedPhotos.filter(photo=>photo.item_id===item.id)}
+          corrective={correctives.find(link=>link.item_id===item.id)}
+          onCreateCorrective={async(id,category,priority)=>{
+            await createCorrectiveOrder(id,category,priority);await refresh();onDataChanged?.();
+          }}
+          onOpenCorrective={onOpenCorrective} onSaved={refresh}/>)}
       </>:selected&&current?<>
         <View style={s.card}>
           <Text style={s.title}>{current.title}</Text>
@@ -462,6 +532,25 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         <Text style={[s.note,{fontWeight:'800'}]}>
           {attentionCount} com pendências • {overdueCount} vencida(s) • {todayCount} para hoje
         </Text>
+        {anomalies.length>0&&<View style={s.filterCard}>
+          <Btn outline
+            text={anomaliesOpen?'Ocultar ocorrências':`⚠ Ocorrências registradas (${anomalies.length})`}
+            onPress={()=>setAnomaliesOpen(v=>!v)}/>
+          {anomaliesOpen&&<>
+            <Text style={s.hint}>Histórico das últimas 100 anomalias. Uma OS concluída não confirma automaticamente que a condição da rota foi regularizada.</Text>
+            {anomalies.slice(0,20).map(a=><Pressable key={a.item_id} accessibilityRole="button"
+              style={s.compactCard} onPress={()=>{setActiveRun(a.run_id);setRunFilter('all');
+                void listRunItems(a.run_id).then(setItems);}}>
+              <Text style={s.title}>{a.point_title}</Text>
+              <Text style={s.sub}>{a.route_title} · {a.asset_label||'TAG removida'}</Text>
+              <Text style={s.sub} maxFontSizeMultiplier={1.4} numberOfLines={2}>{a.notes}</Text>
+              <Text style={[s.sub,{color:a.order_status==='completed'?c.green:c.amber}]}>
+                {a.order_id?(a.order_archived_at?'OS arquivada':
+                  a.order_status==='completed'?'OS concluída':'OS em aberto'):'Sem OS corretiva'}
+              </Text>
+            </Pressable>)}
+          </>}
+        </View>}
         {!routes.length&&<Text style={s.sub}>Nenhuma rota cadastrada. Toque em “+ Nova rota” para começar.</Text>}
         {routes.map(r=>{
           const state=routePlanningState(r);
@@ -521,6 +610,7 @@ const s=StyleSheet.create({
  compactCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:11,gap:4},
  pointCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:4},
  filterCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:3},
+ correctiveBox:{backgroundColor:c.field,borderWidth:1,borderColor:c.line,borderRadius:10,padding:11,marginTop:10,gap:8},
  routeLine:{backgroundColor:c.panel,borderRadius:12,borderWidth:1,borderColor:c.line,
    padding:13,flexDirection:'row',alignItems:'center',gap:10,minHeight:78},
  progressTrack:{marginTop:9,height:7,borderRadius:6,backgroundColor:c.field,overflow:'hidden'},

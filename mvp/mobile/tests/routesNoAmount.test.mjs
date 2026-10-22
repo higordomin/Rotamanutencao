@@ -26,7 +26,7 @@ test('PDF de rota e consolidado não exibem produto ou quantidade',()=>{
   assert.ok(!query.includes('i.lubricant'));
 });
 
-test('SQLite preserva campos históricos só para compatibilidade do backup v10',()=>{
+test('SQLite preserva campos históricos só para compatibilidade do backup v11',()=>{
   const routes=read('src/routes.ts');
   const schema=read('src/types.ts');
   const quick=read('src/quickRouteActions.ts');
@@ -37,5 +37,5 @@ test('SQLite preserva campos históricos só para compatibilidade do backup v10'
   assert.ok(routes.includes("quantity_grams=CASE WHEN status='pending' THEN 0 ELSE quantity_grams END"));
   assert.ok(!routes.includes('notes=?,lubricant=?'));
   assert.ok(!quick.includes('lubricant'));
-  assert.ok(schema.includes('version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10'));
+  assert.ok(schema.includes('version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11'));
 });

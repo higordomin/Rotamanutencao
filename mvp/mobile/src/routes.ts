@@ -265,6 +265,11 @@ export async function recordRoutePoint(
         SELECT i.run_id,r.finished_at,(SELECT COUNT(*) FROM route_run_photos p WHERE p.item_id=i.id) AS n
         FROM route_run_items i JOIN route_runs r ON r.id=i.run_id WHERE i.id=?`,itemId);
       if(!current || current.finished_at!==null)throw new Error('Ponto não encontrado ou rota já encerrada.');
+      if(status!=='anomaly') {
+        const linked=await tx.getFirstAsync<{order_id:string}>(
+          'SELECT order_id FROM route_corrective_links WHERE item_id=?',itemId);
+        if(linked)throw new Error('Esta anomalia possui OS corretiva vinculada. Acompanhe a resolução pela OS.');
+      }
       if(current.n+savedFiles.length>MAX_ROUTE_PHOTOS)throw new Error('Cada ponto permite até 4 fotos.');
       const changed=await tx.runAsync(`UPDATE route_run_items SET status=?,notes=?,
           quantity_grams=CASE WHEN status='pending' THEN 0 ELSE quantity_grams END,recorded_at=?

@@ -4,7 +4,7 @@ import {validDate} from './logic.ts';
 // JSON com fotos incorporadas: simples e portável, mas limitado em tamanho.
 export const MAX_BACKUP_BYTES = 60 * 1024 * 1024;
 export const MAX_RECORDS = 20000;
-const ALLOWED_CATEGORIES = new Set(['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção']);
+const ALLOWED_CATEGORIES = new Set(['Lubrificação', 'Mecânica', 'Elétrica', 'Inspeção', 'Segurança']);
 const ALLOWED_PRIORITIES = new Set(['Baixa', 'Média', 'Alta']);
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown, max = 10000): v is string => typeof v === 'string' && v.length <= max;
@@ -12,8 +12,8 @@ const ident = (v: unknown): v is string => str(v, 100) && v.length > 0;
 const iso = (v: unknown): v is string => str(v, 50) && !Number.isNaN(Date.parse(v));
 
 export function validateBackup(data: unknown): asserts data is BackupData {
-  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7, 8, 9, 10].includes(data.version as number))
-    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6, v7, v8, v9 ou v10.');
+  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(data.version as number))
+    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6, v7, v8, v9, v10 ou v11.');
   if (!Array.isArray(data.assets) || data.assets.length > MAX_RECORDS) throw new Error('Equipamentos inválidos.');
   if (!Array.isArray(data.work_orders) || data.work_orders.length > MAX_RECORDS) throw new Error('Atividades inválidas.');
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
@@ -170,6 +170,22 @@ export function validateBackup(data: unknown): asserts data is BackupData {
       const n=(counts.get(p.item_id)??0)+1;
       if(n>4)throw new Error('O ponto contém mais de 4 fotos.');
       counts.set(p.item_id,n);
+    }
+  }
+  // Links de OS corretivas só foram introduzidos no backup v11.
+  if ((data.version as number) >= 11) {
+    if(!Array.isArray(data.route_corrective_links)||data.route_corrective_links.length>MAX_RECORDS)
+      throw new Error('Vínculos de OS corretivas ausentes ou inválidos.');
+    const itemsV11=(data as unknown as BackupData).route_run_items??[];
+    const idsOfItems=new Map(itemsV11.map(item=>[item.id,item]));
+    const usedOrders=new Set<string>();
+    const usedItems=new Set<string>();
+    for(const link of data.route_corrective_links) {
+      if(!isObj(link)||!ident(link.item_id)||!ident(link.order_id)||!iso(link.created_at)
+        ||usedItems.has(link.item_id)||usedOrders.has(link.order_id)
+        ||!oIds.has(link.order_id)||idsOfItems.get(link.item_id)?.status!=='anomaly')
+        throw new Error('Vínculo de OS corretiva inválido ou repetido.');
+      usedItems.add(link.item_id);usedOrders.add(link.order_id);
     }
   }
   const imagesPerExecution = new Map<string, number>();
