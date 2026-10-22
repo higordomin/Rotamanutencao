@@ -120,6 +120,12 @@ export async function initializeDatabase(): Promise<void> {
       position INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_run_items_run ON route_run_items(run_id, position);
+    CREATE TABLE IF NOT EXISTS route_corrective_links (
+      item_id TEXT PRIMARY KEY NOT NULL REFERENCES route_run_items(id) ON DELETE CASCADE,
+      order_id TEXT NOT NULL UNIQUE REFERENCES work_orders(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_correctives_order ON route_corrective_links(order_id);
     CREATE TABLE IF NOT EXISTS route_run_photos (
       id TEXT PRIMARY KEY NOT NULL,
       item_id TEXT NOT NULL REFERENCES route_run_items(id) ON DELETE CASCADE,
@@ -395,6 +401,7 @@ export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 
   let route_points: NonNullable<BackupData['route_points']> = [];
   let route_runs: NonNullable<BackupData['route_runs']> = [];
   let route_run_items: NonNullable<BackupData['route_run_items']> = [];
+  let route_corrective_links: NonNullable<BackupData['route_corrective_links']> = [];
   await db.withExclusiveTransactionAsync(async tx => {
     assets = await tx.getAllAsync<Asset>('SELECT * FROM assets');
     work_orders = await tx.getAllAsync<BackupData['work_orders'][number]>('SELECT * FROM work_orders');
@@ -406,8 +413,9 @@ export async function exportDatabaseRows(): Promise<Omit<BackupData, 'format' | 
     route_points = await tx.getAllAsync<NonNullable<BackupData['route_points']>[number]>('SELECT * FROM route_points');
     route_runs = await tx.getAllAsync<NonNullable<BackupData['route_runs']>[number]>('SELECT * FROM route_runs');
     route_run_items = await tx.getAllAsync<NonNullable<BackupData['route_run_items']>[number]>('SELECT * FROM route_run_items');
+    route_corrective_links = await tx.getAllAsync<NonNullable<BackupData['route_corrective_links']>[number]>('SELECT * FROM route_corrective_links');
   });
-  return {assets, work_orders, executions, photos, route_photos, order_events, routes, route_points, route_runs, route_run_items};
+  return {assets, work_orders, executions, photos, route_photos, order_events, routes, route_points, route_runs, route_run_items, route_corrective_links};
 }
 
 // Os dados são validados pelo módulo de backup antes de chegar à transação.
@@ -415,6 +423,7 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
   const db = await database();
   await db.withExclusiveTransactionAsync(async (tx) => {
     // Backup legado restaura rotas vazias; tudo é transacional para garantir rollback.
+    await tx.runAsync('DELETE FROM route_corrective_links');
     await tx.runAsync('DELETE FROM route_run_photos');
     await tx.runAsync('DELETE FROM route_run_items');
     await tx.runAsync('DELETE FROM route_runs');
@@ -477,6 +486,10 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
     for (const event of data.order_events ?? []) {
       await tx.runAsync('INSERT INTO order_events (id,order_id,event_type,reason,created_at) VALUES (?,?,?,?,?)',
         event.id, event.order_id, event.event_type, event.reason, event.created_at);
+    }
+    for (const link of data.route_corrective_links ?? []) {
+      await tx.runAsync('INSERT INTO route_corrective_links(item_id,order_id,created_at) VALUES(?,?,?)',
+        link.item_id,link.order_id,link.created_at);
     }
     for (const p of data.photos) {
       const filename = filenames.get('os:'+p.id);
