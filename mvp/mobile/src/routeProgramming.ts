@@ -37,9 +37,7 @@ export function scheduleNeedsConfirmation(
   const changed=old.recurrence_days!==target.recurrence_days||old.next_due_date!==target.next_due_date;
   if(!changed)return {needed:false,reason:null};
   if(before.attention_count>0)return {needed:true,reason:'attention'};
-  if(routePlanningState({...before,next_due_date:old.next_due_date} as {
-    recurrence_days:number;next_due_date:string|null;attention_count:number;
-  },today)==='overdue'
+  if(routePlanningState({...before,next_due_date:old.next_due_date},today)==='overdue'
     &&(!target.next_due_date||target.next_due_date>old.next_due_date!))
     return {needed:true,reason:'overdue'};
   return {needed:false,reason:null};
