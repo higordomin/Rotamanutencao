@@ -176,7 +176,8 @@ export function validateBackup(data: unknown): asserts data is BackupData {
   if ((data.version as number) >= 11) {
     if(!Array.isArray(data.route_corrective_links)||data.route_corrective_links.length>MAX_RECORDS)
       throw new Error('Vínculos de OS corretivas ausentes ou inválidos.');
-    const idsOfItems=new Map((data.route_run_items??[]).map(item=>[item.id,item]));
+    const itemsV11=(data as unknown as BackupData).route_run_items??[];
+    const idsOfItems=new Map(itemsV11.map(item=>[item.id,item]));
     const usedOrders=new Set<string>();
     const usedItems=new Set<string>();
     for(const link of data.route_corrective_links) {
