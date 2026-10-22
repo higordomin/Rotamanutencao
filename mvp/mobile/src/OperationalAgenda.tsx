@@ -1,6 +1,6 @@
 import React,{useMemo,useState} from 'react';
 import {Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
-import type {WorkOrder,Category} from './types';
+import type {WorkOrder} from './types';
 import type {Route} from './routes';
 import {localDate} from './logic';
 import {brazilianDate,monthGrid,pageFromDate,shiftMonth} from './calendar';
@@ -9,60 +9,60 @@ import {
   buildAgendaEntries,filterAgenda,shiftAgendaDate,weekRange,
   type AgendaEntry,type AgendaType,type AgendaSpecialty,type AgendaView,
 } from './operationalAgenda';
+import {agendaPreviewRows,agendaVisualLabel,agendaVisualStatus} from './agendaVisual';
 
 const C={bg:'#08101E',panel:'#111E31',field:'#16273D',line:'#24394F',
   text:'#EFF6FF',muted:'#9CB0C8',blue:'#47B7F6',amber:'#FFD075',
   red:'#FF7D8B',green:'#5DD7AC'};
 const MONTHS=['janeiro','fevereiro','março','abril','maio','junho','julho',
   'agosto','setembro','outubro','novembro','dezembro'];
-const DAYS=['S','T','Q','Q','S','S','D'];
+const WEEKDAYS=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
 const SPECIALTIES:AgendaSpecialty[]=['Todas','Lubrificação','Mecânica','Elétrica','Inspeção'];
 
 function Chip({title,selected,onPress}:{title:string;selected:boolean;onPress:()=>void}){
   return <Pressable accessibilityRole="button" accessibilityState={{selected}}
-    style={[s.chip,selected&&s.chipSelected]} onPress={onPress}>
-    <Text style={[s.chipLabel,selected&&{color:C.bg}]}>{title}</Text>
+    style={[s.chip,selected&&s.chipActive]} onPress={onPress}>
+    <Text style={[s.chipText,selected&&{color:C.bg}]}>{title}</Text>
   </Pressable>;
 }
-function AgendaCard({entry,onOpenRoute,onOpenOrder}:{
-  entry:AgendaEntry;onOpenRoute:(id:string)=>void;
+
+/** Um único toque abre a OS ou rota. Editar OS continua acessível, mas discreto. */
+function ActivityRow({item,onOpenRoute,onOpenOrder}:{
+  item:AgendaEntry;
+  onOpenRoute:(id:string)=>void;
   onOpenOrder:(id:string,mode:'execute'|'edit')=>void;
 }){
-  const label=entry.attention?'⚠ Pendência'
-    :entry.blocked?'⚠ Impedida':entry.overdue?'● Vencida'
-      :entry.today?'● Hoje':entry.unscheduled?'● Sem data':'● Programada';
-  const color=entry.overdue?C.red:entry.attention||entry.blocked?C.amber:
-    entry.today?C.green:C.blue;
-  return <View style={s.card}>
-    <View style={s.lineRow}>
-      <Text style={s.kind}>{entry.kind==='route'?'ROTA':'ORDEM DE SERVIÇO'}</Text>
-      <Text style={[s.status,{color}]}>{label}</Text>
-    </View>
-    <Text style={s.cardTitle}>{entry.title}</Text>
-    <Text style={s.detail}>{entry.subtitle} · {entry.area}</Text>
-    <Text style={s.detail}>Prazo: {entry.dueDate?brazilianDate(entry.dueDate):'Sem data programada'}</Text>
-    {entry.priority==='Alta'&&<Text style={[s.detail,{color:C.red,fontWeight:'800'}]}>Prioridade alta</Text>}
-    {entry.partial&&<Text style={[s.detail,{color:C.amber}]}>Execução parcial — retorno necessário</Text>}
-    {entry.blocked&&<Text style={[s.detail,{color:C.amber}]}>OS impedida — consulte o motivo</Text>}
-    <View style={s.lineRow}>
-      {entry.kind==='route'?
-        <Pressable accessibilityRole="button" style={s.primary}
-          onPress={()=>onOpenRoute(entry.id)}><Text style={s.primaryText}>Abrir rota ›</Text></Pressable>:
-        <>
-          <Pressable accessibilityRole="button" style={s.primary}
-            onPress={()=>onOpenOrder(entry.id,'execute')}>
-            <Text style={s.primaryText}>{entry.blocked?'Ver impedimento':'Executar OS'} ›</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" style={s.secondary}
-            onPress={()=>onOpenOrder(entry.id,'edit')}>
-            <Text style={s.secondaryText}>Editar programação</Text>
-          </Pressable>
-        </>}
-    </View>
+  const state=agendaVisualStatus(item);
+  const color=state==='overdue'?C.red:state==='blocked'||state==='attention'?C.amber:
+    state==='today'?C.green:C.blue;
+  const open=()=>item.kind==='route'?onOpenRoute(item.id):onOpenOrder(item.id,'execute');
+  return <View style={s.activityRow}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Abrir ${item.kind==='route'?'rota':'OS'} ${item.title}`}
+      onPress={open} style={s.activityMain}>
+      <View style={[s.activityMarker,{borderColor:color+'66',backgroundColor:color+'18'}]}>
+        <Text style={[s.activitySymbol,{color}]}>{item.kind==='route'?'⇢':'●'}</Text>
+      </View>
+      <View style={{flex:1,gap:3}}>
+        <Text style={s.activityTitle} numberOfLines={2}>{item.title}</Text>
+        <Text style={s.activitySubtitle} numberOfLines={1}>
+          {item.kind==='route'?'Rota':item.specialty} · {item.area}
+        </Text>
+        <Text style={[s.activityState,{color}]}>{agendaVisualLabel(item)}
+          {item.priority==='Alta'?' · Prioridade alta':''}
+          {item.dueDate&&!item.today?' · '+brazilianDate(item.dueDate):''}
+        </Text>
+      </View>
+      <Text style={s.chevron}>›</Text>
+    </Pressable>
+    {item.kind==='order'&&<Pressable accessibilityRole="button"
+      accessibilityLabel={`Editar programação da OS ${item.title}`}
+      style={s.editLink} onPress={()=>onOpenOrder(item.id,'edit')}>
+      <Text style={s.editText}>Editar</Text>
+    </Pressable>}
   </View>;
 }
 
-/** Agenda de leitura dos dados locais: só as ações explícitas abrem OS ou rotas. */
+/** Agenda visual baseada na prévia 0.21, mantendo todo o planejamento e filtros. */
 export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
   orders:WorkOrder[];routes:Route[];
   onOpenRoute:(id:string)=>void;
@@ -73,8 +73,10 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
   const [type,setType]=useState<AgendaType>('all');
   const [specialty,setSpecialty]=useState<AgendaSpecialty>('Todas');
   const [area,setArea]=useState('');
-  const [showMore,setShowMore]=useState(false);
-  const [showBacklog,setShowBacklog]=useState(true);
+  const [filtersOpen,setFiltersOpen]=useState(false);
+  const [backlogOpen,setBacklogOpen]=useState(false);
+  const [moreScheduled,setMoreScheduled]=useState(false);
+  const [moreBacklog,setMoreBacklog]=useState(false);
   const today=localDate();
   const entries=useMemo(()=>buildAgendaEntries(orders,routes,today),[orders,routes,today]);
   const areas=useMemo(()=>agendaAreas(entries),[entries]);
@@ -82,188 +84,276 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
   const {scheduled,backlog}=useMemo(()=>agendaWindow(filtered,day,view),[filtered,day,view]);
   const counts=useMemo(()=>agendaDayCounts(filtered),[filtered]);
   const stats=useMemo(()=>agendaSummary(filtered,today),[filtered,today]);
-  const period=agendaPeriod(day,view);
+  const week=useMemo(()=>weekRange(day),[day]);
   const page=pageFromDate(day);
   const grid=useMemo(()=>monthGrid(page),[page.year,page.month]);
-  const week=useMemo(()=>weekRange(day),[day]);
-  const setFocus=(next:string,nextView:AgendaView=view)=>{
-    setDay(next);setView(nextView);setShowMore(false);
+  const period=agendaPeriod(day,view);
+  const hasFilters=type!=='all'||specialty!=='Todas'||!!area;
+
+  const focus=(target:string,newView:AgendaView=view)=>{
+    setDay(target);setView(newView);setMoreScheduled(false);setMoreBacklog(false);
+  };
+  const changeFilter=()=>{
+    setMoreScheduled(false);setMoreBacklog(false);
   };
   const move=(delta:-1|1)=>{
     try{
       if(view==='month'){
-        const target=shiftMonth(page,delta);
-        if(target)setFocus(`${String(target.year).padStart(4,'0')}-${String(target.month).padStart(2,'0')}-01`);
-      }else setFocus(shiftAgendaDate(day,delta*(view==='week'?7:1)));
-    }catch{/* fora dos limites da agenda */}
+        const p=shiftMonth(page,delta);
+        if(p)focus(`${String(p.year).padStart(4,'0')}-${String(p.month).padStart(2,'0')}-01`,'month');
+      }else focus(shiftAgendaDate(day,delta*7),view);
+    }catch{/* navegação não ultrapassa os limites da agenda */}
   };
-  const changeType=(value:AgendaType)=>{
-    setType(value);setShowMore(false);
-    if(value==='route')setSpecialty('Todas');
+  const selectType=(value:AgendaType)=>{
+    setType(value);if(value==='route')setSpecialty('Todas');changeFilter();
   };
-  const visibleScheduled=showMore?scheduled:scheduled.slice(0,40);
-  const visibleBacklog=showMore?backlog:backlog.slice(0,40);
+  const mainRows=agendaPreviewRows(scheduled,moreScheduled);
+  const backlogRows=agendaPreviewRows(backlog,moreBacklog);
+
   return <ScrollView style={s.bg} keyboardShouldPersistTaps="handled"
     contentContainerStyle={s.page}>
-    <View style={s.heading}>
-      <Text style={s.title}>Agenda de manutenção</Text>
-      <Text style={s.detail}>OS e rotas do seu aparelho, sem login nem internet.</Text>
+    <View style={s.header}>
+      <Text style={s.heading}>Minha agenda de manutenção</Text>
+      <Text style={s.subheading}>OS e rotas organizadas para o seu dia.</Text>
     </View>
-    <View style={s.stats}>
-      <View style={s.metric}><Text style={[s.metricNumber,{color:C.red}]}>{stats.overdue}</Text><Text style={s.metricLabel}>Atrasadas</Text></View>
-      <View style={s.metric}><Text style={[s.metricNumber,{color:C.green}]}>{stats.today}</Text><Text style={s.metricLabel}>Hoje</Text></View>
-      <View style={s.metric}><Text style={[s.metricNumber,{color:C.amber}]}>{stats.attention}</Text><Text style={s.metricLabel}>Pendências</Text></View>
-    </View>
-    <Text style={s.helper}>{stats.orders} OS · {stats.routes} rotas · {stats.future} programadas no futuro.
-      Os indicadores podem se sobrepor (ex.: uma OS impedida e atrasada).</Text>
-    <View style={s.section}>
-      <Text style={s.sectionTitle}>Visualização</Text>
-      <View style={s.lineRow}>
-        <Chip title="Dia" selected={view==='day'} onPress={()=>setFocus(day,'day')}/>
-        <Chip title="Semana" selected={view==='week'} onPress={()=>setFocus(day,'week')}/>
-        <Chip title="Mês" selected={view==='month'} onPress={()=>setFocus(day,'month')}/>
+
+    <View style={s.metrics}>
+      <View style={s.metric}>
+        <Text style={[s.metricValue,{color:C.red}]}>{stats.overdue}</Text>
+        <Text style={s.metricLabel}>Atrasadas</Text>
       </View>
-      <View style={[s.lineRow,{justifyContent:'space-between',marginTop:12}]}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Período anterior" onPress={()=>move(-1)}
-          style={s.arrow}><Text style={s.arrowText}>‹</Text></Pressable>
-        <View style={{alignItems:'center',flex:1}}>
-          <Text style={s.period}>{view==='day'?brazilianDate(day):
-            view==='week'?brazilianDate(period.start)+' a '+brazilianDate(period.end):
-            MONTHS[page.month-1]+' de '+page.year}</Text>
-          <Pressable accessibilityRole="button" onPress={()=>setFocus(today,'day')}>
-            <Text style={s.todayLink}>Ir para hoje</Text>
-          </Pressable>
+      <View style={s.metric}>
+        <Text style={[s.metricValue,{color:C.green}]}>{stats.today}</Text>
+        <Text style={s.metricLabel}>Para hoje</Text>
+      </View>
+      <View style={s.metric}>
+        <Text style={[s.metricValue,{color:C.blue}]}>{stats.future}</Text>
+        <Text style={s.metricLabel}>Programadas</Text>
+      </View>
+    </View>
+
+    <View style={s.calendarPanel}>
+      <View style={s.calendarHeader}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Semana ou mês anterior"
+          onPress={()=>move(-1)} style={s.arrow}>
+          <Text style={s.arrowText}>‹</Text>
+        </Pressable>
+        <View style={{flex:1,alignItems:'center',gap:3}}>
+          <Text style={s.periodTitle}>{MONTHS[page.month-1]} de {page.year}</Text>
+          <Text style={s.periodCaption}>{view==='month'?'Visão mensal':
+            `${brazilianDate(week.start)} — ${brazilianDate(week.end)}`}</Text>
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Próximo período" onPress={()=>move(1)}
-          style={s.arrow}><Text style={s.arrowText}>›</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Próxima semana ou mês"
+          onPress={()=>move(1)} style={s.arrow}>
+          <Text style={s.arrowText}>›</Text>
+        </Pressable>
       </View>
-      {view==='week'&&<View style={s.grid}>
+      <View style={s.weekStrip}>
         {week.dates.map((date,index)=>{
           const selected=date===day;
+          const n=counts.get(date)??0;
           return <Pressable key={date} accessibilityRole="button"
-            accessibilityLabel={`Ver ${brazilianDate(date)}, ${counts.get(date)??0} atividade(s)`}
+            accessibilityLabel={`${brazilianDate(date)}: ${n} atividade(s). Ver dia.`}
             accessibilityState={{selected}}
-            onPress={()=>setFocus(date,'day')} style={[s.dayCell,selected&&s.daySelected]}>
-            <Text style={s.weekLetter}>{DAYS[index]}</Text>
-            <Text style={[s.dayNumber,selected&&{color:C.bg}]}>{Number(date.slice(-2))}</Text>
-            <Text style={[s.dayCount,selected&&{color:C.bg}]}>{counts.get(date)??'·'}</Text>
+            style={[s.weekDay,selected&&s.weekDaySelected]}
+            onPress={()=>focus(date,'day')}>
+            <Text style={[s.weekLabel,selected&&{color:C.bg}]}>{WEEKDAYS[index]}</Text>
+            <Text style={[s.weekNumber,selected&&{color:C.bg}]}>{Number(date.slice(-2))}</Text>
+            <View style={[s.dayIndicator,n>0&&{backgroundColor:selected?C.bg:C.blue}]}/>
           </Pressable>;
         })}
-      </View>}
-      {view==='month'&&<>
-        <View style={s.grid}>{DAYS.map((d,i)=><View key={i} style={s.dayCell}><Text style={s.weekLetter}>{d}</Text></View>)}</View>
-        <View style={s.grid}>{grid.map((date,index)=>
-          <View key={date??'gap'+index} style={s.dayCell}>
-            {date&&<Pressable accessibilityRole="button" style={[s.calendarDate,
-              date===today&&s.todayOutline,date===day&&s.daySelected]}
+      </View>
+      <View style={s.modeBar}>
+        <View style={s.modeButtons}>
+          <Chip title="Dia" selected={view==='day'} onPress={()=>focus(day,'day')}/>
+          <Chip title="Semana" selected={view==='week'} onPress={()=>focus(day,'week')}/>
+          <Chip title="Mês" selected={view==='month'} onPress={()=>focus(day,'month')}/>
+        </View>
+        <Pressable accessibilityRole="button" onPress={()=>focus(today,'day')} style={s.todayBtn}>
+          <Text style={s.todayText}>Hoje</Text>
+        </Pressable>
+      </View>
+      {view==='month'&&<View style={s.monthCalendar}>
+        <View style={s.monthGrid}>
+          {WEEKDAYS.map(x=><View key={x} style={s.monthCell}>
+            <Text style={s.monthWeekLabel}>{x}</Text>
+          </View>)}
+          {grid.map((date,index)=><View key={date??'empty-'+index} style={s.monthCell}>
+            {date&&<Pressable accessibilityRole="button"
               accessibilityLabel={`Abrir dia ${brazilianDate(date)}, ${counts.get(date)??0} atividade(s)`}
               accessibilityState={{selected:date===day}}
-              onPress={()=>setFocus(date,'day')}>
-              <Text style={[s.dayNumber,date===day&&{color:C.bg}]}>{Number(date.slice(-2))}</Text>
-              <Text style={[s.dayCount,date===day&&{color:C.bg}]}>{counts.get(date)??'·'}</Text>
+              style={[s.monthDate,date===today&&s.todayOutline,date===day&&s.monthSelected]}
+              onPress={()=>focus(date,'day')}>
+              <Text style={[s.monthNumber,date===day&&{color:C.bg}]}>{Number(date.slice(-2))}</Text>
+              <View style={[s.dayIndicator,(counts.get(date)??0)>0&&{backgroundColor:date===day?C.bg:C.blue}]}/>
             </Pressable>}
-          </View>
-        )}</View>
-      </>}
-    </View>
-    <View style={s.section}>
-      <Text style={s.sectionTitle}>Filtrar atividades</Text>
-      <View style={s.lineRow}>
-        <Chip title="Tudo" selected={type==='all'} onPress={()=>changeType('all')}/>
-        <Chip title="OS" selected={type==='order'} onPress={()=>changeType('order')}/>
-        <Chip title="Rotas" selected={type==='route'} onPress={()=>changeType('route')}/>
-      </View>
-      <Text style={s.filterLabel}>Especialidade</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={s.lineRow}>{SPECIALTIES.map(item=><Chip key={item} title={item}
-          selected={specialty===item} onPress={()=>{setSpecialty(item);setShowMore(false);
-            if(item!=='Todas'&&type==='route')setType('all');}}/>)}</View>
-      </ScrollView>
-      <Text style={s.helper}>Rotas não possuem especialidade cadastrada nesta versão.
-        Selecionar uma especialidade exibe somente OS correspondentes.</Text>
-      <Text style={s.filterLabel}>Área / setor</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={s.lineRow}>
-          <Chip title="Todas as áreas" selected={!area} onPress={()=>{setArea('');setShowMore(false);}}/>
-          {areas.map(item=><Chip key={item} title={item} selected={area===item}
-            onPress={()=>{setArea(item);setShowMore(false);}}/>)}
+          </View>)}
         </View>
-      </ScrollView>
+      </View>}
     </View>
-    <View style={s.section}>
-      <Text style={s.sectionTitle}>{view==='day'?'Programadas neste dia':
-        view==='week'?'Programadas nesta semana':'Programadas neste mês'} ({scheduled.length})</Text>
-      {!scheduled.length&&<Text style={s.helper}>Nenhuma atividade com prazo nesse período e nos filtros escolhidos.</Text>}
-      {visibleScheduled.map(item=><AgendaCard key={item.kind+item.id} entry={item}
-        onOpenRoute={onOpenRoute} onOpenOrder={onOpenOrder}/>)}
-      {!showMore&&scheduled.length>40&&<Pressable style={s.secondary} onPress={()=>setShowMore(true)}>
-        <Text style={s.secondaryText}>Mostrar todas as {scheduled.length} atividades deste período</Text>
-      </Pressable>}
-    </View>
-    <View style={s.section}>
-      <Pressable accessibilityRole="button"
-        accessibilityState={{expanded:showBacklog}}
-        onPress={()=>setShowBacklog(v=>!v)} style={s.lineRow}>
-        <Text style={[s.sectionTitle,{flex:1}]}>Fora do período: atrasos e pendências ({backlog.length})</Text>
-        <Text style={s.arrowText}>{showBacklog?'⌄':'›'}</Text>
-      </Pressable>
-      <Text style={s.helper}>Impedimentos, anomalias, execuções parciais e tarefas vencidas
-        continuam visíveis aqui quando não estão no intervalo selecionado.</Text>
-      {showBacklog&&<>
-        {!backlog.length&&<Text style={s.helper}>Nenhum retorno fora do período.</Text>}
-        {visibleBacklog.map(item=><AgendaCard key={item.kind+item.id} entry={item}
+
+    <View style={s.listPanel}>
+      <View style={s.listHeading}>
+        <View style={{flex:1}}>
+          <Text style={s.sectionTitle}>{view==='day'?'Atividades do dia':
+            view==='week'?'Atividades da semana':'Atividades do mês'}</Text>
+          <Text style={s.smallDate}>
+            {view==='day'?brazilianDate(day):
+              `${brazilianDate(period.start)} a ${brazilianDate(period.end)}`}
+          </Text>
+        </View>
+        <Text style={s.total}>{scheduled.length}</Text>
+      </View>
+      {scheduled.length===0?<View style={s.empty}>
+        <Text style={s.emptyTitle}>Nenhuma atividade programada neste período.</Text>
+        <Text style={s.emptyDetail}>Selecione outro dia ou confira as pendências.</Text>
+      </View>:<View style={s.activityList}>
+        {mainRows.map(entry=><ActivityRow key={entry.kind+':'+entry.id} item={entry}
           onOpenRoute={onOpenRoute} onOpenOrder={onOpenOrder}/>)}
-        {!showMore&&backlog.length>40&&<Pressable style={s.secondary} onPress={()=>setShowMore(true)}>
-          <Text style={s.secondaryText}>Mostrar todas as {backlog.length} pendências</Text>
+      </View>}
+      {!moreScheduled&&scheduled.length>mainRows.length&&
+        <Pressable accessibilityRole="button" style={s.showAll} onPress={()=>setMoreScheduled(true)}>
+          <Text style={s.link}>Mostrar todas as {scheduled.length} atividades ›</Text>
+        </Pressable>}
+      <View style={s.bottomActions}>
+        <Pressable accessibilityRole="button" accessibilityState={{expanded:filtersOpen}}
+          onPress={()=>setFiltersOpen(x=>!x)} style={s.outlineButton}>
+          <Text style={s.outlineText}>☷ Filtros{hasFilters?' • ativos':''} {filtersOpen?'⌃':'⌄'}</Text>
+        </Pressable>
+      </View>
+      {filtersOpen&&<View style={s.filterPanel}>
+        <Text style={s.filterTitle}>Tipo de atividade</Text>
+        <View style={s.filterRow}>
+          <Chip title="Todas" selected={type==='all'} onPress={()=>selectType('all')}/>
+          <Chip title="OS" selected={type==='order'} onPress={()=>selectType('order')}/>
+          <Chip title="Rotas" selected={type==='route'} onPress={()=>selectType('route')}/>
+        </View>
+        <Text style={s.filterTitle}>Especialidade</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={s.filterRow}>{SPECIALTIES.map(value=><Chip key={value} title={value}
+            selected={specialty===value} onPress={()=>{
+              setSpecialty(value);
+              if(value!=='Todas'&&type==='route')setType('all');
+              changeFilter();
+            }}/>)}</View>
+        </ScrollView>
+        <Text style={s.hint}>O filtro de especialidade se aplica às OS; rotas ainda não têm essa classificação.</Text>
+        <Text style={s.filterTitle}>Área ou setor</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={s.filterRow}>
+            <Chip title="Todas" selected={!area} onPress={()=>{setArea('');changeFilter();}}/>
+            {areas.map(value=><Chip key={value} title={value} selected={area===value}
+              onPress={()=>{setArea(value);changeFilter();}}/>)}
+          </View>
+        </ScrollView>
+        {hasFilters&&<Pressable accessibilityRole="button" style={s.clearButton}
+          onPress={()=>{setType('all');setSpecialty('Todas');setArea('');changeFilter();}}>
+          <Text style={s.link}>Limpar filtros</Text>
+        </Pressable>}
+      </View>}
+    </View>
+
+    {backlog.length>0&&<View style={s.backlogPanel}>
+      <Pressable accessibilityRole="button" accessibilityState={{expanded:backlogOpen}}
+        style={s.backlogToggle} onPress={()=>setBacklogOpen(x=>!x)}>
+        <Text style={s.backlogTitle}>⚠ Pendências fora do período</Text>
+        <Text style={s.backlogCount}>{backlog.length} {backlogOpen?'⌃':'⌄'}</Text>
+      </Pressable>
+      <Text style={s.backlogInfo}>Atrasos, impedimentos e anomalias continuam visíveis aqui.</Text>
+      {backlogOpen&&<>
+        <View style={s.activityList}>{backlogRows.map(entry=><ActivityRow
+          key={entry.kind+':'+entry.id} item={entry}
+          onOpenRoute={onOpenRoute} onOpenOrder={onOpenOrder}/>)}</View>
+        {!moreBacklog&&backlog.length>backlogRows.length&&<Pressable accessibilityRole="button"
+          style={s.showAll} onPress={()=>setMoreBacklog(true)}>
+          <Text style={s.link}>Mostrar todas as {backlog.length} pendências ›</Text>
         </Pressable>}
       </>}
-    </View>
-    <Text style={s.helper}>A agenda apresenta apenas a próxima data atualmente cadastrada.
-      A recorrência futura só aparece após a execução e o reagendamento.
-      Nenhuma manutenção é marcada como realizada automaticamente.</Text>
+    </View>}
+    <Text style={s.hint}>A agenda mostra o próximo prazo cadastrado de cada OS ou rota. Não registra serviços nem cria recorrências futuras automaticamente.</Text>
   </ScrollView>;
 }
 
 const s=StyleSheet.create({
-  bg:{flex:1,backgroundColor:C.bg},page:{padding:16,paddingBottom:70,gap:12},
-  heading:{padding:5},title:{color:C.text,fontSize:21,fontWeight:'900'},
-  detail:{color:C.muted,fontSize:12,marginTop:5,lineHeight:17},
-  helper:{color:C.muted,fontSize:11,lineHeight:17,marginTop:4},
-  stats:{flexDirection:'row',gap:8},
-  metric:{flex:1,backgroundColor:C.panel,borderWidth:1,borderColor:C.line,
-    padding:12,borderRadius:12},
-  metricNumber:{fontWeight:'900',fontSize:24},metricLabel:{color:C.muted,fontSize:11},
-  section:{backgroundColor:C.panel,padding:12,borderRadius:13,
-    borderWidth:1,borderColor:C.line,gap:8},
-  sectionTitle:{color:C.text,fontSize:15,fontWeight:'800'},
-  lineRow:{flexDirection:'row',gap:7,flexWrap:'wrap',alignItems:'center'},
-  chip:{paddingVertical:10,paddingHorizontal:12,borderWidth:1,borderColor:C.line,
-    backgroundColor:C.field,borderRadius:9,minHeight:40},
-  chipSelected:{backgroundColor:C.blue,borderColor:C.blue},
-  chipLabel:{fontSize:12,color:C.text,fontWeight:'700'},
-  arrow:{width:42,height:42,backgroundColor:C.field,alignItems:'center',justifyContent:'center',
-    borderRadius:10,borderWidth:1,borderColor:C.line},
-  arrowText:{fontSize:25,color:C.text},
-  period:{fontSize:14,fontWeight:'800',color:C.text,textAlign:'center'},
-  todayLink:{color:C.blue,fontSize:12,fontWeight:'700',padding:7},
-  grid:{flexDirection:'row',flexWrap:'wrap',marginTop:7},
-  dayCell:{width:'14.285714%',alignItems:'center',justifyContent:'center',minHeight:48},
-  daySelected:{backgroundColor:C.blue,borderRadius:10},
-  todayOutline:{borderColor:C.blue,borderWidth:1,borderRadius:10},
-  calendarDate:{height:46,width:42,alignItems:'center',justifyContent:'center'},
-  dayNumber:{fontSize:13,fontWeight:'800',color:C.text},
-  dayCount:{color:C.blue,fontSize:10,fontWeight:'800'},
-  weekLetter:{color:C.muted,fontSize:10,fontWeight:'700'},
-  filterLabel:{fontSize:12,fontWeight:'700',color:C.text,marginTop:5},
-  card:{backgroundColor:C.field,borderRadius:10,borderWidth:1,borderColor:C.line,
-    padding:12,gap:5,marginTop:5},
-  kind:{fontSize:10,fontWeight:'800',color:C.muted,letterSpacing:.3},
-  status:{fontSize:11,fontWeight:'800'},
-  cardTitle:{color:C.text,fontSize:14,fontWeight:'800'},
-  primary:{backgroundColor:C.blue,borderRadius:9,paddingVertical:10,
-    paddingHorizontal:12,minHeight:40,justifyContent:'center'},
-  primaryText:{color:C.bg,fontWeight:'800',fontSize:12},
-  secondary:{borderWidth:1,borderColor:C.line,backgroundColor:C.panel,
-    borderRadius:9,padding:10,minHeight:40,justifyContent:'center'},
-  secondaryText:{color:C.text,fontWeight:'700',fontSize:11},
+  bg:{flex:1,backgroundColor:C.bg},page:{padding:15,paddingBottom:72,gap:13},
+  header:{gap:5,paddingVertical:4},heading:{color:C.text,fontSize:20,fontWeight:'900'},
+  subheading:{color:C.muted,fontSize:12},
+  metrics:{flexDirection:'row',gap:8},
+  metric:{flex:1,alignItems:'center',justifyContent:'center',paddingVertical:13,
+    minHeight:76,borderRadius:11,backgroundColor:C.panel,borderWidth:1,borderColor:C.line},
+  metricValue:{fontSize:24,fontWeight:'900'},
+  metricLabel:{color:C.muted,fontSize:11,marginTop:4,fontWeight:'700',textAlign:'center'},
+  calendarPanel:{backgroundColor:C.panel,borderRadius:15,borderWidth:1,
+    borderColor:C.line,padding:13,gap:12},
+  calendarHeader:{flexDirection:'row',alignItems:'center',gap:7},
+  arrow:{width:38,height:40,borderRadius:9,alignItems:'center',justifyContent:'center',
+    backgroundColor:C.field},
+  arrowText:{color:C.blue,fontSize:27,fontWeight:'500'},
+  periodTitle:{color:C.text,fontWeight:'900',fontSize:16,textTransform:'capitalize'},
+  periodCaption:{color:C.muted,fontWeight:'600',fontSize:10},
+  weekStrip:{flexDirection:'row',justifyContent:'space-between',gap:3},
+  weekDay:{flex:1,minWidth:0,alignItems:'center',justifyContent:'center',
+    minHeight:63,borderRadius:10,backgroundColor:C.field,gap:5,paddingVertical:8},
+  weekDaySelected:{backgroundColor:C.blue},
+  weekLabel:{color:C.muted,fontSize:10,fontWeight:'700'},
+  weekNumber:{color:C.text,fontSize:15,fontWeight:'900'},
+  dayIndicator:{width:5,height:5,borderRadius:3,backgroundColor:'transparent'},
+  modeBar:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:5},
+  modeButtons:{flexDirection:'row',gap:6,flexWrap:'wrap',flex:1},
+  chip:{borderWidth:1,borderColor:C.line,backgroundColor:C.field,
+    paddingVertical:7,paddingHorizontal:11,minHeight:34,borderRadius:8,justifyContent:'center'},
+  chipActive:{backgroundColor:C.blue,borderColor:C.blue},
+  chipText:{color:C.text,fontSize:11,fontWeight:'800'},
+  todayBtn:{paddingHorizontal:9,paddingVertical:8},
+  todayText:{color:C.blue,fontSize:12,fontWeight:'800'},
+  monthCalendar:{borderTopWidth:1,borderTopColor:C.line,paddingTop:10},
+  monthGrid:{flexDirection:'row',flexWrap:'wrap'},
+  monthCell:{width:'14.285714%',minHeight:46,alignItems:'center',justifyContent:'center'},
+  monthWeekLabel:{color:C.muted,fontSize:10,fontWeight:'700'},
+  monthDate:{width:40,height:43,alignItems:'center',justifyContent:'center',
+    borderRadius:9,gap:2},
+  monthNumber:{color:C.text,fontSize:13,fontWeight:'800'},
+  monthSelected:{backgroundColor:C.blue},
+  todayOutline:{borderWidth:1,borderColor:C.blue},
+  listPanel:{backgroundColor:C.panel,borderRadius:15,borderWidth:1,
+    borderColor:C.line,padding:13,gap:11},
+  listHeading:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
+  sectionTitle:{color:C.text,fontSize:15,fontWeight:'900'},
+  smallDate:{color:C.muted,fontSize:10,marginTop:4},
+  total:{color:C.blue,fontSize:15,fontWeight:'800'},
+  activityList:{backgroundColor:C.field,borderRadius:10,overflow:'hidden'},
+  activityRow:{borderBottomWidth:1,borderBottomColor:C.line,paddingVertical:2},
+  activityMain:{flexDirection:'row',alignItems:'center',gap:9,paddingHorizontal:9,
+    paddingTop:9,paddingBottom:5,minHeight:66},
+  activityMarker:{width:32,height:32,borderRadius:10,borderWidth:1,
+    alignItems:'center',justifyContent:'center'},
+  activitySymbol:{fontWeight:'900',fontSize:18},
+  activityTitle:{fontWeight:'800',fontSize:13,color:C.text},
+  activitySubtitle:{fontSize:10,color:C.muted},
+  activityState:{fontSize:10,fontWeight:'700'},
+  chevron:{color:C.muted,fontSize:22},
+  editLink:{alignSelf:'flex-end',marginRight:13,paddingVertical:4,paddingHorizontal:6,
+    minHeight:30,justifyContent:'center'},
+  editText:{color:C.blue,fontSize:10,fontWeight:'700'},
+  showAll:{alignSelf:'center',padding:10,minHeight:40,justifyContent:'center'},
+  link:{color:C.blue,fontWeight:'800',fontSize:12},
+  bottomActions:{flexDirection:'row',gap:8,justifyContent:'flex-end'},
+  outlineButton:{borderWidth:1,borderColor:C.line,borderRadius:9,
+    paddingHorizontal:12,paddingVertical:10},
+  outlineText:{color:C.text,fontSize:11,fontWeight:'800'},
+  filterPanel:{gap:9,borderTopWidth:1,borderTopColor:C.line,paddingTop:12},
+  filterRow:{flexDirection:'row',flexWrap:'wrap',gap:7},
+  filterTitle:{color:C.text,fontSize:12,fontWeight:'800'},
+  hint:{color:C.muted,fontSize:10,lineHeight:16},
+  clearButton:{paddingVertical:9,alignSelf:'flex-start'},
+  backlogPanel:{backgroundColor:C.panel,borderRadius:12,padding:12,borderWidth:1,
+    borderColor:C.line,gap:7},
+  backlogToggle:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',
+    minHeight:35,gap:9},
+  backlogTitle:{color:C.amber,fontSize:13,fontWeight:'800',flex:1},
+  backlogCount:{color:C.amber,fontSize:12,fontWeight:'800'},
+  backlogInfo:{color:C.muted,fontSize:10,lineHeight:16},
+  empty:{padding:13,gap:5,backgroundColor:C.field,borderRadius:9},
+  emptyTitle:{color:C.text,fontSize:12,fontWeight:'800'},
+  emptyDetail:{color:C.muted,fontSize:11},
 });
