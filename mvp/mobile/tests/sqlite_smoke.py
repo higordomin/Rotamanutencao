@@ -445,6 +445,50 @@ def test_route_edit_reorder_and_duplicate_preserve_history():
 
 
 
+
+def test_corrective_order_link_is_unique_and_survives_status_updates():
+    db=open_sqlite()
+    db.execute("""INSERT INTO assets(id,code,name,area,created_at)
+      VALUES('a-C','TAG-10','Redutor','Linha 1','2026-10-22')""")
+    db.execute("""INSERT INTO routes(id,title,area,created_at,recurrence_days,next_due_date)
+      VALUES('r-C','Inspeção','Linha 1','2026-10-22',7,'2026-10-24')""")
+    db.execute("""INSERT INTO route_runs(id,route_id,route_title,started_at,finished_at)
+      VALUES('run-C','r-C','Inspeção','2026-10-22',NULL)""")
+    db.execute("""INSERT INTO route_run_items
+      (id,run_id,point_id,point_title,asset_label,asset_id,lubricant,quantity_grams,status,
+       notes,recorded_at,position)
+      VALUES('item-C','run-C','p-C','Verificar redutor','TAG-10 · Redutor','a-C','',0,
+       'anomaly','Vazamento no redutor da linha','2026-10-22T12:00:00Z',0)""")
+    db.execute("""INSERT INTO work_orders
+      (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,
+       created_at,updated_at)
+      VALUES('os-C','Corrigir vazamento','Origem: rota Inspeção','Mecânica','Alta','a-C',
+       0,'2026-10-22','pending','2026-10-22T12:01:00Z','2026-10-22T12:01:00Z')""")
+    db.execute("""INSERT INTO route_corrective_links(item_id,order_id,created_at)
+      VALUES('item-C','os-C','2026-10-22T12:01:00Z')""")
+    row=db.execute("""SELECT i.asset_id,o.asset_id,o.status FROM route_corrective_links l
+      JOIN route_run_items i ON i.id=l.item_id JOIN work_orders o ON o.id=l.order_id
+      WHERE l.item_id='item-C'""").fetchone()
+    assert row==('a-C','a-C','pending')
+    try:
+        db.execute("""INSERT INTO route_corrective_links(item_id,order_id,created_at)
+          VALUES('item-C','os-C','2026-10-22T12:02:00Z')""")
+        assert False,'Aceitou OS duplicada'
+    except sqlite3.IntegrityError:
+        pass
+    db.execute("UPDATE work_orders SET status='completed' WHERE id='os-C'")
+    assert db.execute("""SELECT o.status FROM route_corrective_links l
+      JOIN work_orders o ON o.id=l.order_id WHERE l.item_id='item-C'""").fetchone()==('completed',)
+    assert db.execute("SELECT status,notes FROM route_run_items WHERE id='item-C'").fetchone()==(
+        'anomaly','Vazamento no redutor da linha')
+    db.execute("DELETE FROM route_corrective_links")
+    assert db.execute("SELECT COUNT(*) FROM work_orders WHERE id='os-C'").fetchone()==(1,)
+    assert db.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+    assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+
+
+
+
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
@@ -459,4 +503,5 @@ if __name__ == '__main__':
     test_quick_route_action_is_atomic_and_preserves_other_points()
     test_reprogramming_is_blocked_during_open_run_and_preserves_attention()
     test_route_edit_reorder_and_duplicate_preserve_history()
+    test_corrective_order_link_is_unique_and_survives_status_updates()
     print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')
