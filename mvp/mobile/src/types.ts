@@ -1,5 +1,6 @@
 import type {Route,RoutePoint,RouteRun,RouteRunItem,RouteRunPhoto} from './routes';
-export type Category = 'Lubrificação' | 'Mecânica' | 'Elétrica' | 'Inspeção';
+import type {CorrectiveLink} from './correctiveOrders';
+export type Category = 'Lubrificação' | 'Mecânica' | 'Elétrica' | 'Inspeção' | 'Segurança';
 export type Priority = 'Baixa' | 'Média' | 'Alta';
 export type OrderStatus = 'pending' | 'completed';
 export type ExecutionResult = 'completed' | 'partial';
@@ -75,7 +76,7 @@ export type OrderDraft = Pick<WorkOrder,
 
 export type BackupData = {
   format: 'rotamanutencao-offline';
-  version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+  version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
   exported_at: string;
   assets: Asset[];
   work_orders: Omit<WorkOrder, 'asset_name' | 'asset_code' | 'asset_area'>[];
@@ -85,6 +86,7 @@ export type BackupData = {
   routes?: Route[];
   route_points?: RoutePoint[];
   route_runs?: RouteRun[];
+  route_corrective_links?: CorrectiveLink[];
   route_run_items?: RouteRunItem[];
   route_photos?: Array<RouteRunPhoto & {base64:string}>;
 };
