@@ -561,7 +561,7 @@ export default function App() {
       {historyExecutions.length > historyPageSize && <Action secondary label={`Carregar mais registros (${historyExecutions.length - historyPageSize} restantes)`} onPress={() => setHistoryPageSize(n => n + 40)}/> }
       {selectedAsset && <>
         <Text style={[styles.sectionTitle,{marginTop:26}]}>Pontos de rota deste equipamento</Text>
-        <Text style={styles.detail}>Execuções de lubrificação e inspeção por ID estável da TAG, com fotos e ocorrências. Até 300 registros recentes por consulta.</Text>
+        <Text style={styles.detail}>Execuções de manutenção e inspeções vinculadas à TAG, com fotos e ocorrências. Até 300 registros recentes por consulta.</Text>
         {routeHistoryLoading ? <ActivityIndicator color={COLORS.accent} style={{marginTop:16}}/> :
           routeHistory.length===0 ? <Text style={styles.empty}>Nenhum ponto de rota vinculado a esta TAG. Registros antigos ambíguos permanecem no histórico geral das rotas.</Text> :
           routeHistory.slice(0,routeHistoryPageSize).map(item=><View key={item.id} style={styles.card}>
@@ -573,7 +573,6 @@ export default function App() {
                 tone={item.status==='done'?'green':item.status==='anomaly'?'red':'yellow'}/>
 
             </View>
-            {!!item.lubricant&&<Text style={styles.description}>Lubrificante: {item.lubricant}</Text>}
             {!!item.notes&&<Text style={styles.description}>Registro: {item.notes}</Text>}
             <Text style={styles.detail}>{item.photo_count} foto(s) anexada(s)</Text>
             {!!item.first_photo&&<Image source={{uri:evidenceUri(item.first_photo)}} style={styles.thumb}/>}
@@ -597,7 +596,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.22.0 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.22.1 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>

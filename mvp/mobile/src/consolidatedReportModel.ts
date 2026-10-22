@@ -5,7 +5,7 @@ import type {RouteRun, RouteRunItem} from './routes';
 export type ReportExecution = Pick<Execution,
   'id'|'order_title'|'result'|'executed_at'|'asset_label'|'category'|'notes'|'next_due_date'>;
 export type ReportRouteItem = Pick<RouteRunItem,
-  'id'|'run_id'|'point_title'|'asset_label'|'status'|'notes'|'lubricant'>;
+  'id'|'run_id'|'point_title'|'asset_label'|'status'|'notes'>;
 export type ReportPending = Pick<WorkOrder,
   'id'|'title'|'due_date'|'priority'|'block_reason'|'partial_reason'|'asset_name'|'asset_code'|'asset_area'>;
 export type ReportPhoto = {
@@ -88,11 +88,11 @@ export function buildConsolidatedHtml(input:ConsolidatedReportData):string {
   const routeRows=input.routeRuns.map(run=>{
     const list=input.routeItems.filter(i=>i.run_id===run.id);
     const rows=list.map(item=>`<tr><td>${clean(item.point_title)}<br><small>${clean(item.asset_label)}</small></td>
-      <td>${resultLabel(item.status)}</td><td>${clean(item.lubricant)}</td>
+      <td>${resultLabel(item.status)}</td>
       <td>${clean(item.notes)}</td></tr>`).join('');
     return `<section><h3>${clean(run.route_title)}</h3>
       <p class="meta">Finalizada: ${run.finished_at?dateTime(run.finished_at):'—'} · ${list.length} ponto(s)</p>
-      <table><thead><tr><th>Ponto / equipamento</th><th>Resultado</th><th>Lubrificante</th><th>Ocorrência</th></tr></thead>
+      <table><thead><tr><th>Ponto / equipamento</th><th>Resultado</th><th>Ocorrência</th></tr></thead>
       <tbody>${rows}</tbody></table></section>`;
   }).join('');
   const pendingRows=input.pendingOrders.map(o=>`<tr><td>${clean(o.title)}<br><small>${clean([o.asset_code,o.asset_name,o.asset_area].filter(Boolean).join(' · '))}</small></td>
