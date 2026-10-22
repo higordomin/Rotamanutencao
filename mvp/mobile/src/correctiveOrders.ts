@@ -30,9 +30,9 @@ export async function createCorrectiveOrder(itemId:string,category:Category,prio
   const now=new Date().toISOString();
   await db.withExclusiveTransactionAsync(async tx=>{
     const item=await tx.getFirstAsync<{
-      id:string;status:string;notes:string;point_title:string;asset_id:string|null;
+      id:string;status:string;notes:string;recorded_at:string|null;point_title:string;asset_id:string|null;
       asset_label:string;run_id:string;route_title:string;
-    }>(`SELECT i.id,i.status,i.notes,i.point_title,i.asset_id,i.asset_label,
+    }>(`SELECT i.id,i.status,i.notes,i.recorded_at,i.point_title,i.asset_id,i.asset_label,
        i.run_id,r.route_title
        FROM route_run_items i JOIN route_runs r ON r.id=i.run_id WHERE i.id=?`,itemId);
     if(!item||item.status!=='anomaly'||!item.notes.trim()||!item.recorded_at) {
