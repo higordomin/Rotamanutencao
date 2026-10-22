@@ -19,6 +19,26 @@ export async function listRunCorrectives(runId:string):Promise<CorrectiveView[]>
     JOIN route_run_items i ON i.id=link.item_id WHERE i.run_id=?`,runId);
 }
 
+export type RouteAnomalyView={
+  item_id:string;run_id:string;point_title:string;asset_label:string;
+  notes:string;recorded_at:string|null;route_title:string;
+  order_id:string|null;order_status:'pending'|'completed'|null;order_archived_at:string|null;
+};
+
+/** Histórico compacto para acompanhamento, não resolve ocorrências automaticamente. */
+export async function listRouteAnomalies():Promise<RouteAnomalyView[]>{
+  const db=await getDatabase();
+  return db.getAllAsync<RouteAnomalyView>(`
+    SELECT i.id AS item_id,i.run_id,i.point_title,i.asset_label,i.notes,i.recorded_at,
+      r.route_title,l.order_id,o.status AS order_status,o.archived_at AS order_archived_at
+    FROM route_run_items i
+    JOIN route_runs r ON r.id=i.run_id
+    LEFT JOIN route_corrective_links l ON l.item_id=i.id
+    LEFT JOIN work_orders o ON o.id=l.order_id
+    WHERE i.status='anomaly'
+    ORDER BY i.recorded_at DESC,i.id DESC LIMIT 100`);
+}
+
 /** Não abre OS sem confirmação na interface. A checagem de duplicidade é transacional. */
 export async function createCorrectiveOrder(itemId:string,category:Category,priority:Priority):Promise<string>{
   if(!itemId.trim())throw new Error('Selecione um ponto com anomalia.');
