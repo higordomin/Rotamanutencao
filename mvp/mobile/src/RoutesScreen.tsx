@@ -185,8 +185,6 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const run=runs.find(r=>r.id===activeRun);
   const visible=useMemo(()=>assets.filter(a=>[a.code,a.name,a.area].join(' ').toLowerCase().includes(assetSearch.trim().toLowerCase())).slice(0,12),[assets,assetSearch]);
   const {pending,attention}=routeProgress(items);
-  const anomalies=items.filter(i=>i.status==='anomaly').length;
-  const skipped=items.filter(i=>i.status==='skipped').length;
   // Em rota finalizada os filtros de apontamento não aparecem; mostrar sempre o histórico completo.
   const filteredItems=useMemo(()=>visibleRouteItems(items,run?.finished_at?'all':runFilter),
     [items,runFilter,run?.finished_at]);
