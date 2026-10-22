@@ -199,7 +199,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         <View style={{flex:1}}><Text style={s.heading}>Rotas de manutenção</Text>
           <Text style={s.sub}>Checklists offline • rotas programadas</Text></View>
         {(selected||activeRun)&&<Btn text="← Voltar" outline onPress={()=>{
-          if(activeRun)setActiveRun(null);else setSelected(null);setItems([]);setSavedPhotos([]);
+          if(activeRun)setActiveRun(null);else setSelected(null);setRunFilter('all');setItems([]);setSavedPhotos([]);
         }}/>}
       </View>
       {activeRun&&run?<>
@@ -263,7 +263,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           </View>}
           <View style={s.row}>
             <Btn disabled={busy||points.length===0} text="▶ Iniciar rota" onPress={()=>{void execute(async()=>{
-              const id=await startRouteRun(selected);setActiveRun(id);setItems(await listRunItems(id));
+              const id=await startRouteRun(selected);setRunFilter('all');setActiveRun(id);setItems(await listRunItems(id));
             });}}/>
             <Btn outline text="Excluir rota" disabled={busy} onPress={()=>Alert.alert('Excluir rota?', 'Os históricos já registrados serão preservados, mas os pontos atuais serão removidos.',[
               {text:'Cancelar',style:'cancel'},{text:'Excluir',style:'destructive',onPress:()=>{void execute(async()=>{await deleteRoute(selected);setSelected(null);setPoints([]);});}}
@@ -273,7 +273,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         {runs.filter(r=>r.route_id===selected).slice(0,8).map(r=><View key={r.id} style={s.card}>
           <Text style={s.title}>Execução em {new Date(r.started_at).toLocaleString('pt-BR')}</Text>
           <Text style={s.sub}>{r.finished_at?'Finalizada':'Em andamento'}</Text>
-          <Btn outline text={r.finished_at?'Ver relatório':'Continuar execução'} onPress={()=>{setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
+          <Btn outline text={r.finished_at?'Ver relatório':'Continuar execução'} onPress={()=>{setRunFilter('all');setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
         </View>)}
         <Text style={s.heading}>Pontos cadastrados</Text>
         {points.map(p=><View style={s.card} key={p.id}>
