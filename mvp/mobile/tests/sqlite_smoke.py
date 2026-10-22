@@ -361,6 +361,31 @@ def test_quick_route_action_is_atomic_and_preserves_other_points():
     assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
 
 
+def test_reprogramming_is_blocked_during_open_run_and_preserves_attention():
+    db=open_sqlite(legacy=True)
+    db.execute("""INSERT INTO routes(id,title,area,created_at,recurrence_days,next_due_date,
+        attention_count,attention_at) VALUES('route-schedule','Rota mensal','Linha 1',
+        '2026-10-01T09:00:00Z',30,'2026-10-10',2,'2026-10-10T10:00:00Z')""")
+    db.execute("""INSERT INTO route_runs(id,route_id,route_title,started_at,finished_at)
+        VALUES('open-schedule','route-schedule','Rota mensal','2026-10-11T09:00:00Z',NULL)""")
+    statement="""SELECT id FROM route_runs WHERE route_id=? AND finished_at IS NULL LIMIT 1"""
+    assert db.execute(statement,('route-schedule',)).fetchone()==('open-schedule',)
+    assert db.execute("""SELECT recurrence_days,next_due_date,attention_count FROM routes
+        WHERE id='route-schedule'""").fetchone()==(30,'2026-10-10',2)
+    db.execute("""UPDATE route_runs SET finished_at='2026-10-22T10:00:00Z'
+        WHERE id='open-schedule'""")
+    assert db.execute(statement,('route-schedule',)).fetchone() is None
+    db.execute("""UPDATE routes SET recurrence_days=?,next_due_date=? WHERE id=?""",
+        (15,'2026-11-01','route-schedule'))
+    assert db.execute("""SELECT recurrence_days,next_due_date,attention_count,attention_at
+        FROM routes WHERE id='route-schedule'""").fetchone()==(
+        15,'2026-11-01',2,'2026-10-10T10:00:00Z')
+    assert db.execute("SELECT finished_at FROM route_runs WHERE id='open-schedule'").fetchone()==(
+        '2026-10-22T10:00:00Z',)
+    assert db.execute('PRAGMA quick_check').fetchone()[0]=='ok'
+    assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+
+
 if __name__ == '__main__':
     test_fresh()
     test_legacy_upgrade()
@@ -373,4 +398,5 @@ if __name__ == '__main__':
     test_migration_preserves_unique_legacy_asset_link()
     test_route_history_identity_and_photos_survive_changes()
     test_quick_route_action_is_atomic_and_preserves_other_points()
+    test_reprogramming_is_blocked_during_open_run_and_preserves_attention()
     print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')
