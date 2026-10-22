@@ -160,6 +160,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const [addPointOpen,setAddPointOpen]=useState(false);
   const [historyOpen,setHistoryOpen]=useState(false);
   const [archiveOpen,setArchiveOpen]=useState(false);
+  const [showAllPoints,setShowAllPoints]=useState(false);
   const [busy,setBusy]=useState(false);
   const refresh=useCallback(async()=>{
     const [a,b]=await Promise.all([listRoutes(),listRouteRuns()]);
@@ -183,6 +184,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const attentionCount=routes.filter(r=>routePlanningState(r)==='attention').length;
   const todayCount=routes.filter(r=>routePlanningState(r)==='today').length;
   const run=runs.find(r=>r.id===activeRun);
+  const routeInProgress=runs.find(r=>r.route_id===selected&&r.finished_at===null);
   const visible=useMemo(()=>assets.filter(a=>[a.code,a.name,a.area].join(' ').toLowerCase().includes(assetSearch.trim().toLowerCase())).slice(0,12),[assets,assetSearch]);
   const {pending,attention}=routeProgress(items);
   // Em rota finalizada os filtros de apontamento não aparecem; mostrar sempre o histórico completo.
@@ -266,9 +268,11 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
             <Text style={s.sub}>Alterar a data não apaga anomalias nem históricos.</Text>
           </View>}
           <View style={s.row}>
-            <Btn disabled={busy||points.length===0} text="▶ Iniciar rota" onPress={()=>{void execute(async()=>{
-              const id=await startRouteRun(selected);setRunFilter('all');setActiveRun(id);setItems(await listRunItems(id));
-            });}}/>
+            <Btn disabled={busy||(!routeInProgress&&points.length===0)}
+              text={routeInProgress?'▶ Continuar rota':'▶ Iniciar rota'} onPress={()=>{void execute(async()=>{
+                const id=routeInProgress?.id??await startRouteRun(selected);
+                setRunFilter('pending');setActiveRun(id);setItems(await listRunItems(id));
+              });}}/>
             <Btn outline text="Excluir rota" disabled={busy} onPress={()=>Alert.alert('Excluir rota?', 'Os históricos já registrados serão preservados, mas os pontos atuais serão removidos.',[
               {text:'Cancelar',style:'cancel'},{text:'Excluir',style:'destructive',onPress:()=>{void execute(async()=>{await deleteRoute(selected);setSelected(null);setPoints([]);});}}
             ])}/>
@@ -283,7 +287,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         </View>)}
         <Text style={s.heading}>Pontos cadastrados</Text>
         {points.length===0&&<Text style={s.sub}>Ainda não há pontos cadastrados nesta rota.</Text>}
-        {points.map(p=><View style={s.pointCard} key={p.id}>
+        {(showAllPoints?points:points.slice(0,8)).map(p=><View style={s.pointCard} key={p.id}>
           <Text style={s.title}>{p.position+1}. {p.title}</Text>
           <Text style={s.sub}>{[p.asset_code,p.asset_name,p.asset_area].filter(Boolean).join(' · ')||'Equipamento removido'}</Text>
           {!!p.lubricant&&<Text style={s.sub}>Lubrificante: {p.lubricant}</Text>}
@@ -291,6 +295,9 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
             {text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{void execute(()=>deleteRoutePoint(p.id));}}
           ])}/>
         </View>)}
+        {points.length>8&&<Btn outline
+          text={showAllPoints?'Recolher pontos':`Ver todos os ${points.length} pontos`}
+          onPress={()=>setShowAllPoints(v=>!v)}/>}
         <Btn outline text={addPointOpen?'Cancelar novo ponto':'+ Adicionar ponto à rota'}
           onPress={()=>setAddPointOpen(x=>!x)}/>
         {addPointOpen&&<View style={s.card}>
@@ -305,7 +312,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           <Input label="Atividade do ponto *" value={task} onChange={setTask} placeholder="Ex.: Engraxar mancal lado acionamento"/>
           <Input label="Lubrificante" value={lubricant} onChange={setLubricant} placeholder="Ex.: NEVASTANE HD2T"/>
           <View style={{marginTop:12}}><Btn text="Adicionar ponto" disabled={busy||!assetId} onPress={()=>{void execute(async()=>{
-            await addRoutePoint(selected,assetId||'',task,lubricant);setTask('');setLubricant('');setAddPointOpen(false);
+            await addRoutePoint(selected,assetId||'',task,lubricant);setTask('');setLubricant('');setAddPointOpen(false);setShowAllPoints(true);
           });}}/></View>
         </View>}
       </>:<>
@@ -347,7 +354,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           return <Pressable key={r.id} accessibilityRole="button"
             accessibilityLabel={`Abrir rota ${r.title}`}
             style={s.routeLine} onPress={()=>{setSelected(r.id);setHistoryOpen(false);
-              setAddPointOpen(false);void listRoutePoints(r.id).then(setPoints);}}>
+              setAddPointOpen(false);setShowAllPoints(false);void listRoutePoints(r.id).then(setPoints);}}>
             <View style={{flex:1,gap:4}}>
               <Text style={s.title}>{r.title}</Text>
               <Text style={s.sub}>{r.area||'Sem setor'} · {r.point_count??0} ponto(s)</Text>
