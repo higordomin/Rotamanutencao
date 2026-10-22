@@ -143,7 +143,7 @@ export async function startRouteRun(routeId:string):Promise<string> {
       await tx.runAsync(`INSERT INTO route_run_items
       (id,run_id,point_id,point_title,asset_label,lubricant,quantity_grams,status,notes,recorded_at,position,asset_id)
       VALUES(?,?,?,?,?,?,?,'pending','',NULL,?,?)`,
-      id(),runId,point.id,point.title,label,point.lubricant,0,point.position,point.asset_id);
+      id(),runId,point.id,point.title,label,'',0,point.position,point.asset_id);
     }
   });
   return runId;
