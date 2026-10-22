@@ -52,12 +52,11 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
   const [status,setStatus]=useState<RouteRunItem['status']>(item.status);
   const [notes,setNotes]=useState(item.notes);
   const [lubricant,setLubricant]=useState(item.lubricant);
-  const [grams,setGrams]=useState(String(item.quantity_grams));
   const [working,setWorking]=useState(false);
   const [expanded,setExpanded]=useState(false);
   const [draftPhotos,setDraftPhotos]=useState<PhotoDraft[]>([]);
   const pristine=status===item.status && notes===item.notes
-    && lubricant===item.lubricant && grams===String(item.quantity_grams)
+    && lubricant===item.lubricant
     && draftPhotos.length===0;
   const quickSave=async()=>{
     if(working || disabled || !pristine || item.status!=='pending')return;
@@ -79,7 +78,7 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
   const save=async()=>{
     if(working)return;
     setWorking(true);
-    try{await recordRoutePoint(item.id,status,notes,lubricant,grams,draftPhotos);
+    try{await recordRoutePoint(item.id,status,notes,lubricant,draftPhotos);
       setDraftPhotos([]);await onSaved();}
     catch(e){Alert.alert('Registro não salvo',e instanceof Error?e.message:String(e));}
     finally{setWorking(false);}
@@ -87,13 +86,15 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
   return <View style={s.card}>
     <Text style={s.title}>{item.position+1}. {item.point_title}</Text>
     <Text style={s.sub}>{item.asset_label||'Equipamento removido do cadastro'}</Text>
-    <Text style={s.sub}>Resultado atual: {item.status==='pending'?'Pendente':item.status==='done'?'Executado':item.status==='anomaly'?'Anomalia':'Não executado'}</Text>
+    <Text style={[s.sub,{color:item.status==='anomaly'||item.status==='skipped'?c.amber:item.status==='done'?c.green:c.muted}]}>
+      {item.status==='pending'?'○ Pendente':item.status==='done'?'✓ Executado':item.status==='anomaly'?'⚠ Anomalia':'— Não executado'}
+      {item.lubricant?' · '+item.lubricant:''}
+    </Text>
     {!disabled&&<>
       {item.status==='pending'&&<View style={{marginTop:10}}>
-        <Text style={s.sub}>Execução rápida: grava {item.quantity_grams} g de {item.lubricant||'lubrificante não informado'}.</Text>
-        <Text style={[s.sub,{color:c.amber}]}>Toque somente DEPOIS de executar o serviço; sem fotos ou observações automáticas.</Text>
+        <Text style={s.sub}>Confirme este ponto após executar o serviço. Nenhuma quantidade é solicitada.</Text>
         <View style={s.row}>
-          <Btn text={working?'Salvando...':'✓ Registrar executado (previsto)'}
+          <Btn text={working?'Salvando...':'✓ Registrar executado'}
             disabled={working||!pristine} onPress={()=>{void quickSave();}}/>
         </View>
         {!pristine&&<Text style={s.sub}>Há dados editados ou fotos não salvas. Salve os detalhes para preservá-los.</Text>}
@@ -111,8 +112,6 @@ function RunItem({item,onSaved,disabled,photos}:{item:RouteRunItem;onSaved:()=>P
         </Pressable>)}
       </View>
       <Input label="Lubrificante utilizado" value={lubricant} onChange={setLubricant} placeholder="Ex.: NEVASTANE HD2T"/>
-      {status==='skipped' ? <Text style={[s.note,{color:c.amber}]}>Não executado: quantidade aplicada será registrada como 0 g.</Text>
-        : <Input label="Quantidade aplicada (g)" value={grams} onChange={setGrams} numeric placeholder="0"/>}
       <Input label={status==='done'?'Observações (opcional)':'Justificativa / anomalia (obrigatória)'}
         value={notes} onChange={setNotes} multiline placeholder="Informe o que foi observado, sem dados confidenciais"/>
       <Text style={[s.label,{marginTop:14}]}>Fotos deste ponto ({photos.length+draftPhotos.length}/{MAX_ROUTE_PHOTOS})</Text>
@@ -157,7 +156,11 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
   const [editPeriod,setEditPeriod]=useState('0'),[editDue,setEditDue]=useState(localDate());
   const [calendarMode,setCalendarMode]=useState<'new'|'edit'|null>(null);
   const [assetId,setAssetId]=useState<string|null>(null),[assetSearch,setAssetSearch]=useState('');
-  const [task,setTask]=useState(''),[lubricant,setLubricant]=useState(''),[grams,setGrams]=useState('0');
+  const [task,setTask]=useState(''),[lubricant,setLubricant]=useState('');
+  const [createOpen,setCreateOpen]=useState(false);
+  const [addPointOpen,setAddPointOpen]=useState(false);
+  const [historyOpen,setHistoryOpen]=useState(false);
+  const [archiveOpen,setArchiveOpen]=useState(false);
   const [busy,setBusy]=useState(false);
   const refresh=useCallback(async()=>{
     const [a,b]=await Promise.all([listRoutes(),listRouteRuns()]);
@@ -281,7 +284,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
         {points.map(p=><View style={s.card} key={p.id}>
           <Text style={s.title}>{p.position+1}. {p.title}</Text>
           <Text style={s.sub}>{[p.asset_code,p.asset_name,p.asset_area].filter(Boolean).join(' · ')||'Equipamento removido'}</Text>
-          <Text style={s.sub}>{p.lubricant||'Sem lubrificante'} • {p.quantity_grams} g</Text>
+          {!!p.lubricant&&<Text style={s.sub}>Lubrificante: {p.lubricant}</Text>}
           <Btn outline text="Remover ponto" disabled={busy} onPress={()=>Alert.alert('Remover ponto?','O histórico de execuções anteriores não será alterado.',[
             {text:'Cancelar',style:'cancel'},{text:'Remover',style:'destructive',onPress:()=>{void execute(()=>deleteRoutePoint(p.id));}}
           ])}/>
@@ -297,9 +300,8 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId}:{assets:Asset
           {!visible.length&&<Text style={s.sub}>Cadastre um equipamento na aba Ativos antes de adicionar pontos.</Text>}
           <Input label="Atividade do ponto *" value={task} onChange={setTask} placeholder="Ex.: Engraxar mancal lado acionamento"/>
           <Input label="Lubrificante" value={lubricant} onChange={setLubricant} placeholder="Ex.: NEVASTANE HD2T"/>
-          <Input label="Quantidade prevista (gramas)" numeric value={grams} onChange={setGrams}/>
           <View style={{marginTop:12}}><Btn text="Adicionar ponto" disabled={busy||!assetId} onPress={()=>{void execute(async()=>{
-            await addRoutePoint(selected,assetId||'',task,lubricant,grams);setTask('');setGrams('0');
+            await addRoutePoint(selected,assetId||'',task,lubricant);setTask('');setLubricant('');setAddPointOpen(false);
           });}}/></View>
         </View>
       </>:<>
