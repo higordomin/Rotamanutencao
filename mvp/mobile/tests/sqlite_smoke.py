@@ -343,15 +343,15 @@ def test_quick_route_action_is_atomic_and_preserves_other_points():
         quantity_grams,status,notes,recorded_at,position,asset_id)
         VALUES('other-item','run-fast','point2','Mancal B','TAG · Equipamento','Graxa HD2T',
         5,'pending','',NULL,1,'a')""")
-    statement="""UPDATE route_run_items SET status=?,notes=?,recorded_at=?
+    statement="""UPDATE route_run_items SET status=?,notes=?,quantity_grams=0,recorded_at=?
         WHERE id=? AND status='pending' AND recorded_at IS NULL AND EXISTS (
         SELECT 1 FROM route_runs r WHERE r.id=route_run_items.run_id AND r.finished_at IS NULL)"""
     cur=db.execute(statement,('done','','2026-10-22T09:04:00Z','fast-item'))
     assert cur.rowcount==1
     assert db.execute("""SELECT status,notes,lubricant,quantity_grams,recorded_at
         FROM route_run_items WHERE id='fast-item'""").fetchone()==(
-        'done','','Graxa HD2T',3.5,'2026-10-22T09:04:00Z')
-    assert db.execute("SELECT status FROM route_run_items WHERE id='other-item'").fetchone()==('pending',)
+        'done','','Graxa HD2T',0,'2026-10-22T09:04:00Z')
+    assert db.execute("SELECT status,quantity_grams FROM route_run_items WHERE id='other-item'").fetchone()==('pending',5)
     assert db.execute(statement,('done','','2026-10-22T09:05:00Z','fast-item')).rowcount==0
     assert db.execute(statement,('done','','2026-10-22T09:05:00Z','unknown-item')).rowcount==0
     db.execute("UPDATE route_runs SET finished_at='2026-10-22T09:06:00Z' WHERE id='run-fast'")
