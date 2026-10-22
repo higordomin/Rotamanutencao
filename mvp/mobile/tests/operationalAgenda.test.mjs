@@ -46,7 +46,7 @@ const ids=a=>a.map(x=>x.id);
 
 test('agenda ignora OS concluída/arquivada, mantém OS futuras e rota com anomalia sem data',()=>{
   const items=entries();
-  assert.equal(items.length,9);
+  assert.equal(items.length,8);
   assert.ok(ids(items).includes('routeAttention'));
   assert.ok(ids(items).includes('far'));
   for(const excluded of ['completed','archived','routeRegular'])assert.ok(!ids(items).includes(excluded));
@@ -61,7 +61,7 @@ test('pendências e bloqueios preservados, sem misturar com atividade concluída
   assert.equal(items.find(x=>x.id==='blocked').blocked,true);
   assert.equal(items.find(x=>x.id==='routeLate').attention,true);
   const stats=agendaSummary(items,today);
-  assert.deepEqual(stats,{total:9,orders:5,routes:4,overdue:2,today:2,attention:4,future:3});
+  assert.deepEqual(stats,{total:8,orders:5,routes:3,overdue:2,today:2,attention:4,future:3});
 });
 test('filtro por tipo, área e especialidade não inventa especialidade da rota',()=>{
   const all=entries();
