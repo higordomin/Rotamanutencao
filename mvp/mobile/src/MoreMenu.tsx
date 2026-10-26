@@ -1,6 +1,6 @@
 import React from 'react';
 import {Pressable,StyleSheet,Text,View} from 'react-native';
-import {INDUSTRIAL as C} from './design31';
+import {INDUSTRIAL as C,SPACING,TYPE,RADII} from './design31';
 import {moreDestinations,type AppTab} from './navigation31';
 
 /** Páginas secundárias continuam intactas e são abertas por este menu. */
@@ -35,17 +35,17 @@ export function MoreMenu({onOpen}:{onOpen:(tab:AppTab)=>void}){
 const s=StyleSheet.create({
   page:{paddingTop:8,gap:9,paddingBottom:24},
   eyebrow:{fontSize:11,fontWeight:'800',letterSpacing:1.5,color:C.accent},
-  heading:{fontSize:27,fontWeight:'900',color:C.ink},
-  help:{fontSize:14,color:C.muted,lineHeight:21,marginBottom:14},
-  group:{borderWidth:1,borderColor:C.border,borderRadius:17,overflow:'hidden'},
-  link:{minHeight:88,backgroundColor:C.surface,padding:14,flexDirection:'row',
+  heading:{fontSize:TYPE.hero,fontWeight:'900',color:C.ink},
+  help:{fontSize:TYPE.body,color:C.muted,lineHeight:21,marginBottom:SPACING.group},
+  group:{borderWidth:1,borderColor:C.border,borderRadius:RADII.card,overflow:'hidden'},
+  link:{minHeight:88,backgroundColor:C.surface,padding:SPACING.group,flexDirection:'row',
     gap:13,alignItems:'center',borderTopWidth:1,borderTopColor:C.border},
   first:{borderTopWidth:0},last:{borderBottomWidth:0},
   iconBox:{width:44,height:44,backgroundColor:C.elevated,borderRadius:13,
     justifyContent:'center',alignItems:'center'},
   icon:{fontSize:23,color:C.accent},
   textGroup:{flex:1,gap:4},name:{fontSize:16,color:C.ink,fontWeight:'800'},
-  desc:{fontSize:12,color:C.muted,lineHeight:18},
+  desc:{fontSize:TYPE.caption,color:C.muted,lineHeight:19},
   arrow:{fontSize:27,color:C.accent},
   offline:{marginTop:15,padding:15,borderRadius:14,backgroundColor:C.surface,
     borderWidth:1,borderColor:C.border,gap:6},
