@@ -358,7 +358,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   return <KeyboardAvoidingView style={{flex:1,backgroundColor:c.bg}} behavior={Platform.OS==='ios'?'padding':'height'}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.page}>
       <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:10}}>
-        <View style={{flex:1}}><Text style={s.heading}>Rotas de manutenção</Text>
+        <View style={{flex:1}}><Text accessibilityRole="header" style={s.heading}>Rotas de manutenção</Text>
           <Text style={s.sub}>Checklists offline • rotas programadas</Text></View>
         {(selected||activeRun)&&<Btn text="← Voltar" outline onPress={()=>{
           if(activeRun)setActiveRun(null);else setSelected(null);
@@ -563,7 +563,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
       </>:<>
         <View style={s.rowHeader}>
           <View style={{flex:1}}>
-            <Text style={s.heading}>Suas rotas</Text>
+            <Text accessibilityRole="header" style={s.heading}>Suas rotas</Text>
             <Text style={s.sub}>{routes.length} cadastrada(s) · por prazo e pendências</Text>
           </View>
           <Btn text={createOpen?'Cancelar':'+ Nova rota'} outline={createOpen}
