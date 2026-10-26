@@ -515,11 +515,11 @@ def test_weekly_productivity_is_sqlite_snapshot_and_not_a_percentage():
           VALUES(?,NULL,'Rota elétrica','2026-10-18T10:00:00Z',?)""",
           (run_id,finished))
     script=(SRC.parent/'weeklyProductivity.ts').read_text(encoding='utf8')
-    pattern=r'const counts=await db.getFirstAsync<.*?>\\(\\`([\\s\\S]*?)\\`,start,today'
-    # Regex robusto com quebras de linha para extrair a consulta TypeScript real.
-    match=re.search(r'const counts=await db\\.getFirstAsync<[^>]+>\\(\\`([\\s\\S]*?)\\`,start,today',script)
-    assert match,'Consulta semanal não encontrada no fonte'
-    query=match.group(1)
+    marker='const counts=await db.getFirstAsync<'
+    begin=script.index(marker)
+    first_tick=script.index('`',begin)+1
+    last_tick=script.index('`',first_tick)
+    query=script[first_tick:last_tick]
     assert query.count('?')==6
     start,end='2026-10-20','2026-10-26'
     before=db.execute('SELECT COUNT(*) FROM executions').fetchone()[0]
