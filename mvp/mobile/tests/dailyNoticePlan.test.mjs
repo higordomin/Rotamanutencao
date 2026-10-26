@@ -58,7 +58,7 @@ test('OS Alta recebe aviso no dia do vencimento, não antes',()=>{
   assert.ok(critical);
   assert.equal(critical.date.getDate(),23);
   assert.equal(critical.date.getHours(),5);
-  assert.equal(critical.date.getMinutes(),32);
+  assert.equal(critical.date.getMinutes(),30);
 });
 test('caso hora escolhida 05h30 já passou: próximo resumo somente amanhã',()=>{
   const plan=planDailyAndPriority(entries,at(2026,10,21,5,31),5,30);
