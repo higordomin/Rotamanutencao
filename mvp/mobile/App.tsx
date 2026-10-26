@@ -27,7 +27,9 @@ import {syncLocalReminders} from './src/localReminders';
 import {filterCompletedExecutions} from './src/completedExecutions';
 import {inspectLocalStorage} from './src/storageDiagnostics';
 import {duplicateOrderDraft, needsPriorityAttention} from './src/operatorActions';
-import {searchAssets, preselectAsset, executionBelongsToAssetSnapshot, buildLegacyAssetIndex} from './src/assetWorkflow';
+import {preselectAsset, executionBelongsToAssetSnapshot, buildLegacyAssetIndex} from './src/assetWorkflow';
+import {assetAreas,findCatalogAssets} from './src/assetCatalog';
+import {AssetPicker} from './src/AssetPicker';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -106,6 +108,9 @@ export default function App() {
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [search, setSearch] = useState('');
   const [assetSearch, setAssetSearch] = useState('');
+  const [assetAreaFilter,setAssetAreaFilter] = useState('');
+  const [assetPageSize,setAssetPageSize] = useState(30);
+  const [expandedAssetId,setExpandedAssetId] = useState<string|null>(null);
   const [assetFilterId, setAssetFilterId] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('Todas');
   const [historyPageSize, setHistoryPageSize] = useState(40);
@@ -177,7 +182,13 @@ export default function App() {
 
   const selectedAsset = useMemo(() => assets.find(asset => asset.id === assetFilterId) ?? null,
     [assets, assetFilterId]);
-  const visibleAssets = useMemo(() => searchAssets(assets, assetSearch), [assets, assetSearch]);
+  const assetSectorOptions=useMemo(()=>assetAreas(assets),[assets]);
+  const visibleAssets = useMemo(() => findCatalogAssets(assets,assetSearch,assetAreaFilter), [assets,assetSearch,assetAreaFilter]);
+  const assetOrderCounts=useMemo(()=>{
+    const counts=new Map<string,number>();
+    for(const order of orders)if(order.asset_id)counts.set(order.asset_id,(counts.get(order.asset_id)||0)+1);
+    return counts;
+  },[orders]);
   const legacyAssetIndex = useMemo(() => buildLegacyAssetIndex(assets),[assets]);
   useEffect(()=>{
     let cancelled=false;
@@ -432,20 +443,28 @@ export default function App() {
   </View> : null;
 
   function assetCard(asset: Asset) {
-    const count = orders.filter(o => o.asset_id === asset.id).length;
-    return <View key={asset.id} style={styles.card}>
-      <Text style={styles.cardTitle}>{asset.name}</Text>
-      <Text style={styles.detail}>{asset.code || 'Sem código'} · {asset.area || 'Sem área'}</Text>
-      <Text style={styles.description}>{count} atividade(s) vinculada(s)</Text>
-      <View style={styles.cardActions}>
-        <Action label="+ Nova OS" onPress={() => openOrder(undefined,asset)}/>
-        <Action label="Ver OS" secondary onPress={() => openAssetView(asset,'orders')}/>
-        <Action label="Histórico" secondary onPress={() => openAssetView(asset,'history')}/>
-        <Action label="Editar" secondary onPress={() => openAsset(asset)}/>
-        <Pressable accessibilityRole="button" onPress={() => confirmDeleteAsset(asset)} style={{padding: 11}}>
-          <Text style={{color: COLORS.red, fontWeight: '700'}}>Excluir</Text>
+    const count=assetOrderCounts.get(asset.id)||0;
+    const expanded=expandedAssetId===asset.id;
+    return <View key={asset.id} style={[styles.card,{paddingVertical:10,marginBottom:8}]}>
+      <Pressable accessibilityRole="button" accessibilityState={{expanded}}
+        onPress={()=>setExpandedAssetId(expanded?null:asset.id)}
+        style={{flexDirection:'row',gap:12,alignItems:'center',minHeight:51}}>
+        <View style={{flex:1,gap:3}}>
+          <Text style={[styles.cardTitle,{color:COLORS.accent,fontSize:16}]}>{asset.code||'Sem TAG'}</Text>
+          <Text style={{color:COLORS.text,fontSize:13,fontWeight:'700'}}>{asset.name}</Text>
+          <Text style={styles.detail}>{asset.area||'Sem setor'} · {count} atividade(s)</Text>
+        </View>
+        <Text style={{color:COLORS.accent,fontSize:12,fontWeight:'800'}}>{expanded?'Fechar −':'Abrir ›'}</Text>
+      </Pressable>
+      {expanded&&<View style={[styles.cardActions,{marginTop:12}]}>
+        <Action label="+ OS" onPress={()=>openOrder(undefined,asset)}/>
+        <Action label="Ver OS" secondary onPress={()=>openAssetView(asset,'orders')}/>
+        <Action label="Histórico" secondary onPress={()=>openAssetView(asset,'history')}/>
+        <Action label="Editar" secondary onPress={()=>openAsset(asset)}/>
+        <Pressable accessibilityRole="button" onPress={()=>confirmDeleteAsset(asset)} style={{padding:11}}>
+          <Text style={{color:COLORS.red,fontWeight:'700'}}>Excluir</Text>
         </Pressable>
-      </View>
+      </View>}
     </View>;
   }
 
@@ -465,12 +484,29 @@ export default function App() {
     if (tab === 'Ativos') return <>
       <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Equipamentos</Text><Text style={styles.detail}>{assets.length} cadastrados</Text></View>
         <Action label="+ Novo" onPress={() => openAsset()}/></View>
-      <TextInput accessibilityLabel="Buscar equipamento por TAG" placeholder="Buscar por TAG, nome ou setor..."
-        placeholderTextColor={COLORS.muted} value={assetSearch} onChangeText={setAssetSearch} style={styles.searchField}/>
-      <Text style={styles.detail}>{visibleAssets.length} de {assets.length} equipamento(s) na pesquisa</Text>
-      {assets.length === 0 ? <Text style={styles.empty}>Cadastre seu primeiro equipamento.</Text>
-        : visibleAssets.length === 0 ? <Text style={styles.empty}>Nenhuma TAG encontrada. Ajuste a busca.</Text>
-        : visibleAssets.map(assetCard)}
+      <TextInput accessibilityLabel="Buscar equipamento por TAG, nome ou setor"
+        placeholder="Buscar TAG, nome ou setor..." placeholderTextColor={COLORS.muted}
+        value={assetSearch} onChangeText={value=>{setAssetSearch(value);setAssetPageSize(30);}}
+        style={styles.searchField}/>
+      <ScrollView horizontal keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false}
+        style={{flexGrow:0,marginVertical:9}}
+        contentContainerStyle={{flexDirection:'row',gap:7,alignItems:'center',paddingRight:18}}>
+        {['',...assetSectorOptions].map(area=><Pressable key={area||'all'} accessibilityRole="button"
+          accessibilityState={{selected:area===assetAreaFilter}}
+          onPress={()=>{setAssetAreaFilter(area);setAssetPageSize(30);}}
+          style={[styles.choice,area===assetAreaFilter&&styles.choiceActive]}>
+          <Text style={{fontSize:12,fontWeight:'700',color:area===assetAreaFilter?COLORS.bg:COLORS.text}}>
+            {area||'Todos os setores'}</Text>
+        </Pressable>)}
+      </ScrollView>
+      <Text style={[styles.detail,{marginBottom:9}]}>
+        {visibleAssets.length} de {assets.length} equipamento(s) · TAG / nome / setor
+      </Text>
+      {assets.length===0?<Text style={styles.empty}>Cadastre seu primeiro equipamento.</Text>
+        :visibleAssets.length===0?<Text style={styles.empty}>Nenhum equipamento encontrado. Ajuste a busca ou o setor.</Text>
+        :visibleAssets.slice(0,assetPageSize).map(assetCard)}
+      {visibleAssets.length>assetPageSize&&<Action secondary label={`Mostrar mais (${Math.min(30,visibleAssets.length-assetPageSize)} de ${visibleAssets.length-assetPageSize} restantes)`}
+        onPress={()=>setAssetPageSize(v=>v+30)}/>}
     </>;
     if (tab === 'Dados') return <>
       <Text style={styles.sectionTitle}>Seus dados</Text>
@@ -714,17 +750,8 @@ export default function App() {
                 onChange={v => setOrderDraft({...orderDraft, category: v})}/>
               <Choices label="Prioridade" value={orderDraft.priority} options={priorities}
                 onChange={v => setOrderDraft({...orderDraft, priority: v})}/>
-              <Text style={styles.fieldLabel}>Equipamento</Text>
-              <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16}}>
-                <Pressable onPress={() => setOrderDraft({...orderDraft, asset_id: null})}
-                  style={[styles.choice, orderDraft.asset_id === null && styles.choiceActive]}>
-                  <Text style={{color: orderDraft.asset_id === null ? COLORS.bg : COLORS.text}}>Nenhum</Text>
-                </Pressable>
-                {assets.map(a => <Pressable key={a.id} onPress={() => setOrderDraft({...orderDraft, asset_id: a.id})}
-                  style={[styles.choice, orderDraft.asset_id === a.id && styles.choiceActive]}>
-                  <Text style={{color: orderDraft.asset_id === a.id ? COLORS.bg : COLORS.text}}>{a.name}</Text>
-                </Pressable>)}
-              </View>
+              <AssetPicker assets={assets} value={orderDraft.asset_id} allowNone
+                onChange={id=>setOrderDraft(current=>({...current,asset_id:id}))}/>
               <Text style={styles.fieldLabel}>Data programada *</Text>
               <Pressable accessibilityRole="button" accessibilityLabel="Abrir calendário para escolher data"
                 style={styles.dateField} onPress={() => {Keyboard.dismiss(); setCalendarOpen(true);}}>
