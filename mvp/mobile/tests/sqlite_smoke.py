@@ -487,6 +487,48 @@ def test_corrective_order_link_is_unique_and_survives_status_updates():
     assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
 
 
+def test_weekly_productivity_is_sqlite_snapshot_and_not_a_percentage():
+    """Usa a consulta SQL real de 0.28: históricos parciais não são conclusões."""
+    db=open_sqlite()
+    db.execute("""INSERT INTO work_orders
+      (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,
+       created_at,updated_at)
+      VALUES('ord-p','Inspecionar painel','','Elétrica','Média',NULL,7,'2026-10-26','pending',
+             '2026-10-20T00:00:00Z','2026-10-20T00:00:00Z')""")
+    for record_id,status,at in (
+       ('done-current','completed','2026-10-26T12:00:00Z'),
+       ('partial-current','partial','2026-10-22T09:00:00Z'),
+       ('done-outside','completed','2026-10-18T12:00:00Z')
+    ):
+        db.execute("""INSERT INTO executions
+          (id,order_id,order_title,notes,executed_at,previous_due_date,
+           next_due_date,asset_label,category,result)
+          VALUES(?, 'ord-p','Inspecionar painel','',?,'2026-10-26',NULL,'Q-1','Elétrica',?)""",
+          (record_id,at,status))
+    for run_id,finished in (
+      ('finished-current','2026-10-24T11:00:00Z'),
+      ('finished-outside','2026-10-18T11:00:00Z'),
+      ('running',None)
+    ):
+        db.execute("""INSERT INTO route_runs
+          (id,route_id,route_title,started_at,finished_at)
+          VALUES(?,NULL,'Rota elétrica','2026-10-18T10:00:00Z',?)""",
+          (run_id,finished))
+    script=(SRC.parent/'weeklyProductivity.ts').read_text(encoding='utf8')
+    pattern=r'const counts=await db.getFirstAsync<.*?>\\(\\`([\\s\\S]*?)\\`,start,today'
+    # Regex robusto com quebras de linha para extrair a consulta TypeScript real.
+    match=re.search(r'const counts=await db\\.getFirstAsync<[^>]+>\\(\\`([\\s\\S]*?)\\`,start,today',script)
+    assert match,'Consulta semanal não encontrada no fonte'
+    query=match.group(1)
+    assert query.count('?')==6
+    start,end='2026-10-20','2026-10-26'
+    before=db.execute('SELECT COUNT(*) FROM executions').fetchone()[0]
+    result=db.execute(query,(start,end,start,end,start,end)).fetchone()
+    assert result==(1,1,1),result
+    assert db.execute('SELECT COUNT(*) FROM executions').fetchone()[0]==before
+    assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+
+
 
 
 if __name__ == '__main__':
@@ -504,4 +546,5 @@ if __name__ == '__main__':
     test_reprogramming_is_blocked_during_open_run_and_preserves_attention()
     test_route_edit_reorder_and_duplicate_preserve_history()
     test_corrective_order_link_is_unique_and_survives_status_updates()
+    test_weekly_productivity_is_sqlite_snapshot_and_not_a_percentage()
     print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')
