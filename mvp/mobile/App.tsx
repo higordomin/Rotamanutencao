@@ -69,7 +69,7 @@ function Action({label, onPress, secondary = false, dangerous = false, disabled 
   return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress}
     style={[styles.button, secondary && styles.secondaryButton, dangerous && {backgroundColor: COLORS.red+'30',borderColor:COLORS.red},
       disabled && {opacity: 0.45}]}>
-    <Text style={[styles.buttonText, secondary && {color: COLORS.text}]}>{label}</Text>
+    <Text style={[styles.buttonText, secondary && {color: COLORS.text}, dangerous && {color: COLORS.red}]}>{label}</Text>
   </Pressable>;
 }
 
