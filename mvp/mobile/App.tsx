@@ -1,6 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  ActivityIndicator, Alert, AppState, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable,
+  ActivityIndicator, Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable,
   SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Image, FlatList,
 } from 'react-native';
 import {
@@ -32,13 +32,16 @@ import {preselectAsset, executionBelongsToAssetSnapshot, buildLegacyAssetIndex} 
 import {assetAreas,findCatalogAssets} from './src/assetCatalog';
 import {AssetPicker} from './src/AssetPicker';
 import {createActionGuard} from './src/actionGuard';
+import {MoreMenu} from './src/MoreMenu';
+import {bottomTabs,visibleTab,morePage,type AppTab} from './src/navigation31';
+import {INDUSTRIAL as THEME,INTERACTION} from './src/design31';
 
 const COLORS = {
-  bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
-  text: '#EFF6FF', muted: '#9CB0C8', accent: '#47B7F6', green: '#5DD7AC',
-  red: '#FF7D8B', yellow: '#FFD075',
+  bg: THEME.background, panel: THEME.surface, panel2: THEME.elevated,
+  border: THEME.border, text: THEME.ink, muted: THEME.muted,
+  accent: THEME.accent, green: THEME.success,
+  red: THEME.danger, yellow: THEME.caution,
 };
-type Tab = 'Início' | 'Agenda' | 'Atividades' | 'Rotas' | 'Ativos' | 'Histórico' | 'Dados';
 type ModalType = 'asset' | 'order' | 'complete' | 'block' | 'archive' | null;
 type OrderFilter = 'Todas' | 'Pendentes' | 'Impedidas' | 'Prioritárias' | 'Concluídas' | 'Arquivadas';
 type ActivityListItem = {kind:'order';value:WorkOrder}|{kind:'execution';value:Execution};
@@ -99,7 +102,7 @@ function Choices<T extends string>({label, options, value, onChange}: {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('Início');
+  const [tab, setTab] = useState<AppTab>('Início');
   const [assets, setAssets] = useState<Asset[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selectedRouteId,setSelectedRouteId] = useState<string|null>(null);
@@ -120,6 +123,16 @@ export default function App() {
   const [routeHistory,setRouteHistory] = useState<AssetRouteHistoryItem[]>([]);
   const [routeHistoryLoading,setRouteHistoryLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  // Hardware Back regressa das ferramentas ao menu Mais sem perder a tela atual.
+  useEffect(()=>{
+    if(!morePage(tab))return;
+    const subscription=BackHandler.addEventListener('hardwareBackPress',()=>{
+      if(dialog!==null)return false; // Modal usa onRequestClose existente.
+      setTab('Mais');
+      return true;
+    });
+    return ()=>subscription.remove();
+  },[tab,dialog]);
   const [initError, setInitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<ModalType>(null);
@@ -476,6 +489,10 @@ export default function App() {
   }
 
   const content = () => {
+    if (tab === 'Mais')return <MoreMenu onOpen={page=>{
+      setAssetFilterId(null);
+      setTab(page);
+    }}/>;
     if (tab === 'Início') return <HomeScreen
       orders={orders} routes={routes}
       onOpenAgenda={()=>setTab('Agenda')}
@@ -589,7 +606,7 @@ export default function App() {
         <Text style={styles.description}>Substitui TODOS os registros existentes, depois de sua confirmação. Antes disso, exporte uma cópia do estado atual.</Text>
         <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
       </View>
-      <Text style={styles.hint}>Formato local versão 10 (restaura também versões 2 a 9) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+      <Text style={styles.hint}>Formato local versão 11 (compatibilidade com versões anteriores validadas) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
@@ -657,8 +674,9 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.30.0 · OFFLINE · USO INDIVIDUAL</Text></View>
-      <Pill text="● Local" tone="green"/>
+        <Text style={styles.brandSub}>MANUTENÇÃO SIMPLES · OFFLINE</Text></View>
+      <View style={styles.localStatus}><View style={styles.localDot}/>
+        <Text style={styles.localText}>Local</Text></View>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
       : initError ? <View style={styles.scroll}>
@@ -698,7 +716,7 @@ export default function App() {
           contentContainerStyle={styles.scroll}
           ListHeaderComponent={<>
             {assetContext}
-            <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Rotas e atividades</Text>
+            <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Ordens de serviço</Text>
               <Text style={styles.detail}>{orderFilter==='Concluídas'
                 ?`${completedExecutions.length} execução(ões) concluída(s)`
                 :orderFilter==='Arquivadas'
@@ -722,19 +740,24 @@ export default function App() {
             :'Nenhuma atividade encontrada. Ajuste a busca ou crie uma atividade.'}</Text>}
         />
       : <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content()}</ScrollView>}
-    <View style={styles.nav}>
-      {([{label: 'Início', icon: '⌂', caption:'Início'}, {label: 'Agenda', icon: '▦', caption:'Agenda'}, {label: 'Atividades', icon: '☑', caption:'OS'},
-        {label: 'Rotas', icon: '⇢',caption:'Rotas'},
-        {label: 'Ativos', icon: '⚙',caption:'Ativos'}, {label: 'Histórico', icon: '◷',caption:'Hist.'}, {label:'Dados',icon:'▣',caption:'Dados'}] as const).map(item =>
-        <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{selected: tab === item.label}}
-          onPress={() => {
+    <View accessibilityRole="tablist" style={styles.nav}>
+      {bottomTabs.map(item =>{
+        const active=visibleTab(tab)===item.label;
+        return <Pressable key={item.label} accessibilityRole="tab"
+          accessibilityLabel={item.label==='Atividades'?'Ordens de serviço':item.label}
+          accessibilityState={{selected:active}}
+          onPress={()=>{
             if(item.label==='Rotas')setSelectedRouteId(null);
-            setAssetFilterId(null); // abas abertas manualmente mostram visão geral
+            setAssetFilterId(null);
             setTab(item.label);
-          }} style={styles.navItem}>
-          <Text style={[styles.navIcon, tab === item.label && {color: COLORS.accent}]}>{item.icon}</Text>
-          <Text style={[styles.navLabel, tab === item.label && {color: COLORS.accent}]}>{item.caption}</Text>
-        </Pressable>)}
+          }}
+          style={styles.navItem}>
+          <View style={[styles.navIconBox,active&&styles.navIconActive]}>
+            <Text style={[styles.navIcon,active&&{color:COLORS.accent}]}>{item.icon}</Text>
+          </View>
+          <Text style={[styles.navLabel,active&&{color:COLORS.text}]}>{item.caption}</Text>
+        </Pressable>;
+      })}
     </View>
     <Modal animationType="slide" visible={dialog !== null} transparent onRequestClose={closeDialog}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBackdrop}>
@@ -887,11 +910,15 @@ export default function App() {
 const styles = StyleSheet.create({
   safe: {flex: 1, backgroundColor: COLORS.bg,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0},
-  topbar: {paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 11,
+  topbar: {paddingHorizontal: 18, paddingTop: 12, paddingBottom: 13, flexDirection: 'row', alignItems: 'center', gap: 11,
     borderBottomWidth: 1, borderBottomColor: COLORS.border},
-  logo: {width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.accent},
-  brand: {fontSize: 18, fontWeight: '800', color: COLORS.text},
-  brandSub: {fontSize: 9, fontWeight: '700', color: COLORS.muted, letterSpacing: 0.7},
+  logo: {width: 39, height: 39, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.panel2},
+  brand: {fontSize: 19, fontWeight: '900', color: COLORS.text},
+  brandSub: {fontSize: 10, fontWeight: '700', color: COLORS.muted, letterSpacing: 0.4,marginTop:2},
+  localStatus:{flexDirection:'row',alignItems:'center',gap:6,paddingHorizontal:10,
+    paddingVertical:7,backgroundColor:COLORS.panel,borderRadius:999},
+  localDot:{width:7,height:7,backgroundColor:COLORS.green,borderRadius:7},
+  localText:{fontSize:11,color:COLORS.muted,fontWeight:'700'},
   scroll: {padding: 17, paddingBottom: 45},
   hero: {backgroundColor: COLORS.panel2, padding: 19, borderRadius: 18, borderWidth: 1, borderColor: COLORS.border},
   heroEyebrow: {color: COLORS.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1},
@@ -902,16 +929,17 @@ const styles = StyleSheet.create({
   metricValue: {fontWeight: '900', fontSize: 25},
   metricLabel: {color: COLORS.muted, fontSize: 11},
   quickActions: {flexDirection: 'row', gap: 8, marginTop: 16},
-  button: {backgroundColor: COLORS.accent, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 13,
-    alignItems: 'center', justifyContent: 'center', minHeight: 40},
+  button: {backgroundColor: COLORS.accent, borderRadius: INTERACTION.smallRadius,
+    paddingVertical: 10, paddingHorizontal: 13,
+    alignItems: 'center', justifyContent: 'center', minHeight: INTERACTION.minTouch},
   secondaryButton: {backgroundColor: COLORS.panel2, borderColor: COLORS.border, borderWidth: 1},
   buttonText: {color: COLORS.bg, fontWeight: '800', fontSize: 12},
-  sectionTitle: {color: COLORS.text, fontSize: 19, fontWeight: '800'},
-  card: {padding: 15, backgroundColor: COLORS.panel, borderRadius: 13, marginTop: 11, borderWidth: 1,
+  sectionTitle: {color: COLORS.text, fontSize: 20, fontWeight: '900'},
+  card: {padding: 16, backgroundColor: COLORS.panel, borderRadius: INTERACTION.radius, marginTop: 11, borderWidth: 1,
     borderColor: COLORS.border},
   cardTitle: {fontSize: 15, fontWeight: '800', color: COLORS.text, lineHeight: 21},
   detail: {fontSize: 12, color: COLORS.muted, marginTop: 5},
-  description: {fontSize: 12, color: COLORS.muted, lineHeight: 18, marginTop: 11},
+  description: {fontSize: 13, color: COLORS.muted, lineHeight: 20, marginTop: 11},
   chips: {flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 15},
   pill: {borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 5, alignSelf: 'flex-start'},
   cardActions: {flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 16},
@@ -919,11 +947,13 @@ const styles = StyleSheet.create({
   empty: {padding: 17, marginTop: 10, color: COLORS.muted, borderWidth: 1, borderStyle: 'dashed',
     borderColor: COLORS.border, borderRadius: 12},
   hint: {fontSize: 11, color: COLORS.muted, lineHeight: 16, marginTop: 13},
-  nav: {flexDirection: 'row', borderTopWidth: 1, borderTopColor: COLORS.border, paddingBottom: 9,
-    backgroundColor: COLORS.bg},
-  navItem: {flex: 1, alignItems: 'center', paddingTop: 8, minHeight: 52, justifyContent: 'center'},
-  navIcon: {fontSize: 21, color: COLORS.muted},
-  navLabel: {fontSize: 10, color: COLORS.muted, fontWeight: '700', marginTop: 2},
+  nav: {flexDirection:'row',borderTopWidth:1,borderTopColor:COLORS.border,
+    paddingTop:7,paddingBottom:10,backgroundColor:COLORS.panel},
+  navItem: {flex:1,alignItems:'center',paddingTop:2,minHeight:58,justifyContent:'center',gap:2},
+  navIconBox:{minWidth:48,minHeight:31,borderRadius:14,alignItems:'center',justifyContent:'center'},
+  navIconActive:{backgroundColor:COLORS.accent+'20'},
+  navIcon: {fontSize:21,color:COLORS.muted,fontWeight:'700'},
+  navLabel: {fontSize:11,color:COLORS.muted,fontWeight:'700'},
   modalBackdrop: {flex: 1, justifyContent: 'flex-end', backgroundColor: '#02060EBB'},
   modalCard: {padding: 20, paddingTop: 19, backgroundColor: COLORS.panel, borderTopLeftRadius: 24,
     borderTopRightRadius: 24, height: '92%', width: '100%', maxHeight: '93%', borderWidth: 1, borderColor: COLORS.border},
@@ -941,7 +971,8 @@ const styles = StyleSheet.create({
   photoRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12},
   thumb: {width: 76, height: 76, borderRadius: 9, backgroundColor: COLORS.panel2},
   blockAlert: {padding: 12, backgroundColor: '#42351E', borderRadius: 10, marginTop: 12, borderWidth: 1, borderColor: '#8D7040'},
-  searchField: {borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12, color: COLORS.text, backgroundColor: COLORS.panel2, marginTop: 14, fontSize: 14},
+  searchField: {borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 14,
+    minHeight:48,color:COLORS.text, backgroundColor: COLORS.panel2, marginTop:14,fontSize:15},
   filters: {flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12, marginBottom: 8},
   eventRow: {padding: 12, borderBottomWidth: 1, borderColor: COLORS.border},
 });
