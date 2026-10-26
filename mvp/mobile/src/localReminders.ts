@@ -6,11 +6,13 @@ import {validReminderTime} from './reminderPlan';
 import {planDailyAndPriority} from './dailyNoticePlan';
 import {noticeInputs,previewPlannedReminders,type ReminderPreviewLine} from './reminderPreview';
 import {noticeFingerprint,sameNoticePlan,replaceScheduledNoticesSafely} from './reminderReconcile';
+import {DEFAULT_NOTICE_APPEARANCE,validNoticeAppearance,
+  type NoticeAppearance} from './notificationContent';
 
 const CHANNEL='rotamanutencao-lembretes-v2';
 const OWNER='rotamanutencao-local-v1';
 const TEST_OWNER='rotamanutencao-local-test-v1';
-type Preferences={enabled:boolean;hour:number;minute:number};
+type Preferences={enabled:boolean;hour:number;minute:number;appearance:NoticeAppearance};
 let syncQueue:Promise<void>=Promise.resolve();
 
 Notifications.setNotificationHandler({
@@ -34,12 +36,19 @@ async function createChannel():Promise<void>{
 async function readPreferences():Promise<Preferences>{
   const db=await getDatabase();
   const values=await db.getAllAsync<{key:string;value:string}>(`SELECT key,value FROM app_settings
-    WHERE key IN ('reminders.enabled','reminders.hour','reminders.minute')`);
+    WHERE key IN ('reminders.enabled','reminders.hour','reminders.minute',
+      'reminders.content.style','reminders.content.showTag')`);
   const settings=new Map(values.map(x=>[x.key,x.value]));
   const hour=Number(settings.get('reminders.hour')??14);
   const minute=Number(settings.get('reminders.minute')??0);
   const valid=validReminderTime(hour,minute);
-  return {enabled:settings.get('reminders.enabled')==='1',hour:valid?hour:14,minute:valid?minute:0};
+  const rawStyle=settings.get('reminders.content.style');
+  const style=rawStyle==='detalhado'?'detalhado':DEFAULT_NOTICE_APPEARANCE.style;
+  return {
+    enabled:settings.get('reminders.enabled')==='1',
+    hour:valid?hour:14,minute:valid?minute:0,
+    appearance:{style,showTag:settings.get('reminders.content.showTag')!=='0'},
+  };
 }
 export async function getReminderSettings():Promise<Preferences>{
   return readPreferences();
@@ -64,7 +73,7 @@ async function resync():Promise<number>{
   await createChannel();
   const [orders,routes]=await Promise.all([listOrders(),listRoutes()]);
   const items=noticeInputs(orders,routes);
-  const next=planDailyAndPriority(items,new Date(),settings.hour,settings.minute);
+  const next=planDailyAndPriority(items,new Date(),settings.hour,settings.minute,settings.appearance);
   // A consulta não inclui nem modifica notificações de outros aplicativos/módulos.
   const requests=await Notifications.getAllScheduledNotificationsAsync();
   const owned=requests.filter(request=>request.content.data?.rotaOwner===OWNER);
@@ -112,6 +121,28 @@ export async function deactivateReminders():Promise<void>{
   await setPreference('reminders.enabled','0');
   await syncLocalReminders();
 }
+export async function saveNotificationAppearance(appearance:NoticeAppearance):Promise<void>{
+  if(!validNoticeAppearance(appearance))throw new Error('Preferências do aviso inválidas.');
+  const previous=await readPreferences();
+  const db=await getDatabase();
+  const write=async (value:NoticeAppearance)=>{
+    await db.withExclusiveTransactionAsync(async tx=>{
+      await tx.runAsync(`INSERT INTO app_settings(key,value)
+        VALUES('reminders.content.style',?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`,value.style);
+      await tx.runAsync(`INSERT INTO app_settings(key,value)
+        VALUES('reminders.content.showTag',?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`,value.showTag?'1':'0');
+    });
+  };
+  await write(appearance);
+  try{await syncLocalReminders();}
+  catch(e){
+    // Reverte apenas as preferências; não altera OS/rotas/histórico.
+    await write(previous.appearance);
+    throw e;
+  }
+}
 export async function chooseReminderTime(hour:number,minute:number):Promise<void>{
   if(!validReminderTime(hour,minute))throw new Error('Horário inválido.');
   const old=await readPreferences();
@@ -146,12 +177,13 @@ export async function scheduleReminderTest():Promise<Date>{
   const at=new Date(Date.now()+2*60*1000);
   await Notifications.scheduleNotificationAsync({
     content:{
-      title:'RotaManutenção • Aviso de teste',
-      body:'Este é o teste das notificações locais. Nenhuma OS foi alterada.',
+      title:'RotaManutenção • Teste de pontualidade',
+      body:`Programado para ${at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}. Compare com a hora de recebimento.`,
       data:{rotaOwner:TEST_OWNER,kind:'test'},
     },
-    trigger:{type:Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds:120,repeats:false,channelId:CHANNEL},
+    // O teste usa o mesmo disparador de data/hora dos lembretes normais.
+    trigger:{type:Notifications.SchedulableTriggerInputTypes.DATE,
+      date:at,channelId:CHANNEL},
   });
   const check=await Notifications.getAllScheduledNotificationsAsync();
   if(!check.some(x=>x.content.data?.rotaOwner===TEST_OWNER))
@@ -175,5 +207,5 @@ export async function getLocalReminderPreview():Promise<ReminderPreviewLine[]>{
   const settings=await readPreferences();
   const [orders,routes]=await Promise.all([listOrders(),listRoutes()]);
   return previewPlannedReminders(noticeInputs(orders,routes),new Date(),
-    settings.hour,settings.minute);
+    settings.hour,settings.minute,7,settings.appearance);
 }
