@@ -1,8 +1,8 @@
 # RotaManutenção — Android
 
-Aplicativo Android de manutenção industrial para uso **individual e 100% offline**.
-Versão atual em testes: **0.35.0** (acabamento visual Industrial Dark).
-Versão consolidada no GitHub (`main`): **0.34.0**, aprovada em teste de uso real.
+Aplicativo Android para manutenção industrial, **individual e 100% offline**.
+Versão estável no GitHub (`main`): **0.35.0 — Industrial Dark**.
+A versão 0.34 continua disponível no histórico como base estável anterior.
 
 ## Funcionalidades
 
@@ -10,19 +10,28 @@ Versão consolidada no GitHub (`main`): **0.34.0**, aprovada em teste de uso rea
 - Ordens de serviço: mecânica, elétrica, lubrificação, segurança e inspeção
 - Rotas e checklists, recorrência, agenda e foco do turno
 - Evidência fotográfica, registros de impedimentos e anomalias
-- Histórico de serviços, exportação de relatórios PDF
-- Lembretes locais no Android, com opção de permissões de alarmes
-- Backup JSON v11, verificação de backup e restauração confirmada
+- Histórico de serviços e relatórios PDF
+- Lembretes locais no Android, com configuração de permissões de alarmes
+- Backup JSON v11, verificação de arquivo e restauração local
 
 Sem login, sincronização, nuvem, servidor, supervisor ou telemetria.
 
 ## Interface
 
-Identidade Industrial Dark centralizada em `src/design31.ts` (cores, tamanho de
-toque, tipografia, espaçamento e status). As dez telas principais têm estilos
-padronizados, incluindo formulários, Agenda, calendário, relatórios e lembretes.
-O `tests/visualConsistency35.test.mjs` verifica essa regra automaticamente.
-O calendário segue a experiência 0.21 previamente aprovada, sem alteração de lógica.
+Identidade Industrial Dark centralizada em `src/design31.ts` (cores, tamanho
+de toque, tipografia, espaçamento e status). As dez telas principais usam
+estilos padronizados, incluindo formulários, Agenda, calendário, relatórios
+e lembretes. `tests/visualConsistency35.test.mjs` verifica essa regra.
+A Agenda mantém a lógica da experiência 0.21 aprovada anteriormente.
+
+## Validação e versão Android
+
+A 0.35 foi aprovada no aparelho Android pelo usuário. CI do GitHub:
+**233/233 testes**, TypeScript, exportação Android e SQLite smoke aprovados.
+APK de teste compilado com `versionCode=350` e pacote
+`br.com.rotamanutencao.qa`, assinatura de QA preservada.
+Aprovação neste aparelho não substitui testes de compatibilidade em
+outros dispositivos.
 
 ## Testes locais
 
@@ -35,23 +44,20 @@ python3 tests/sqlite_smoke.py
 npx expo export --platform android --output-dir dist
 ```
 
-Para gerar o APK de testes use o workflow
-`.github/workflows/android-apk-preview.yml` com `ROTA_PREVIEW=1`.
-A versão 0.35 usa `br.com.rotamanutencao.qa` / `versionCode=350` e a
-mesma assinatura QA das anteriores; o pacote de produção é diferente.
+O APK QA é gerado pelo workflow `.github/workflows/android-apk-preview.yml`
+com `ROTA_PREVIEW=1`. Pacote de produção é diferente do de QA.
 
 ## Atualizar com segurança
 
-1. Exportar um backup JSON e guardar uma cópia fora do aparelho.
-2. Instalar o APK QA mais recente **por cima** do QA instalado, sem desinstalar.
-3. Validar OS, TAG, rotas, fotos, agenda, lembretes e backup.
-4. Nunca limpar o armazenamento local para resolver erro de instalação.
+1. Exportar backup JSON e guardar uma cópia fora do aparelho.
+2. Instalar o novo APK QA **por cima**, sem desinstalar nem limpar dados.
+3. Conferir OS, TAG, rotas, fotos, agenda, lembretes e backup.
+4. Em caso de problema, não apagar o armazenamento local.
 
-Não confundir um APK com todos os testes passando com a validação em um Android real.
-O checklist final está em `docs/QA_VISUAL_0_35.md`.
+Checklist: `docs/QA_VISUAL_0_35.md`.
 
 ## Segurança no trabalho
 
 O aplicativo organiza registros, mas não substitui liberação de máquinas,
-procedimentos de bloqueio/etiquetagem (LOTO), APR ou procedimentos de segurança.
-Fotos e backup não são criptografados; não compartilhe dados confidenciais.
+LOTO, APR ou outros procedimentos de segurança.
+Fotos e backups não são criptografados; evite compartilhar dados confidenciais.
