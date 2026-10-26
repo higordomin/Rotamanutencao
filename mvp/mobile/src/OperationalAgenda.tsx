@@ -1,4 +1,4 @@
-import React,{useMemo,useState} from 'react';
+import React,{useEffect,useMemo,useState} from 'react';
 import {Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
 import type {WorkOrder} from './types';
 import type {Route} from './routes';
@@ -10,6 +10,8 @@ import {
   type AgendaEntry,type AgendaType,type AgendaSpecialty,type AgendaView,
 } from './operationalAgenda';
 import {agendaPreviewRows,agendaVisualLabel,agendaVisualStatus} from './agendaVisual';
+import {buildShiftFocus,shiftFocusPreview} from './shiftFocus';
+import {readWeeklyProductivity,type WeeklyProductivity} from './weeklyProductivity';
 
 const C={bg:'#08101E',panel:'#111E31',field:'#16273D',line:'#24394F',
   text:'#EFF6FF',muted:'#9CB0C8',blue:'#47B7F6',amber:'#FFD075',
@@ -77,6 +79,9 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
   const [backlogOpen,setBacklogOpen]=useState(false);
   const [moreScheduled,setMoreScheduled]=useState(false);
   const [moreBacklog,setMoreBacklog]=useState(false);
+  const [shiftMode,setShiftMode]=useState(false);
+  const [productivity,setProductivity]=useState<WeeklyProductivity|null>(null);
+  const [productivityError,setProductivityError]=useState(false);
   const today=localDate();
   const entries=useMemo(()=>buildAgendaEntries(orders,routes,today),[orders,routes,today]);
   const areas=useMemo(()=>agendaAreas(entries),[entries]);
@@ -84,6 +89,15 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
   const {scheduled,backlog}=useMemo(()=>agendaWindow(filtered,day,view),[filtered,day,view]);
   const counts=useMemo(()=>agendaDayCounts(filtered),[filtered]);
   const stats=useMemo(()=>agendaSummary(filtered,today),[filtered,today]);
+  const shift=useMemo(()=>buildShiftFocus(filtered,today),[filtered,today]);
+  useEffect(()=>{
+    if(!shiftMode)return;
+    let active=true;
+    void readWeeklyProductivity(today).then(result=>{
+      if(active){setProductivity(result);setProductivityError(false);}
+    }).catch(()=>{if(active){setProductivity(null);setProductivityError(true);}});
+    return()=>{active=false;};
+  },[shiftMode,orders,routes,today]);
   const week=useMemo(()=>weekRange(day),[day]);
   const page=pageFromDate(day);
   const grid=useMemo(()=>monthGrid(page),[page.year,page.month]);
@@ -109,6 +123,9 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
   };
   const mainRows=agendaPreviewRows(scheduled,moreScheduled);
   const backlogRows=agendaPreviewRows(backlog,moreBacklog);
+  const shiftRows=shiftFocusPreview(shift.entries,moreScheduled);
+  const currentRows=shiftMode?shiftRows:mainRows;
+  const currentCount=shiftMode?shift.total:scheduled.length;
 
   return <ScrollView style={s.bg} keyboardShouldPersistTaps="handled"
     contentContainerStyle={s.page}>
@@ -132,7 +149,39 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
       </View>
     </View>
 
-    <View style={s.calendarPanel}>
+    <View style={s.focusControls}>
+      <Text style={s.focusHelp}>Use a agenda tradicional ou foque no que exige ação.</Text>
+      <Pressable accessibilityRole="button" accessibilityState={{selected:shiftMode}}
+        accessibilityLabel={shiftMode?'Voltar ao calendário':'Ativar foco do turno'}
+        onPress={()=>{setShiftMode(v=>!v);setMoreScheduled(false);setMoreBacklog(false);}}
+        style={[s.focusButton,shiftMode&&s.focusButtonActive]}>
+        <Text style={[s.focusButtonText,shiftMode&&{color:C.bg}]}>
+          {shiftMode?'← Ver calendário':'⚡ Foco do turno'}
+        </Text>
+      </Pressable>
+    </View>
+    {shiftMode&&<View style={s.shiftPanel}>
+      <Text style={s.sectionTitle}>Prioridades do turno</Text>
+      <Text style={s.hint}>Uma linha por OS ou rota. Impedimentos exigem liberação;
+        esta tela não executa nem conclui serviços automaticamente.</Text>
+      <View style={s.focusNumbers}>
+        <Text style={s.focusMetric}>⚠ {shift.attention} ocorrência(s)</Text>
+        <Text style={s.focusMetric}>↻ {shift.overdue} atraso(s)</Text>
+        <Text style={s.focusMetric}>⛔ {shift.blocked} impedimento(s)</Text>
+        <Text style={s.focusMetric}>📅 {shift.dueToday} para hoje</Text>
+        <Text style={s.focusMetric}>↑ {shift.highSoon} alta(s) nos próximos 7 dias</Text>
+      </View>
+      <View style={s.weekSummary}>
+        <Text style={s.filterTitle}>Registros dos últimos 7 dias</Text>
+        {productivity?<Text style={s.weekText}>
+          ✓ {productivity.osCompleted} OS concluída(s) ·
+          ↻ {productivity.osPartial} execução(ões) parcial(is) ·
+          ⇢ {productivity.routesFinished} rota(s) finalizada(s)
+        </Text>:<Text style={s.hint}>{productivityError?'Não foi possível consultar os registros.':'Consultando registros locais…'}</Text>}
+        <Text style={s.hint}>Contagens reais do SQLite; não representam horas trabalhadas ou produtividade percentual.</Text>
+      </View>
+    </View>}
+    {!shiftMode&&<View style={s.calendarPanel}>
       <View style={s.calendarHeader}>
         <Pressable accessibilityRole="button" accessibilityLabel="Semana ou mês anterior"
           onPress={()=>move(-1)} style={s.arrow}>
@@ -195,25 +244,29 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
     <View style={s.listPanel}>
       <View style={s.listHeading}>
         <View style={{flex:1}}>
-          <Text style={s.sectionTitle}>{view==='day'?'Atividades do dia':
+          <Text style={s.sectionTitle}>{shiftMode?'Fila de prioridades':
+            view==='day'?'Atividades do dia':
             view==='week'?'Atividades da semana':'Atividades do mês'}</Text>
-          <Text style={s.smallDate}>
-            {view==='day'?brazilianDate(day):
+          <Text style={s.smallDate}>{shiftMode?'Atenção, vencidas, hoje e OS Alta próximas':
+            view==='day'?brazilianDate(day):
               `${brazilianDate(period.start)} a ${brazilianDate(period.end)}`}
           </Text>
         </View>
-        <Text style={s.total}>{scheduled.length}</Text>
+        <Text style={s.total}>{currentCount}</Text>
       </View>
-      {scheduled.length===0?<View style={s.empty}>
-        <Text style={s.emptyTitle}>Nenhuma atividade programada neste período.</Text>
-        <Text style={s.emptyDetail}>Selecione outro dia ou confira as pendências.</Text>
+      {currentCount===0?<View style={s.empty}>
+        <Text style={s.emptyTitle}>{shiftMode?
+          'Nenhuma pendência prioritária identificada.':'Nenhuma atividade programada neste período.'}</Text>
+        <Text style={s.emptyDetail}>{shiftMode?
+          'Confira o calendário para atividades futuras ou rotas avulsas.':
+          'Selecione outro dia ou confira as pendências.'}</Text>
       </View>:<View style={s.activityList}>
-        {mainRows.map(entry=><ActivityRow key={entry.kind+':'+entry.id} item={entry}
+        {currentRows.map(entry=><ActivityRow key={entry.kind+':'+entry.id} item={entry}
           onOpenRoute={onOpenRoute} onOpenOrder={onOpenOrder}/>)}
       </View>}
-      {!moreScheduled&&scheduled.length>mainRows.length&&
+      {!moreScheduled&&currentCount>currentRows.length&&
         <Pressable accessibilityRole="button" style={s.showAll} onPress={()=>setMoreScheduled(true)}>
-          <Text style={s.link}>Mostrar todas as {scheduled.length} atividades ›</Text>
+          <Text style={s.link}>Mostrar todas as {currentCount} atividades ›</Text>
         </Pressable>}
       <View style={s.bottomActions}>
         <Pressable accessibilityRole="button" accessibilityState={{expanded:filtersOpen}}
@@ -253,7 +306,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
       </View>}
     </View>
 
-    {backlog.length>0&&<View style={s.backlogPanel}>
+    {!shiftMode&&backlog.length>0&&<View style={s.backlogPanel}>
       <Pressable accessibilityRole="button" accessibilityState={{expanded:backlogOpen}}
         style={s.backlogToggle} onPress={()=>setBacklogOpen(x=>!x)}>
         <Text style={s.backlogTitle}>⚠ Pendências fora do período</Text>
@@ -270,7 +323,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
         </Pressable>}
       </>}
     </View>}
-    <Text style={s.hint}>A agenda mostra o próximo prazo cadastrado de cada OS ou rota. Não registra serviços nem cria recorrências futuras automaticamente.</Text>
+    <Text style={s.hint}>A agenda mostra apenas o próximo prazo cadastrado. Foco do turno é uma visão de prioridades, não uma escala de trabalho ou uma confirmação de serviços.</Text>
   </ScrollView>;
 }
 
@@ -278,6 +331,18 @@ const s=StyleSheet.create({
   bg:{flex:1,backgroundColor:C.bg},page:{padding:15,paddingBottom:72,gap:13},
   header:{gap:5,paddingVertical:4},heading:{color:C.text,fontSize:20,fontWeight:'900'},
   subheading:{color:C.muted,fontSize:12},
+  focusControls:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
+  focusHelp:{color:C.muted,fontSize:11,flex:1,lineHeight:16},
+  focusButton:{paddingHorizontal:12,paddingVertical:12,borderRadius:10,
+    borderWidth:1,borderColor:C.blue,backgroundColor:C.field,minHeight:44},
+  focusButtonActive:{backgroundColor:C.blue},
+  focusButtonText:{fontSize:12,color:C.blue,fontWeight:'800'},
+  shiftPanel:{backgroundColor:C.panel,borderRadius:13,borderWidth:1,borderColor:C.line,padding:13,gap:10},
+  focusNumbers:{flexDirection:'row',flexWrap:'wrap',gap:7},
+  focusMetric:{backgroundColor:C.field,color:C.text,fontSize:11,fontWeight:'700',
+    paddingHorizontal:9,paddingVertical:7,borderRadius:8,overflow:'hidden'},
+  weekSummary:{gap:6,borderTopWidth:1,borderTopColor:C.line,paddingTop:10},
+  weekText:{color:C.green,fontSize:12,lineHeight:19,fontWeight:'800'},
   metrics:{flexDirection:'row',gap:8},
   metric:{flex:1,alignItems:'center',justifyContent:'center',paddingVertical:13,
     minHeight:76,borderRadius:11,backgroundColor:C.panel,borderWidth:1,borderColor:C.line},
