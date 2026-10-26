@@ -78,7 +78,7 @@ export function buildDailyDigest(items:MaintenanceNotice[],day:string):{
   return {orders:orders.length,routes:routes.length,overdue,blocked,anomalies,
     categories,title:'RotaManutenção • Programação de hoje',body:chunks.join(' ').slice(0,450)};
 }
-function criticalKind(item:MaintenanceNotice,day:string):NoticeKind|null{
+function criticalKind(item:MaintenanceNotice,day:string):Exclude<NoticeKind,'daily'>|null{
   if(item.type==='route'&&(item.attentionCount??0)>0)return 'attention';
   if(item.type==='order'&&item.blocked)return 'blocked';
   if(item.dueDate && item.dueDate<day)return 'overdue';
