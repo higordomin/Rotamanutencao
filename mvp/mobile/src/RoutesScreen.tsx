@@ -18,10 +18,12 @@ import {ROUTE_INTERVALS,previewRouteDates,scheduleNeedsConfirmation} from './rou
 import {updateRouteSchedule} from './routes';
 import {routeProgress} from './quickRouteActions';
 import {filterExecutionItems,pagedExecutionItems,nextPendingItem,photosByRouteItem,type ExecutionFilter} from './routeExecutionView';
+import {INDUSTRIAL as THEME,INTERACTION} from './design31';
 import {createActionGuard} from './actionGuard';
 
-const c={bg:'#08101E',panel:'#111E31',field:'#16273D',line:'#24394F',text:'#EFF6FF',
-  muted:'#9CB0C8',blue:'#47B7F6',amber:'#FFD075',red:'#FF7D8B',green:'#5DD7AC'};
+const c={bg:THEME.background,panel:THEME.surface,field:THEME.elevated,
+  line:THEME.border,text:THEME.ink,muted:THEME.muted,blue:THEME.accent,
+  amber:THEME.caution,red:THEME.danger,green:THEME.success};
 function Btn({text,onPress,disabled=false,outline=false}:{text:string;onPress:()=>void;disabled?:boolean;outline?:boolean}){
   return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress}
     style={[s.btn,outline&&s.outline,disabled&&{opacity:.45}]}>
@@ -145,28 +147,54 @@ function RunItem({item,onSaved,disabled,photos,corrective,onCreateCorrective,onO
       finally{setWorking(false);}
     });
   };
+  const selectDetailed=(next:RouteRunItem['status'])=>{
+    setStatus(next);
+    setExpanded(true);
+  };
   return <View style={s.card}>
-    <Text style={s.title}>{item.position+1}. {item.point_title}</Text>
-    <Text style={s.sub}>{item.asset_label||'Equipamento removido do cadastro'}</Text>
-    <Text style={[s.sub,{color:item.status==='anomaly'||item.status==='skipped'?c.amber:item.status==='done'?c.green:c.muted}]}>
-      {item.status==='pending'?'○ Pendente':item.status==='done'?'✓ Executado':item.status==='anomaly'?'⚠ Anomalia':'— Não executado'}
+    <View style={s.runItemHeading}>
+      <View style={s.pointNumber}><Text style={s.pointNumberText}>{item.position+1}</Text></View>
+      <View style={{flex:1,gap:5}}>
+        <Text style={s.title}>{item.point_title}</Text>
+        <Text style={s.tagName} numberOfLines={2}>{item.asset_label||'Equipamento removido do cadastro'}</Text>
+      </View>
+    </View>
+    <Text style={[s.pointStatus,{color:item.status==='anomaly'||item.status==='skipped'?c.amber:item.status==='done'?c.green:c.muted}]}>
+      {item.status==='pending'?'○ Aguardando registro':item.status==='done'?'✓ Executado':item.status==='anomaly'?'⚠ Anomalia registrada':'— Não executado'}
     </Text>
     {!disabled&&<>
-      {item.status==='pending'&&<View style={{marginTop:10}}>
-        <View style={s.row}>
-          <Btn text={working?'Salvando...':'✓ Registrar executado'}
-            disabled={working||!pristine} onPress={()=>{void quickSave();}}/>
+      {item.status==='pending'&&!expanded&&<>
+        <Text style={s.stepLabel}>Qual foi o resultado neste ponto?</Text>
+        <View style={s.resultChoices}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Registrar ponto executado"
+            disabled={working||!pristine} onPress={()=>{void quickSave();}}
+            style={[s.resultChoice,{borderColor:c.green+'88',backgroundColor:c.green+'12'},
+              (working||!pristine)&&{opacity:.45}]}>
+            <Text style={[s.resultSymbol,{color:c.green}]}>✓</Text>
+            <Text style={s.resultName}>{working?'Salvando':'Executado'}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Registrar anomalia neste ponto"
+            disabled={working} onPress={()=>selectDetailed('anomaly')}
+            style={[s.resultChoice,{borderColor:c.amber+'88',backgroundColor:c.amber+'12'}]}>
+            <Text style={[s.resultSymbol,{color:c.amber}]}>⚠</Text>
+            <Text style={s.resultName}>Anomalia</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Registrar ponto não executado"
+            disabled={working} onPress={()=>selectDetailed('skipped')}
+            style={s.resultChoice}>
+            <Text style={s.resultSymbol}>—</Text>
+            <Text style={s.resultName}>Não feito</Text>
+          </Pressable>
         </View>
-        {!pristine&&<Text style={s.sub}>Há dados editados ou fotos não salvas. Salve os detalhes para preservá-los.</Text>}
-      </View>}
-      <View style={s.row}>
-        <Btn text={expanded?'Fechar detalhes':item.status==='pending'?'Registrar detalhes':'Editar registro'}
-          outline disabled={working} onPress={()=>setExpanded(v=>!v)}/>
-        {item.status==='pending'&&!expanded&&<>
-          <Btn text="⚠ Anomalia" outline disabled={working} onPress={()=>{setStatus('anomaly');setExpanded(true);}}/>
-          <Btn text="— Não executado" outline disabled={working} onPress={()=>{setStatus('skipped');setExpanded(true);}}/>
-        </>}
-      </View>
+        {!pristine&&<Text style={s.sub}>Há detalhes ou fotos editados. Abra os detalhes e salve para preservá-los.</Text>}
+        <Btn text="+ Adicionar foto ou observação" outline disabled={working}
+          onPress={()=>setExpanded(true)}/>
+      </>}
+      {item.status!=='pending'&&<Btn
+        text={expanded?'Fechar edição':'Editar este registro'} outline disabled={working}
+        onPress={()=>setExpanded(v=>!v)}/>}
+      {item.status==='pending'&&expanded&&<Btn text="← Voltar aos resultados"
+        outline disabled={working} onPress={()=>setExpanded(false)}/>}
       {expanded&&<>
       <View style={s.row}>
         {(['done','anomaly','skipped'] as const).map(st=><Pressable key={st}
@@ -610,8 +638,8 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
 }
 const s=StyleSheet.create({
  thumbnail:{width:96,height:78,borderRadius:8,backgroundColor:c.field},
- page:{padding:16,paddingBottom:65,gap:11},card:{backgroundColor:c.panel,borderRadius:14,borderWidth:1,borderColor:c.line,padding:15,gap:5},
- heading:{fontSize:17,fontWeight:'800',color:c.text,marginBottom:6},
+ page:{padding:16,paddingBottom:65,gap:11},card:{backgroundColor:c.panel,borderRadius:16,borderWidth:1,borderColor:c.line,padding:16,gap:9},
+ heading:{fontSize:21,fontWeight:'900',color:c.text,marginBottom:6},
  title:{fontSize:15,fontWeight:'800',color:c.text},
  label:{fontSize:12,fontWeight:'700',color:c.muted,marginBottom:6},
  sub:{fontSize:12,color:c.muted,lineHeight:18},
@@ -640,11 +668,25 @@ const s=StyleSheet.create({
    padding:13,flexDirection:'row',alignItems:'center',gap:10,minHeight:78},
  progressTrack:{marginTop:9,height:7,borderRadius:6,backgroundColor:c.field,overflow:'hidden'},
  progressBar:{height:7,backgroundColor:c.green,borderRadius:6},
- btn:{backgroundColor:c.blue,minHeight:41,borderRadius:10,paddingHorizontal:13,paddingVertical:10,justifyContent:'center',alignItems:'center'},
+ btn:{backgroundColor:c.blue,minHeight:INTERACTION.minTouch,borderRadius:11,
+   paddingHorizontal:14,paddingVertical:11,justifyContent:'center',alignItems:'center'},
  btnText:{color:c.bg,fontWeight:'800',fontSize:12},
  outline:{backgroundColor:c.field,borderColor:c.line,borderWidth:1},
- chip:{backgroundColor:c.field,borderRadius:9,borderWidth:1,borderColor:c.line,paddingVertical:10,paddingHorizontal:10},
+ chip:{backgroundColor:c.field,borderRadius:10,borderWidth:1,borderColor:c.line,
+   minHeight:44,justifyContent:'center',paddingVertical:10,paddingHorizontal:10},
  chipActive:{backgroundColor:c.blue,borderColor:c.blue},
  chipText:{color:c.text,fontSize:12,fontWeight:'700'},
  asset:{backgroundColor:c.field,borderRadius:8,padding:9,borderColor:c.line,borderWidth:1,marginTop:5},
+ runItemHeading:{flexDirection:'row',alignItems:'center',gap:11},
+ pointNumber:{width:41,height:41,borderRadius:12,backgroundColor:c.field,
+   borderColor:c.line,borderWidth:1,alignItems:'center',justifyContent:'center'},
+ pointNumberText:{fontSize:16,color:c.blue,fontWeight:'900'},
+ tagName:{fontSize:13,color:c.muted,lineHeight:19,fontWeight:'700'},
+ pointStatus:{fontSize:12,fontWeight:'800'},
+ stepLabel:{fontSize:13,color:c.text,fontWeight:'800',marginTop:7},
+ resultChoices:{flexDirection:'row',gap:7,marginTop:3},
+ resultChoice:{flex:1,minHeight:91,borderRadius:13,alignItems:'center',justifyContent:'center',
+   backgroundColor:c.field,borderWidth:1,borderColor:c.line,padding:7,gap:7},
+ resultSymbol:{fontSize:25,fontWeight:'900',color:c.muted},
+ resultName:{fontSize:12,fontWeight:'800',color:c.text,textAlign:'center'},
 });
