@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {INDUSTRIAL} from '../src/design31.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const config = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8')).expo;
@@ -21,5 +22,5 @@ test('adaptive foreground para Android é PNG 1024x1024', () => checkPng('adapti
 test('configuração Expo aponta para ícone e Android adaptive icon', () => {
   assert.equal(config.icon, './assets/icon.png');
   assert.equal(config.android.adaptiveIcon.foregroundImage, './assets/adaptive-icon.png');
-  assert.equal(config.android.adaptiveIcon.backgroundColor, '#08101E');
+  assert.equal(config.android.adaptiveIcon.backgroundColor, INDUSTRIAL.background);
 });

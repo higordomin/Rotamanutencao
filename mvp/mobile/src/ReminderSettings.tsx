@@ -7,9 +7,11 @@ import {activateReminders,chooseReminderTime,getReminderScheduleBreakdown,
 import {appearanceLabel,type NoticeAppearance,type NotificationStyle} from './notificationContent';
 import type {ReminderPreviewLine} from './reminderPreview';
 import {reminderTimeLabel} from './reminderPlan';
+import {INDUSTRIAL as THEME,INTERACTION,SPACING,TYPE,RADII} from './design31';
 
-const C={panel:'#111E31',border:'#24394F',bg:'#08101E',text:'#EFF6FF',
-  muted:'#9CB0C8',blue:'#47B7F6',green:'#5DD7AC',yellow:'#FFD075'};
+const C={panel:THEME.surface,field:THEME.elevated,border:THEME.border,
+  bg:THEME.background,text:THEME.ink,muted:THEME.muted,
+  blue:THEME.accent,green:THEME.success,yellow:THEME.caution};
 
 export function ReminderSettings(){
   const [enabled,setEnabled]=useState(false);
@@ -100,7 +102,7 @@ export function ReminderSettings(){
     }finally{setWorking(false);}
   };
   return <View style={s.card}>
-    <Text style={s.heading}>Lembretes locais de manutenção</Text>
+    <Text accessibilityRole="header" style={s.heading}>Lembretes locais de manutenção</Text>
     <Text style={s.note}>Um resumo diário da programação e alertas individuais somente para
       situações prioritárias: anomalias, impedimentos, atrasos e OS de prioridade Alta.
       Funciona sem internet, login ou envio de dados para servidores.</Text>
@@ -237,24 +239,24 @@ export function ReminderSettings(){
   </View>;
 }
 const s=StyleSheet.create({
-  card:{backgroundColor:C.panel,borderColor:C.border,borderWidth:1,borderRadius:14,padding:16,gap:10,marginVertical:10},
-  heading:{fontSize:17,fontWeight:'800',color:C.text},
-  note:{color:C.muted,fontSize:12,lineHeight:18},
+  card:{backgroundColor:C.panel,borderColor:C.border,borderWidth:1,borderRadius:RADII.card,padding:SPACING.lg,gap:SPACING.md,marginVertical:SPACING.sm},
+  heading:{fontSize:TYPE.section,fontWeight:'900',color:C.text},
+  note:{color:C.muted,fontSize:TYPE.caption,lineHeight:19},
   state:{fontSize:14,fontWeight:'800',marginTop:4},
   row:{flexDirection:'row',flexWrap:'wrap',gap:8},
-  clockButton:{flexDirection:'row',gap:12,alignItems:'center',backgroundColor:C.bg,
-    borderWidth:1,borderColor:C.blue,borderRadius:12,padding:12,minHeight:72},
+  clockButton:{flexDirection:'row',gap:12,alignItems:'center',backgroundColor:C.field,
+    borderWidth:1,borderColor:C.border,borderRadius:RADII.field,padding:14,minHeight:76},
   clockIcon:{fontSize:32,color:C.blue},
   clockTime:{fontSize:26,color:C.text,fontWeight:'900'},
-  action:{paddingHorizontal:14,minHeight:44,justifyContent:'center',borderRadius:10,backgroundColor:C.blue},
-  actionText:{color:C.bg,fontWeight:'800',fontSize:12},
-  testBox:{backgroundColor:C.bg,borderColor:C.border,borderWidth:1,borderRadius:12,padding:12,gap:9},
-  previewToggle:{minHeight:44,flexDirection:'row',alignItems:'center',
+  action:{paddingHorizontal:14,minHeight:INTERACTION.minTouch,justifyContent:'center',borderRadius:RADII.chip,backgroundColor:C.blue},
+  actionText:{color:C.bg,fontWeight:'800',fontSize:TYPE.caption},
+  testBox:{backgroundColor:C.field,borderColor:C.border,borderWidth:1,borderRadius:RADII.field,padding:SPACING.md,gap:9},
+  previewToggle:{minHeight:INTERACTION.minTouch,flexDirection:'row',alignItems:'center',
     justifyContent:'space-between',gap:9},
   previewLine:{borderTopWidth:1,borderTopColor:C.border,paddingVertical:7,gap:3},
-  appearanceChoice:{paddingHorizontal:14,minHeight:42,borderRadius:9,borderWidth:1,
-    borderColor:C.border,backgroundColor:C.bg,justifyContent:'center'},
+  appearanceChoice:{paddingHorizontal:14,minHeight:INTERACTION.minTouch,borderRadius:RADII.chip,borderWidth:1,
+    borderColor:C.border,backgroundColor:C.panel,justifyContent:'center'},
   appearanceActive:{backgroundColor:C.blue,borderColor:C.blue},
   exampleBox:{backgroundColor:C.panel,borderWidth:1,borderColor:C.border,
-    borderRadius:10,padding:12,gap:6},
+    borderRadius:RADII.field,padding:12,gap:6},
 });
