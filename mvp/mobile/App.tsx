@@ -123,6 +123,9 @@ export default function App() {
   const [routeHistory,setRouteHistory] = useState<AssetRouteHistoryItem[]>([]);
   const [routeHistoryLoading,setRouteHistoryLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [dialog, setDialog] = useState<ModalType>(null);
   // Hardware Back regressa das ferramentas ao menu Mais sem perder a tela atual.
   useEffect(()=>{
     if(!morePage(tab))return;
@@ -133,9 +136,6 @@ export default function App() {
     });
     return ()=>subscription.remove();
   },[tab,dialog]);
-  const [initError, setInitError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [dialog, setDialog] = useState<ModalType>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const modalScrollRef = useRef<ScrollView>(null);
