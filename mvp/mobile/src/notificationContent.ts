@@ -52,14 +52,14 @@ export function formatDailyNotification(
 ):{title:string;body:string}{
   if(!validNoticeAppearance(appearance))throw new Error('Preferências de aviso inválidas.');
   const title='RotaManutenção • Agenda do dia';
-  const scheduled=`${digest.orders} OS • ${digest.routes} rota(s)`;
+  const scheduled=`${digest.orders} OS e ${digest.routes} ${digest.routes===1?'rota':'rotas'} programadas para hoje`;
   const alerts=[
     ...(digest.overdue?[`${digest.overdue} atrasada(s)`]:[]),
     ...(digest.blocked?[`${digest.blocked} impedida(s)`]:[]),
     ...(digest.anomalies?[`${digest.anomalies} rota(s) com ocorrência`]:[]),
   ];
   if(!digest.orders&&!digest.routes&&!alerts.length)
-    return {title,body:'Sem OS ou rotas programadas para hoje.'};
+    return {title,body:'Nenhuma OS ou rota programada para hoje.'};
   const extra=appearance.style==='detalhado'&&digest.categories.length?
     ` • ${digest.categories.join('; ')}`:'';
   return {title,body:trim(
