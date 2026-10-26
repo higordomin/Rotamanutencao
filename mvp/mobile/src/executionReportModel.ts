@@ -1,5 +1,5 @@
 import type {Execution} from './types';
-import {pdfDate,pdfDocument,pdfEscape,pdfField,pdfPhotoFigures,type PdfPicture} from './professionalPdf';
+import {pdfDate,pdfDocument,pdfEscape,pdfField,pdfPhotoFigures,type PdfPicture} from './professionalPdf.ts';
 
 type ExecutionInfo=Pick<Execution,'id'|'order_title'|'result'|'executed_at'|'asset_label'|
   'category'|'notes'|'previous_due_date'|'next_due_date'>;
