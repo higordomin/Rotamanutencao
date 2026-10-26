@@ -1,5 +1,5 @@
 import type {RouteRun,RouteRunItem} from './routes';
-import {pdfDate,pdfDocument,pdfEscape,pdfField,pdfPhotoFigures,type PdfPicture} from './professionalPdf';
+import {pdfDate,pdfDocument,pdfEscape,pdfField,pdfPhotoFigures,type PdfPicture} from './professionalPdf.ts';
 
 type RouteReportItem=Pick<RouteRunItem,'id'|'point_title'|'asset_label'|'status'|'notes'|'position'>;
 type RouteReportRun=Pick<RouteRun,'id'|'route_title'|'started_at'|'finished_at'>;
