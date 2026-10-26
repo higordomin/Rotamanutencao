@@ -1,6 +1,6 @@
 import type {RouteRunItem,RouteRunPhoto} from './routes';
-import {assetSearchKey} from './assetCatalog';
-import {visibleRouteItems} from './quickRouteActions';
+import {assetSearchKey} from './assetCatalog.ts';
+import {visibleRouteItems} from './quickRouteActions.ts';
 
 export type ExecutionFilter='all'|'pending'|'attention';
 /** Filtros combináveis, sem mudar a ordem salva no SQLite. */
