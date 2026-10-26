@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "RotaManutenção",
+    "slug": "rotamanutencao",
+    "version": "0.34.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "br.com.rotamanutencao.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#08101E"
+      },
+      "versionCode": 340,
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ]
+    },
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Selecionar fotos para anexar aos registros de manutenção.",
+          "cameraPermission": "Fotografar evidências dos serviços de manutenção.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#47B7F6",
+          "defaultChannel": "rotamanutencao-lembretes-v2"
+        }
+      ]
+    ],
+    "icon": "./assets/icon.png"
+  }
+}
