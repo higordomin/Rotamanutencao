@@ -2,7 +2,7 @@
   "expo": {
     "name": "RotaManutenção",
     "slug": "rotamanutencao",
-    "version": "0.26.0",
+    "version": "0.27.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "android": {
@@ -11,7 +11,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#08101E"
       },
-      "versionCode": 260
+      "versionCode": 270
     },
     "plugins": [
       "expo-sqlite",
