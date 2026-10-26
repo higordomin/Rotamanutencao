@@ -239,7 +239,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
           </View>)}
         </View>
       </View>}
-    </View>
+    </View>}
 
     <View style={s.listPanel}>
       <View style={s.listHeading}>
