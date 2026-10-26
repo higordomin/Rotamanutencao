@@ -1,30 +1,37 @@
 # RotaManutenção
 
-Aplicativo Android individual e **offline** para rotas de manutenção, OS, inspeção,
-segurança, elétrica, mecânica e lubrificação. Sem login, nuvem, supervisão ou sincronização.
+Aplicativo Android individual, **offline**, para manutenção industrial:
+OS, rotas, inspeção, segurança, mecânica, elétrica e lubrificação.
+Sem login, nuvem, supervisão ou sincronização.
 
-## Versões de referência
-- **0.34 — em validação:** `feat/mvp034-primeiro-uso-acessibilidade`
-- **0.33 — CI aprovada:** `feat/mvp033-equipamentos-historico-dados`
-- **0.32 — CI aprovada:** `feat/mvp032-execucao-guiada-rotas-os`
-- **0.31 — CI aprovada:** `feat/mvp031-design-industrial-navegacao`
-- **0.30 — CI/APK aprovados:** `feat/mvp030-avisos-pontuais-personalizados`
-- **0.29 — CI aprovada:** `feat/mvp029-estabilizacao-confiabilidade`
-- **0.28 — CI aprovada:** `feat/mvp028-agenda-foco-turno-produtividade`
-- **0.27 — CI aprovada:** `feat/mvp027-relatorios-pdf-profissionais`
-- **0.26 — CI e compilação APK aprovadas:** `feat/mvp026-limpeza-segura-execucao-rapida`
-- **0.25 — última base com CI aprovada:** `feat/mvp025-catalogo-seletor-equipamentos`
-- **0.24 — referência anterior:** `feat/mvp024-anomalias-os-corretivas`
+## Código oficial e versão em teste
 
-O `main` ainda contém a estrutura inicial do repositório: não instalar APKs gerados
-a partir do `main` antigo esperando encontrar todas as funcionalidades modernas.
+- **`main` — 0.34.0 consolidada**: versão funcional testada em Android pelo usuário
+  e integrada no [PR #51](https://github.com/higordomin/Rotamanutencao/pull/51).
+- **0.35.0 — padronização visual:** branch
+  `feat/mvp035-padronizacao-visual-completa`, aguardando testes físicos.
+- Histórico das versões e etapas anteriores preservado nas branches e no GitHub.
+
+O `main` não é mais o esqueleto antigo: é a base consolidada em 0.34.
+As melhorias 0.35 são desenvolvidas separadamente para proteger essa base.
 
 ## Organização
-- Código: `mvp/mobile/` (React Native + Expo + SQLite).
-- Testes: `mvp/mobile/tests/`.
-- QA da 0.34: `mvp/mobile/docs/QA_PRIMEIRO_USO_0_34.md`.
-- CI ativa: `mobile-ci.yml` e `android-apk-preview.yml`.
-- A 0.34 mantém o backup JSON **v11**, completa o redesign com orientação contextual de primeiro uso e acessibilidade, sem remover registros nem introduzir login ou sincronização.
 
-Antes de atualizar, exporte e confira um backup salvo **fora** do aplicativo.
-Não desinstale nem limpe o armazenamento Android: dados do usuário são locais.
+- Aplicativo: `mvp/mobile/` (Expo/React Native e SQLite).
+- Tema Industrial Dark: `mvp/mobile/src/design31.ts`.
+- Testes: `mvp/mobile/tests/`.
+- QA 0.34: `mvp/mobile/docs/QA_PRIMEIRO_USO_0_34.md`.
+- QA 0.35: `mvp/mobile/docs/QA_VISUAL_0_35.md`.
+- CI: `.github/workflows/mobile-ci.yml`.
+- Android QA: `.github/workflows/android-apk-preview.yml`.
+
+## Segurança de atualizações
+
+Os dados, fotos, OS, rotas e históricos ficam exclusivamente no aparelho.
+**Antes de instalar um APK novo**, exporte e verifique um backup guardado fora
+do aplicativo; instale **por cima** da versão QA instalada, sem desinstalar
+nem limpar os dados. Os backups usam formato local JSON v11.
+
+A assinatura e ID QA (`br.com.rotamanutencao.qa`) são preservados. O APK de
+QA não é uma publicação Google Play, e não substitui liberação de serviço,
+LOTO, APR ou outros procedimentos de segurança industrial.
