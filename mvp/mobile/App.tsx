@@ -36,7 +36,7 @@ import {MoreMenu} from './src/MoreMenu';
 import {FirstUseGuide} from './src/FirstUseGuide';
 import {shouldShowFirstUseGuide} from './src/firstUse34';
 import {bottomTabs,visibleTab,morePage,type AppTab} from './src/navigation31';
-import {INDUSTRIAL as THEME,INTERACTION} from './src/design31';
+import {INDUSTRIAL as THEME,INTERACTION,SPACING,TYPE,RADII} from './src/design31';
 
 const COLORS = {
   bg: THEME.background, panel: THEME.surface, panel2: THEME.elevated,
@@ -67,7 +67,7 @@ function Action({label, onPress, secondary = false, dangerous = false, disabled 
   label: string; onPress: () => void; secondary?: boolean; dangerous?: boolean; disabled?: boolean;
 }) {
   return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress}
-    style={[styles.button, secondary && styles.secondaryButton, dangerous && {backgroundColor: '#573144'},
+    style={[styles.button, secondary && styles.secondaryButton, dangerous && {backgroundColor: COLORS.red+'30',borderColor:COLORS.red},
       disabled && {opacity: 0.45}]}>
     <Text style={[styles.buttonText, secondary && {color: COLORS.text}]}>{label}</Text>
   </Pressable>;
@@ -391,7 +391,7 @@ export default function App() {
         <Text style={styles.detail}>Arquivada em {new Date(order.archived_at!).toLocaleString('pt-BR')}</Text>
       </View>}
       {!!order.description && <Text style={styles.description}>{order.description}</Text>}
-      {isPartial && <View style={[styles.blockAlert, {backgroundColor: '#2B2B3B'}]}>
+      {isPartial && <View style={[styles.blockAlert, {backgroundColor: COLORS.panel2}]}>
         <Text style={{color: COLORS.yellow, fontWeight: '800'}}>↻ EXECUÇÃO PARCIAL — PENDÊNCIA ABERTA</Text>
         <Text style={{color: COLORS.text, marginTop: 4}}>{order.partial_reason}</Text>
       </View>}
@@ -959,7 +959,7 @@ const styles = StyleSheet.create({
     paddingVertical:7,backgroundColor:COLORS.panel,borderRadius:999},
   localDot:{width:7,height:7,backgroundColor:COLORS.green,borderRadius:7},
   localText:{fontSize:11,color:COLORS.muted,fontWeight:'700'},
-  scroll: {padding: 17, paddingBottom: 45},
+  scroll: {padding:SPACING.screen,paddingBottom:56},
   hero: {backgroundColor: COLORS.panel2, padding: 19, borderRadius: 18, borderWidth: 1, borderColor: COLORS.border},
   heroEyebrow: {color: COLORS.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1},
   heroTitle: {color: COLORS.text, fontWeight: '800', fontSize: 23, marginTop: 9},
@@ -972,21 +972,21 @@ const styles = StyleSheet.create({
   button: {backgroundColor: COLORS.accent, borderRadius: INTERACTION.smallRadius,
     paddingVertical: 10, paddingHorizontal: 13,
     alignItems: 'center', justifyContent: 'center', minHeight: INTERACTION.minTouch},
-  secondaryButton: {backgroundColor: COLORS.panel2, borderColor: COLORS.border, borderWidth: 1},
+  secondaryButton: {backgroundColor:COLORS.panel2,borderColor:COLORS.border,borderWidth:1},
   buttonText: {color: COLORS.bg, fontWeight: '800', fontSize: 12},
-  sectionTitle: {color: COLORS.text, fontSize: 20, fontWeight: '900'},
-  card: {padding: 16, backgroundColor: COLORS.panel, borderRadius: INTERACTION.radius, marginTop: 11, borderWidth: 1,
+  sectionTitle: {color:COLORS.text,fontSize:TYPE.section,fontWeight:'900'},
+  card: {padding:SPACING.lg,backgroundColor:COLORS.panel,borderRadius:RADII.card,marginTop:SPACING.md,borderWidth:1,
     borderColor: COLORS.border},
-  cardTitle: {fontSize: 15, fontWeight: '800', color: COLORS.text, lineHeight: 21},
-  detail: {fontSize: 12, color: COLORS.muted, marginTop: 5},
-  description: {fontSize: 13, color: COLORS.muted, lineHeight: 20, marginTop: 11},
+  cardTitle: {fontSize:TYPE.bodyLarge,fontWeight:'800',color:COLORS.text,lineHeight:22},
+  detail: {fontSize:TYPE.caption,color:COLORS.muted,marginTop:5,lineHeight:18},
+  description: {fontSize:TYPE.body,color:COLORS.muted,lineHeight:21,marginTop:SPACING.sm},
   chips: {flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 15},
   pill: {borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 5, alignSelf: 'flex-start'},
   cardActions: {flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 16},
   pageHeading: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8},
   empty: {padding: 17, marginTop: 10, color: COLORS.muted, borderWidth: 1, borderStyle: 'dashed',
     borderColor: COLORS.border, borderRadius: 12},
-  hint: {fontSize: 11, color: COLORS.muted, lineHeight: 16, marginTop: 13},
+  hint: {fontSize:TYPE.caption,color:COLORS.muted,lineHeight:18,marginTop:SPACING.md},
   nav: {flexDirection:'row',borderTopWidth:1,borderTopColor:COLORS.border,
     paddingTop:7,paddingBottom:10,backgroundColor:COLORS.panel},
   navItem: {flex:1,alignItems:'center',paddingTop:2,minHeight:58,justifyContent:'center',gap:2},
@@ -994,23 +994,24 @@ const styles = StyleSheet.create({
   navIconActive:{backgroundColor:COLORS.accent+'20'},
   navIcon: {fontSize:21,color:COLORS.muted,fontWeight:'700'},
   navLabel: {fontSize:11,color:COLORS.muted,fontWeight:'700'},
-  modalBackdrop: {flex: 1, justifyContent: 'flex-end', backgroundColor: '#02060EBB'},
+  modalBackdrop: {flex: 1, justifyContent: 'flex-end', backgroundColor: COLORS.bg+'CC'},
   modalCard: {padding: 20, paddingTop: 19, backgroundColor: COLORS.panel, borderTopLeftRadius: 24,
     borderTopRightRadius: 24, height: '92%', width: '100%', maxHeight: '93%', borderWidth: 1, borderColor: COLORS.border},
   modalHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 21},
-  fieldLabel: {color: COLORS.text, fontSize: 12, fontWeight: '700', marginBottom: 8},
-  dateField: {backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 10, minHeight: 55, paddingHorizontal: 13, alignItems: 'center',
+  fieldLabel: {color:COLORS.text,fontSize:TYPE.body,fontWeight:'700',marginBottom:SPACING.sm},
+  dateField: {backgroundColor:COLORS.panel2,borderWidth:1,borderColor:COLORS.border,
+    borderRadius:RADII.field,minHeight:56,paddingHorizontal:14,alignItems:'center',
     flexDirection: 'row', justifyContent: 'space-between', marginBottom: 18},
   dateFieldText: {color: COLORS.text, fontSize: 16, fontWeight: '700'},
   dateFieldHint: {color: COLORS.accent, fontSize: 12, fontWeight: '700'},
-  field: {borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-    backgroundColor: COLORS.bg, paddingHorizontal: 13, paddingVertical: 11, color: COLORS.text, fontSize: 14},
-  choice: {borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingVertical: 9, paddingHorizontal: 12},
+  field: {borderWidth:1,borderColor:COLORS.border,borderRadius:RADII.field,
+    backgroundColor:COLORS.panel2,paddingHorizontal:14,paddingVertical:12,color:COLORS.text,fontSize:TYPE.body,minHeight:INTERACTION.minTouch},
+  choice: {borderWidth:1,borderColor:COLORS.border,borderRadius:RADII.chip,
+    backgroundColor:COLORS.panel2,paddingVertical:11,paddingHorizontal:12,minHeight:INTERACTION.minTouch,justifyContent:'center'},
   choiceActive: {backgroundColor: COLORS.accent, borderColor: COLORS.accent},
-  photoRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12},
+  photoRow: {flexDirection:'row',flexWrap:'wrap',gap:SPACING.sm,marginTop:SPACING.md},
   thumb: {width: 76, height: 76, borderRadius: 9, backgroundColor: COLORS.panel2},
-  blockAlert: {padding: 12, backgroundColor: '#42351E', borderRadius: 10, marginTop: 12, borderWidth: 1, borderColor: '#8D7040'},
+  blockAlert: {padding:SPACING.md,backgroundColor:COLORS.yellow+'14',borderRadius:RADII.field,marginTop:SPACING.md,borderWidth:1,borderColor:COLORS.yellow+'70'},
   searchField: {borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 14,
     minHeight:48,color:COLORS.text, backgroundColor: COLORS.panel2, marginTop:14,fontSize:15},
   filters: {flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12, marginBottom: 8},
