@@ -16,7 +16,8 @@ import {localDate} from './logic';
 import {routePlanInput,routePlanningState} from './routeSchedule';
 import {ROUTE_INTERVALS,previewRouteDates,scheduleNeedsConfirmation} from './routeProgramming';
 import {updateRouteSchedule} from './routes';
-import {routeProgress,visibleRouteItems} from './quickRouteActions';
+import {routeProgress} from './quickRouteActions';
+import {filterExecutionItems,pagedExecutionItems,nextPendingItem,photosByRouteItem,type ExecutionFilter} from './routeExecutionView';
 
 const c={bg:'#08101E',panel:'#111E31',field:'#16273D',line:'#24394F',text:'#EFF6FF',
   muted:'#9CB0C8',blue:'#47B7F6',amber:'#FFD075',red:'#FF7D8B',green:'#5DD7AC'};
@@ -150,8 +151,12 @@ function RunItem({item,onSaved,disabled,photos,corrective,onCreateCorrective,onO
         {!pristine&&<Text style={s.sub}>Há dados editados ou fotos não salvas. Salve os detalhes para preservá-los.</Text>}
       </View>}
       <View style={s.row}>
-        <Btn text={expanded?'Fechar detalhes':item.status==='pending'?'Registrar com detalhes / anomalia':'Editar registro'}
+        <Btn text={expanded?'Fechar detalhes':item.status==='pending'?'Registrar detalhes':'Editar registro'}
           outline disabled={working} onPress={()=>setExpanded(v=>!v)}/>
+        {item.status==='pending'&&!expanded&&<>
+          <Btn text="⚠ Anomalia" outline disabled={working} onPress={()=>{setStatus('anomaly');setExpanded(true);}}/>
+          <Btn text="— Não executado" outline disabled={working} onPress={()=>{setStatus('skipped');setExpanded(true);}}/>
+        </>}
       </View>
       {expanded&&<>
       <View style={s.row}>
@@ -250,7 +255,9 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   const [anomaliesOpen,setAnomaliesOpen]=useState(false);
   const [selected,setSelected]=useState<string|null>(null);
   const [activeRun,setActiveRun]=useState<string|null>(null);
-  const [runFilter,setRunFilter]=useState<'all'|'pending'|'attention'>('all');
+  const [runFilter,setRunFilter]=useState<ExecutionFilter>('all');
+  const [runSearch,setRunSearch]=useState('');
+  const [runPageSize,setRunPageSize]=useState(15);
   const [name,setName]=useState(''),[area,setArea]=useState('');
   const [period,setPeriod]=useState('0'),[firstDue,setFirstDue]=useState(localDate());
   const [editingSchedule,setEditingSchedule]=useState(false);
@@ -295,8 +302,12 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   const routeInProgress=runs.find(r=>r.route_id===selected&&r.finished_at===null);
   const {pending,attention}=routeProgress(items);
   // Em rota finalizada os filtros de apontamento não aparecem; mostrar sempre o histórico completo.
-  const filteredItems=useMemo(()=>visibleRouteItems(items,run?.finished_at?'all':runFilter),
-    [items,runFilter,run?.finished_at]);
+  const filteredItems=useMemo(()=>filterExecutionItems(items,run?.finished_at?'all':runFilter,runSearch),
+    [items,runFilter,run?.finished_at,runSearch]);
+  const pagedItems=useMemo(()=>pagedExecutionItems(filteredItems,runPageSize),[filteredItems,runPageSize]);
+  const nextPending=useMemo(()=>nextPendingItem(items),[items]);
+  const photosByItem=useMemo(()=>photosByRouteItem(savedPhotos),[savedPhotos]);
+  const correctivesByItem=useMemo(()=>new Map(correctives.map(link=>[link.item_id,link])),[correctives]);
   const execute=async(action:()=>Promise<void>)=>{
     if(busy)return;
     setBusy(true);
@@ -310,7 +321,8 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
         <View style={{flex:1}}><Text style={s.heading}>Rotas de manutenção</Text>
           <Text style={s.sub}>Checklists offline • rotas programadas</Text></View>
         {(selected||activeRun)&&<Btn text="← Voltar" outline onPress={()=>{
-          if(activeRun)setActiveRun(null);else setSelected(null);setRunFilter('all');setItems([]);setSavedPhotos([]);
+          if(activeRun)setActiveRun(null);else setSelected(null);
+          setRunFilter('all');setRunSearch('');setRunPageSize(15);setItems([]);setSavedPhotos([]);
         }}/>}
       </View>
       {activeRun&&run?<>
@@ -329,27 +341,43 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
               <Btn text="Finalizar rota" disabled={pending>0||busy} onPress={()=>{void execute(async()=>{await finishRouteRun(run.id);await refresh();});}}/>}
           </View>
         </View>
-        {!run.finished_at&&<View style={s.filterCard}>
-          <Text style={s.label}>Filtrar pontos</Text>
-          <View style={s.row}>
-            <Btn text={`Todos (${items.length})`} outline={runFilter!=='all'} onPress={()=>setRunFilter('all')}/>
-            <Btn text={`Pendentes (${pending})`} outline={runFilter!=='pending'} onPress={()=>setRunFilter('pending')}/>
-            <Btn text={`Ocorrências (${attention})`} outline={runFilter!=='attention'} onPress={()=>setRunFilter('attention')}/>
-          </View>
+        <View style={s.filterCard}>
+          <Text style={s.label}>Localizar ponto na rota</Text>
+          <TextInput accessibilityLabel="Buscar ponto ou equipamento da rota"
+            placeholder="Ponto, equipamento ou TAG..." placeholderTextColor={c.muted}
+            value={runSearch} onChangeText={v=>{setRunSearch(v);setRunPageSize(15);}}
+            style={s.input}/>
+          {!run.finished_at&&<>
+            <View style={s.row}>
+              <Btn text={`Todos (${items.length})`} outline={runFilter!=='all'}
+                onPress={()=>{setRunFilter('all');setRunPageSize(15);}}/>
+              <Btn text={`Pendentes (${pending})`} outline={runFilter!=='pending'}
+                onPress={()=>{setRunFilter('pending');setRunPageSize(15);}}/>
+              <Btn text={`Ocorrências (${attention})`} outline={runFilter!=='attention'}
+                onPress={()=>{setRunFilter('attention');setRunPageSize(15);}}/>
+            </View>
+            {nextPending&&<Btn outline text={`Ver próximo pendente: ${nextPending.point_title.slice(0,45)}`}
+              onPress={()=>{setRunSearch(nextPending.point_title);
+                setRunFilter('pending');setRunPageSize(15);}}/>}
+          </>}
+          <Text style={s.sub}>Exibindo {Math.min(filteredItems.length,runPageSize)} de {filteredItems.length} ponto(s) encontrados.</Text>
         </View>}
         {filteredItems.length===0&&<Text style={s.note}>
           {runFilter==='pending'?'Nenhum ponto pendente neste momento.':
             runFilter==='attention'?'Nenhuma anomalia ou ponto não executado registrado.':
             'Esta execução ainda não contém pontos.'}
         </Text>}
-        {filteredItems.map(item=><RunItem key={item.id+':'+(item.recorded_at??'pending')}
+        {pagedItems.map(item=><RunItem key={item.id+':'+(item.recorded_at??'pending')}
           item={item} disabled={!!run.finished_at}
-          photos={savedPhotos.filter(photo=>photo.item_id===item.id)}
-          corrective={correctives.find(link=>link.item_id===item.id)}
+          photos={photosByItem.get(item.id)??[]}
+          corrective={correctivesByItem.get(item.id)}
           onCreateCorrective={async(id,category,priority)=>{
             await createCorrectiveOrder(id,category,priority);await refresh();onDataChanged?.();
           }}
           onOpenCorrective={onOpenCorrective} onSaved={refresh}/>)}
+        {filteredItems.length>runPageSize&&<Btn outline
+          text={`Carregar mais pontos (${filteredItems.length-runPageSize} restantes)`}
+          onPress={()=>setRunPageSize(size=>size+15)}/>}
       </>:selected&&current?<>
         <View style={s.card}>
           <Text style={s.title}>{current.title}</Text>
@@ -395,7 +423,8 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
             <Btn disabled={busy||(!routeInProgress&&points.length===0)}
               text={routeInProgress?'▶ Continuar rota':'▶ Iniciar rota'} onPress={()=>{void execute(async()=>{
                 const id=routeInProgress?.id??await startRouteRun(selected);
-                setRunFilter('pending');setActiveRun(id);setItems(await listRunItems(id));
+                setRunFilter('pending');setRunSearch('');setRunPageSize(15);
+                setActiveRun(id);setItems(await listRunItems(id));
               });}}/>
             <Btn outline text="Duplicar como modelo" disabled={busy} onPress={()=>Alert.alert(
               'Duplicar esta rota?',
@@ -418,7 +447,10 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
         {historyOpen&&runs.filter(r=>r.route_id===selected).slice(0,8).map(r=><View key={r.id} style={s.compactCard}>
           <Text style={s.title}>Execução em {new Date(r.started_at).toLocaleString('pt-BR')}</Text>
           <Text style={s.sub}>{r.finished_at?'Finalizada':'Em andamento'}</Text>
-          <Btn outline text={r.finished_at?'Ver relatório':'Continuar execução'} onPress={()=>{setRunFilter('all');setActiveRun(r.id);void listRunItems(r.id).then(setItems);}}/>
+          <Btn outline text={r.finished_at?'Ver relatório':'Continuar execução'} onPress={()=>{
+            setRunFilter(r.finished_at?'all':'pending');setRunSearch('');setRunPageSize(15);
+            setActiveRun(r.id);void listRunItems(r.id).then(setItems);
+          }}/>
         </View>)}
         <Text style={s.heading}>Pontos cadastrados ({points.length})</Text>
         <Text style={s.hint}>Edite a atividade ou use ↑ ↓ para definir a sequência da próxima execução. Os históricos não mudam.</Text>
