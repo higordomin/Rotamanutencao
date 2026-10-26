@@ -7,7 +7,7 @@ import {moreDestinations,type AppTab} from './navigation31';
 export function MoreMenu({onOpen}:{onOpen:(tab:AppTab)=>void}){
   return <View style={s.page}>
     <Text style={s.eyebrow}>FERRAMENTAS</Text>
-    <Text style={s.heading}>Mais opções</Text>
+    <Text accessibilityRole="header" style={s.heading}>Mais opções</Text>
     <Text style={s.help}>Equipamentos, histórico e informações do aplicativo em um só lugar.</Text>
     <View style={s.group}>
       {moreDestinations.map((destination,index)=><Pressable
