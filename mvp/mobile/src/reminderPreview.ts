@@ -1,6 +1,6 @@
 import type {WorkOrder} from './types';
 import type {Route} from './routes';
-import {planDailyAndPriority,type MaintenanceNotice,type PlannedNotice} from './dailyNoticePlan';
+import {planDailyAndPriority,type MaintenanceNotice,type PlannedNotice} from './dailyNoticePlan.ts';
 
 export type ReminderPreviewLine={
   key:string;kind:PlannedNotice['kind'];at:string;title:string;body:string;
