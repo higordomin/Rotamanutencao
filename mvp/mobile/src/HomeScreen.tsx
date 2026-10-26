@@ -3,7 +3,7 @@ import {Pressable,StyleSheet,Text,View} from 'react-native';
 import {brazilianDate} from './calendar';
 import {localDate} from './logic';
 import {buildHomeOverview,homeEntryStatus} from './homeOverview';
-import {INDUSTRIAL as C,INTERACTION} from './design31';
+import {INDUSTRIAL as C,INTERACTION,SPACING,TYPE,RADII} from './design31';
 import type {WorkOrder} from './types';
 import type {Route} from './routes';
 
@@ -118,17 +118,17 @@ export function HomeScreen({orders,routes,onOpenAgenda,onNewOrder,onOpenRoute,on
 }
 
 const s=StyleSheet.create({
-  page:{gap:16,paddingBottom:22},
+  page:{gap:SPACING.lg,paddingBottom:SPACING.xxl},
   intro:{gap:7,paddingTop:6},
   eyebrow:{fontSize:11,color:C.accent,letterSpacing:1,fontWeight:'900'},
-  heading:{fontSize:26,lineHeight:32,fontWeight:'900',color:C.ink},
-  help:{color:C.muted,fontSize:14,lineHeight:21},
+  heading:{fontSize:TYPE.hero,lineHeight:32,fontWeight:'900',color:C.ink},
+  help:{color:C.muted,fontSize:TYPE.body,lineHeight:21},
   metrics:{flexDirection:'row',gap:9},
   metric:{flex:1,minHeight:89,backgroundColor:C.surface,borderColor:C.border,
     borderWidth:1,borderRadius:15,alignItems:'center',justifyContent:'center',gap:4,padding:8},
-  metricValue:{fontSize:27,fontWeight:'900',color:C.ink},
+  metricValue:{fontSize:TYPE.number,fontWeight:'900',color:C.ink},
   metricName:{fontSize:12,fontWeight:'700',color:C.muted},
-  featured:{padding:18,borderRadius:18,backgroundColor:C.surface,borderWidth:1,
+  featured:{padding:SPACING.xl,borderRadius:RADII.major,backgroundColor:C.surface,borderWidth:1,
     borderColor:C.border,gap:10},
   cardTop:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8},
   sectionEyebrow:{fontSize:10,color:C.accent,fontWeight:'900',letterSpacing:1.1},
@@ -144,7 +144,7 @@ const s=StyleSheet.create({
   empty:{padding:18,borderRadius:17,backgroundColor:C.surface,borderWidth:1,
     borderColor:C.border,gap:10},
   emptyHeading:{color:C.success,fontSize:17,fontWeight:'900'},
-  moreGroup:{gap:8},
+  moreGroup:{gap:SPACING.sm},
   rowBetween:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
   sectionTitle:{color:C.ink,fontSize:17,fontWeight:'900'},
   inlineLink:{minHeight:44,justifyContent:'center',paddingHorizontal:8},
@@ -156,7 +156,7 @@ const s=StyleSheet.create({
   nextMeta:{color:C.muted,fontSize:12},
   chevron:{fontSize:25,color:C.accent},
   actions:{flexDirection:'row',gap:9},
-  secondary:{flex:1,minHeight:INTERACTION.minTouch,borderRadius:INTERACTION.smallRadius,
+  secondary:{flex:1,minHeight:INTERACTION.minTouch,borderRadius:RADII.field,
     borderColor:C.border,backgroundColor:C.elevated,borderWidth:1,
     alignItems:'center',justifyContent:'center',padding:10},
   secondaryText:{color:C.ink,fontSize:13,fontWeight:'800'},
