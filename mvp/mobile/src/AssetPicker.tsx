@@ -46,7 +46,7 @@ export function AssetPicker({assets,value,onChange,label='Equipamento / TAG',all
     <Modal visible={open} animationType="slide" onRequestClose={close}>
       <SafeAreaView style={styles.modal}>
         <View style={styles.header}>
-          <View style={{flex:1}}><Text style={styles.heading}>Qual equipamento?</Text>
+          <View style={{flex:1}}><Text accessibilityRole="header" style={styles.heading}>Qual equipamento?</Text>
             <Text style={styles.sub}>Busque pelo código TAG, nome ou setor · {assets.length} cadastrados</Text></View>
           <Pressable accessibilityRole="button" accessibilityLabel="Cancelar seleção de equipamento"
             style={styles.outline} onPress={close}><Text style={styles.link}>Cancelar</Text></Pressable>
