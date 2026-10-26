@@ -10,6 +10,7 @@ import {addRoutePoint,createRoute,deleteRoute,deleteRoutePoint,finishRouteRun,
   type Route,type RoutePoint,type RouteRun,type RouteRunItem,type RouteRunPhoto} from './routes';
 import {exportRoutePdf} from './routeReport';
 import {CalendarPicker} from './CalendarPicker';
+import {AssetPicker} from './AssetPicker';
 import {brazilianDate} from './calendar';
 import {localDate} from './logic';
 import {routePlanInput,routePlanningState} from './routeSchedule';
@@ -255,7 +256,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   const [editingSchedule,setEditingSchedule]=useState(false);
   const [editPeriod,setEditPeriod]=useState('0'),[editDue,setEditDue]=useState(localDate());
   const [calendarMode,setCalendarMode]=useState<'new'|'edit'|null>(null);
-  const [assetId,setAssetId]=useState<string|null>(null),[assetSearch,setAssetSearch]=useState('');
+  const [assetId,setAssetId]=useState<string|null>(null);
   const [task,setTask]=useState('');
   const [createOpen,setCreateOpen]=useState(false);
   const [addPointOpen,setAddPointOpen]=useState(false);
@@ -265,7 +266,6 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   const [editPointId,setEditPointId]=useState<string|null>(null);
   const [editTask,setEditTask]=useState('');
   const [editAssetId,setEditAssetId]=useState<string|null>(null);
-  const [editAssetSearch,setEditAssetSearch]=useState('');
   const [busy,setBusy]=useState(false);
   const refresh=useCallback(async()=>{
     const [a,b,occurrences]=await Promise.all([listRoutes(),listRouteRuns(),listRouteAnomalies()]);
@@ -293,12 +293,6 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   const todayCount=routes.filter(r=>routePlanningState(r)==='today').length;
   const run=runs.find(r=>r.id===activeRun);
   const routeInProgress=runs.find(r=>r.route_id===selected&&r.finished_at===null);
-  const visible=useMemo(()=>assets.filter(a=>[a.code,a.name,a.area].join(' ').toLowerCase().includes(assetSearch.trim().toLowerCase())).slice(0,12),[assets,assetSearch]);
-  const visibleEditAssets=useMemo(()=>{
-    const list=assets.filter(a=>[a.code,a.name,a.area].join(' ').toLowerCase().includes(editAssetSearch.trim().toLowerCase())).slice(0,12);
-    const selectedAsset=assets.find(a=>a.id===editAssetId);
-    return selectedAsset&&!list.some(a=>a.id===selectedAsset.id)?[selectedAsset,...list].slice(0,13):list;
-  },[assets,editAssetSearch,editAssetId]);
   const {pending,attention}=routeProgress(items);
   // Em rota finalizada os filtros de apontamento não aparecem; mostrar sempre o histórico completo.
   const filteredItems=useMemo(()=>visibleRouteItems(items,run?.finished_at?'all':runFilter),
@@ -458,7 +452,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
               disabled={busy||!!routeInProgress} onPress={()=>{
                 if(editPointId===p.id){setEditPointId(null);return;}
                 setEditPointId(p.id);setEditTask(p.title);setEditAssetId(p.asset_id);
-                setEditAssetSearch('');setAddPointOpen(false);
+                setAddPointOpen(false);
               }}/>
             <Btn outline text="Remover" disabled={busy||!!routeInProgress}
               onPress={()=>Alert.alert('Remover ponto?',
@@ -471,15 +465,8 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
           {editPointId===p.id&&<View style={s.editor}>
             <Input label="Atividade do ponto *" value={editTask} onChange={setEditTask}
               placeholder="Ex.: Inspecionar proteção do motor"/>
-            <Input label="Buscar equipamento / TAG" value={editAssetSearch} onChange={setEditAssetSearch}/>
-            {visibleEditAssets.map(a=><Pressable key={a.id} accessibilityRole="button"
-              accessibilityState={{selected:editAssetId===a.id}}
-              style={[s.asset,editAssetId===a.id&&{borderColor:c.blue}]}
-              onPress={()=>setEditAssetId(a.id)}>
-              <Text style={s.note}>{editAssetId===a.id?'●':'○'} {a.code||'Sem TAG'} · {a.name}</Text>
-              <Text style={s.sub}>{a.area}</Text>
-            </Pressable>)}
-            {!visibleEditAssets.length&&<Text style={s.sub}>Nenhum equipamento encontrado.</Text>}
+            <AssetPicker label="Equipamento deste ponto" assets={assets}
+              value={editAssetId} onChange={setEditAssetId} disabled={busy||!!routeInProgress}/>
             <View style={s.row}><Btn text="Salvar alterações"
               disabled={busy||!!routeInProgress||!editAssetId||!editTask.trim()}
               onPress={()=>{void execute(async()=>{
@@ -494,16 +481,11 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
           disabled={busy||!!routeInProgress} onPress={()=>{setEditPointId(null);setAddPointOpen(x=>!x);}}/>
         {addPointOpen&&<View style={s.card}>
           <Text style={s.title}>Novo ponto da rota</Text>
-          <Input label="Buscar equipamento / TAG" value={assetSearch} onChange={setAssetSearch}/>
-          {visible.map(a=><Pressable key={a.id} style={[s.asset,assetId===a.id&&{borderColor:c.blue}]}
-            accessibilityRole="button" accessibilityState={{selected:assetId===a.id}} onPress={()=>setAssetId(a.id)}>
-            <Text style={s.note}>{assetId===a.id?'●':'○'} {a.code||'Sem TAG'} · {a.name}</Text>
-            <Text style={s.sub}>{a.area}</Text>
-          </Pressable>)}
-          {!visible.length&&<Text style={s.sub}>Cadastre um equipamento na aba Ativos antes de adicionar pontos.</Text>}
+          <AssetPicker label="Equipamento deste ponto" assets={assets}
+            value={assetId} onChange={setAssetId} disabled={busy||!!routeInProgress}/>
           <Input label="Atividade do ponto *" value={task} onChange={setTask} placeholder="Ex.: Inspecionar motor, verificar proteção ou testar sensores"/>
           <View style={{marginTop:12}}><Btn text="Adicionar ponto" disabled={busy||!!routeInProgress||!assetId} onPress={()=>{void execute(async()=>{
-            await addRoutePoint(selected,assetId||'',task);setTask('');setAddPointOpen(false);setShowAllPoints(true);
+            await addRoutePoint(selected,assetId||'',task);setTask('');setAssetId(null);setAddPointOpen(false);setShowAllPoints(true);
           });}}/></View>
         </View>}
       </>:<>
