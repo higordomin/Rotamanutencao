@@ -19,6 +19,7 @@ import {updateRouteSchedule} from './routes';
 import {routeProgress} from './quickRouteActions';
 import {filterExecutionItems,pagedExecutionItems,nextPendingItem,photosByRouteItem,type ExecutionFilter} from './routeExecutionView';
 import {INDUSTRIAL as THEME,INTERACTION} from './design31';
+import {mayQuickCompletePoint} from './executionGuide';
 import {createActionGuard} from './actionGuard';
 
 const c={bg:THEME.background,panel:THEME.surface,field:THEME.elevated,
@@ -116,7 +117,7 @@ function RunItem({item,onSaved,disabled,photos,corrective,onCreateCorrective,onO
   const pristine=status===item.status && notes===item.notes
     && draftPhotos.length===0;
   const quickSave=async()=>{
-    if(disabled || !pristine || item.status!=='pending')return;
+    if(!mayQuickCompletePoint(item.status,!pristine,disabled))return;
     await pointGuard.run(async()=>{
       setWorking(true);
       try{
