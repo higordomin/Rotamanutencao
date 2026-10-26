@@ -103,6 +103,7 @@ function Choices<T extends string>({label, options, value, onChange}: {
 
 export default function App() {
   const [tab, setTab] = useState<AppTab>('Início');
+  const [dataSection,setDataSection]=useState<'reports'|'reminders'|'storage'>('reports');
   const [assets, setAssets] = useState<Asset[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selectedRouteId,setSelectedRouteId] = useState<string|null>(null);
@@ -467,20 +468,20 @@ export default function App() {
   function assetCard(asset: Asset) {
     const count=assetOrderCounts.get(asset.id)||0;
     const expanded=expandedAssetId===asset.id;
-    return <View key={asset.id} style={[styles.card,{paddingVertical:10,marginBottom:8}]}>
+    return <View key={asset.id} style={[styles.card,{paddingVertical:13,marginBottom:8}]}>
       <Pressable accessibilityRole="button" accessibilityState={{expanded}}
         onPress={()=>setExpandedAssetId(expanded?null:asset.id)}
         style={{flexDirection:'row',gap:12,alignItems:'center',minHeight:51}}>
         <View style={{flex:1,gap:3}}>
-          <Text style={[styles.cardTitle,{color:COLORS.accent,fontSize:16}]}>{asset.code||'Sem TAG'}</Text>
-          <Text style={{color:COLORS.text,fontSize:13,fontWeight:'700'}}>{asset.name}</Text>
-          <Text style={styles.detail}>{asset.area||'Sem setor'} · {count} atividade(s)</Text>
+          <Text style={[styles.cardTitle,{color:COLORS.accent,fontSize:18}]}>{asset.code||'Sem TAG'}</Text>
+          <Text style={{color:COLORS.text,fontSize:15,fontWeight:'700'}}>{asset.name}</Text>
+          <Text style={styles.detail}>{asset.area||'Sem setor'} · {count} OS vinculada(s)</Text>
         </View>
-        <Text style={{color:COLORS.accent,fontSize:12,fontWeight:'800'}}>{expanded?'Fechar −':'Abrir ›'}</Text>
+        <Text style={{color:COLORS.accent,fontSize:13,fontWeight:'800'}}>{expanded?'Fechar −':'Ações ›'}</Text>
       </Pressable>
       {expanded&&<View style={[styles.cardActions,{marginTop:12}]}>
-        <Action label="+ OS" onPress={()=>openOrder(undefined,asset)}/>
-        <Action label="Ver OS" secondary onPress={()=>openAssetView(asset,'orders')}/>
+        <Action label="+ Criar OS" onPress={()=>openOrder(undefined,asset)}/>
+        <Action label="Ver atividades" secondary onPress={()=>openAssetView(asset,'orders')}/>
         <Action label="Histórico" secondary onPress={()=>openAssetView(asset,'history')}/>
         <Action label="Editar" secondary onPress={()=>openAsset(asset)}/>
         <Pressable accessibilityRole="button" onPress={()=>confirmDeleteAsset(asset)} style={{padding:11}}>
@@ -508,7 +509,7 @@ export default function App() {
       }}
     />;
     if (tab === 'Ativos') return <>
-      <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Equipamentos</Text><Text style={styles.detail}>{assets.length} cadastrados</Text></View>
+      <View style={styles.pageHeading}><View><Text style={styles.sectionTitle}>Equipamentos</Text><Text style={styles.detail}>{assets.length} cadastrados · toque em uma TAG para ver ações</Text></View>
         <Action label="+ Novo" onPress={() => openAsset()}/></View>
       <TextInput accessibilityLabel="Buscar equipamento por TAG, nome ou setor"
         placeholder="Buscar TAG, nome ou setor..." placeholderTextColor={COLORS.muted}
@@ -528,16 +529,32 @@ export default function App() {
       <Text style={[styles.detail,{marginBottom:9}]}>
         {visibleAssets.length} de {assets.length} equipamento(s) · TAG / nome / setor
       </Text>
-      {assets.length===0?<Text style={styles.empty}>Cadastre seu primeiro equipamento.</Text>
+      {assets.length===0?<View style={styles.card}>
+            <Text style={styles.cardTitle}>Comece cadastrando um equipamento</Text>
+            <Text style={styles.description}>Identifique-o por TAG e setor para encontrar suas OS e rotas com facilidade.</Text>
+            <View style={styles.cardActions}><Action label="+ Cadastrar equipamento" onPress={()=>openAsset()}/></View>
+          </View>
         :visibleAssets.length===0?<Text style={styles.empty}>Nenhum equipamento encontrado. Ajuste a busca ou o setor.</Text>
         :visibleAssets.slice(0,assetPageSize).map(assetCard)}
       {visibleAssets.length>assetPageSize&&<Action secondary label={`Mostrar mais (${Math.min(30,visibleAssets.length-assetPageSize)} de ${visibleAssets.length-assetPageSize} restantes)`}
         onPress={()=>setAssetPageSize(v=>v+30)}/>}
     </>;
     if (tab === 'Dados') return <>
-      <Text style={styles.sectionTitle}>Seus dados</Text>
-      <ConsolidatedReportPanel/>
-      <ReminderSettings/>
+      <Text style={styles.sectionTitle}>Relatórios e dados</Text>
+      <Text style={styles.description}>Escolha o que deseja consultar ou configurar.</Text>
+      <View style={styles.dataTabs}>
+        {([{key:'reports',title:'Relatórios'},{key:'reminders',title:'Lembretes'},
+          {key:'storage',title:'Backup e dados'}] as const).map(item=>
+          <Pressable key={item.key} accessibilityRole="button"
+            accessibilityState={{selected:dataSection===item.key}}
+            style={[styles.dataTab,dataSection===item.key&&styles.dataTabActive]}
+            onPress={()=>setDataSection(item.key)}>
+            <Text style={[styles.dataTabLabel,dataSection===item.key&&{color:COLORS.bg}]}>{item.title}</Text>
+          </Pressable>)}
+      </View>
+      {dataSection==='reports'&&<ConsolidatedReportPanel/>}
+      {dataSection==='reminders'&&<ReminderSettings/>}
+      {dataSection==='storage'&&<>
       <Text style={styles.description}>Todas as informações ficam neste aparelho. Não existe login, nuvem nem sincronização nesta versão.</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Diagnóstico de integridade local</Text>
@@ -609,6 +626,7 @@ export default function App() {
         <View style={styles.cardActions}><Action disabled={busy} dangerous label="Escolher backup" onPress={requestRestore}/></View>
       </View>
       <Text style={styles.hint}>Formato local versão 11 (compatibilidade com versões anteriores validadas) · tamanho máximo de arquivo 60 MB (limite conservador de exportação menor). Arquivos JSON não são criptografados: guarde-os com cuidado.</Text>
+      </>}
     </>;
     return <>
       <Text style={styles.sectionTitle}>Histórico de execuções</Text>
@@ -984,6 +1002,12 @@ const styles = StyleSheet.create({
     minHeight:48,color:COLORS.text, backgroundColor: COLORS.panel2, marginTop:14,fontSize:15},
   filters: {flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12, marginBottom: 8},
   eventRow: {padding: 12, borderBottomWidth: 1, borderColor: COLORS.border},
+  dataTabs:{flexDirection:'row',gap:6,marginTop:17,marginBottom:12},
+  dataTab:{flex:1,minHeight:51,backgroundColor:COLORS.panel2,borderWidth:1,
+    borderColor:COLORS.border,borderRadius:11,alignItems:'center',justifyContent:'center',
+    paddingHorizontal:7},
+  dataTabActive:{backgroundColor:COLORS.accent,borderColor:COLORS.accent},
+  dataTabLabel:{color:COLORS.text,fontSize:12,fontWeight:'800',textAlign:'center'},
   executionChoices:{flexDirection:'row',gap:10,marginTop:8,marginBottom:16},
   executionChoice:{flex:1,minHeight:94,borderRadius:14,borderWidth:1,
     borderColor:COLORS.border,backgroundColor:COLORS.panel2,padding:12,
