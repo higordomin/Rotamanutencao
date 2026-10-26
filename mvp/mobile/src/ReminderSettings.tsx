@@ -2,7 +2,9 @@ import React,{useEffect,useState} from 'react';
 import {Alert,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import DateTimePicker,{DateTimePickerAndroid} from '@react-native-community/datetimepicker';
 import {activateReminders,chooseReminderTime,getReminderScheduleBreakdown,
-  deactivateReminders,getReminderSettings,scheduleReminderTest,syncLocalReminders} from './localReminders';
+  deactivateReminders,getReminderSettings,scheduleReminderTest,syncLocalReminders,
+  getLocalReminderPreview} from './localReminders';
+import type {ReminderPreviewLine} from './reminderPreview';
 import {reminderTimeLabel} from './reminderPlan';
 
 const C={panel:'#111E31',border:'#24394F',bg:'#08101E',text:'#EFF6FF',
@@ -17,6 +19,10 @@ export function ReminderSettings(){
   const [working,setWorking]=useState(false);
   const [iosClock,setIosClock]=useState(false);
   const [testTime,setTestTime]=useState<string|null>(null);
+  const [previewOpen,setPreviewOpen]=useState(false);
+  const [previewBusy,setPreviewBusy]=useState(false);
+  const [preview,setPreview]=useState<ReminderPreviewLine[]>([]);
+  const [previewError,setPreviewError]=useState<string|null>(null);
   const load=async()=>{
     const [settings,scheduled]=await Promise.all([getReminderSettings(),getReminderScheduleBreakdown()]);
     setEnabled(settings.enabled);setHour(settings.hour);setMinute(settings.minute);setSchedule(scheduled);
@@ -30,7 +36,7 @@ export function ReminderSettings(){
   const act=async(fn:()=>Promise<unknown>)=>{
     if(working)return;
     setWorking(true);
-    try{await fn();await load();}
+    try{await fn();await load();setPreviewOpen(false);setPreview([]);}
     catch(e){Alert.alert('Não foi possível alterar os lembretes',e instanceof Error?e.message:String(e));}
     finally{setWorking(false);}
   };
@@ -51,6 +57,18 @@ export function ReminderSettings(){
         },
       });
     }else setIosClock(true);
+  };
+  const showPreview=async()=>{
+    if(working||loading||previewBusy)return;
+    if(previewOpen){setPreviewOpen(false);return;}
+    setPreviewBusy(true);setPreviewError(null);
+    try{
+      const data=await getLocalReminderPreview();
+      setPreview(data);setPreviewOpen(true);
+    }catch(e){
+      setPreviewError(e instanceof Error?e.message:String(e));
+      setPreviewOpen(true);
+    }finally{setPreviewBusy(false);}
   };
   const showTest=async()=>{
     if(working||loading)return;
@@ -124,6 +142,28 @@ export function ReminderSettings(){
       <Text style={s.note}>Total: {schedule.total} notificações de manutenção. O teste de dois minutos
         não faz parte dessa contagem.</Text>
     </View>
+    <View style={s.testBox}>
+      <Pressable accessibilityRole="button" accessibilityState={{expanded:previewOpen}}
+        disabled={working||loading||previewBusy} onPress={()=>{void showPreview();}}
+        style={s.previewToggle}>
+        <Text style={[s.actionText,{color:C.blue}]}>
+          {previewBusy?'Consultando...':previewOpen?'Ocultar prévia':'Ver próximos avisos previstos'}
+        </Text>
+        <Text style={{color:C.blue,fontWeight:'800'}}>{previewOpen?'⌃':'⌄'}</Text>
+      </Pressable>
+      {previewOpen&&<>
+        <Text style={s.note}>Simulação com as OS e rotas atuais. Não agenda,
+          cancela ou altera notificações. Entrega depende do Android.</Text>
+        {!!previewError&&<Text style={[s.note,{color:C.yellow}]}>{previewError}</Text>}
+        {preview.length===0&&!previewError&&<Text style={s.note}>Nenhum aviso previsto.</Text>}
+        {preview.map(item=><View key={item.key} style={s.previewLine}>
+          <Text style={[s.note,{color:C.text,fontWeight:'800'}]}>
+            {new Date(item.at).toLocaleString('pt-BR')} · {item.kind==='daily'?'Resumo diário':'Alerta prioritário'}
+          </Text>
+          <Text style={s.note}>{item.title}</Text>
+        </View>)}
+      </>}
+    </View>
     <Text style={s.note}>O texto dos resumos é preparado a partir das OS e rotas registradas quando
       você abre o aplicativo ou altera uma manutenção. Dados modificados com o aplicativo fechado
       só serão refletidos após uma nova sincronização local.</Text>
@@ -147,4 +187,7 @@ const s=StyleSheet.create({
   action:{paddingHorizontal:14,minHeight:44,justifyContent:'center',borderRadius:10,backgroundColor:C.blue},
   actionText:{color:C.bg,fontWeight:'800',fontSize:12},
   testBox:{backgroundColor:C.bg,borderColor:C.border,borderWidth:1,borderRadius:12,padding:12,gap:9},
+  previewToggle:{minHeight:44,flexDirection:'row',alignItems:'center',
+    justifyContent:'space-between',gap:9},
+  previewLine:{borderTopWidth:1,borderTopColor:C.border,paddingVertical:7,gap:3},
 });
