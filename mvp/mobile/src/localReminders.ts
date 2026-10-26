@@ -5,6 +5,7 @@ import {listRoutes} from './routes';
 import {validReminderTime} from './reminderPlan';
 import {planDailyAndPriority} from './dailyNoticePlan';
 import {noticeInputs,previewPlannedReminders,type ReminderPreviewLine} from './reminderPreview';
+import {noticeFingerprint,sameNoticePlan,replaceScheduledNoticesSafely} from './reminderReconcile';
 
 const CHANNEL='rotamanutencao-lembretes-v2';
 const OWNER='rotamanutencao-local-v1';
@@ -64,17 +65,26 @@ async function resync():Promise<number>{
   const [orders,routes]=await Promise.all([listOrders(),listRoutes()]);
   const items=noticeInputs(orders,routes);
   const next=planDailyAndPriority(items,new Date(),settings.hour,settings.minute);
-  // Não apaga notificações agendadas por outros aplicativos ou módulos.
-  await cancelOwned();
-  for(const entry of next){
-    await Notifications.scheduleNotificationAsync({
+  // A consulta não inclui nem modifica notificações de outros aplicativos/módulos.
+  const requests=await Notifications.getAllScheduledNotificationsAsync();
+  const owned=requests.filter(request=>request.content.data?.rotaOwner===OWNER);
+  const signatures=owned.map(request=>{
+    const value=request.content.data?.rotaSignature;
+    return typeof value==='string'?value:null;
+  });
+  // Evita recriar dezenas de notificações quando o app retorna ao primeiro plano
+  // sem ter ocorrido nenhuma alteração real nas OS/rotas.
+  if(sameNoticePlan(signatures,next))return next.length;
+  return replaceScheduledNoticesSafely(owned.map(request=>request.identifier),next,
+    entry=>Notifications.scheduleNotificationAsync({
       content:{title:entry.title,body:entry.body,
-        data:{rotaOwner:OWNER,kind:entry.kind,entityType:entry.target??'summary',entityKey:entry.key}},
+        data:{rotaOwner:OWNER,kind:entry.kind,entityType:entry.target??'summary',
+          entityKey:entry.key,rotaSignature:noticeFingerprint(entry)}},
       trigger:{type:Notifications.SchedulableTriggerInputTypes.DATE,
         date:entry.date,channelId:CHANNEL},
-    });
-  }
-  return next.length;
+    }),
+    identifier=>Notifications.cancelScheduledNotificationAsync(identifier),
+  );
 }
 export function syncLocalReminders():Promise<void>{
   // Serializa chamadas de abrir app, salvar OS e concluir rota.
