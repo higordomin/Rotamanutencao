@@ -33,6 +33,8 @@ import {assetAreas,findCatalogAssets} from './src/assetCatalog';
 import {AssetPicker} from './src/AssetPicker';
 import {createActionGuard} from './src/actionGuard';
 import {MoreMenu} from './src/MoreMenu';
+import {FirstUseGuide} from './src/FirstUseGuide';
+import {shouldShowFirstUseGuide} from './src/firstUse34';
 import {bottomTabs,visibleTab,morePage,type AppTab} from './src/navigation31';
 import {INDUSTRIAL as THEME,INTERACTION} from './src/design31';
 
@@ -496,7 +498,14 @@ export default function App() {
       setAssetFilterId(null);
       setTab(page);
     }}/>;
-    if (tab === 'Início') return <HomeScreen
+    if (tab === 'Início') return shouldShowFirstUseGuide({
+      assets:assets.length,orders:orders.length,routes:routes.length,
+      executions:executions.length,archived:archivedOrders.length,
+    }) ? <FirstUseGuide
+      onNewAsset={()=>openAsset()}
+      onNewOrder={()=>openOrder()}
+      onOpenAgenda={()=>setTab('Agenda')}
+    /> : <HomeScreen
       orders={orders} routes={routes}
       onOpenAgenda={()=>setTab('Agenda')}
       onNewOrder={()=>openOrder()}
@@ -540,7 +549,7 @@ export default function App() {
         onPress={()=>setAssetPageSize(v=>v+30)}/>}
     </>;
     if (tab === 'Dados') return <>
-      <Text style={styles.sectionTitle}>Relatórios e dados</Text>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>Relatórios e dados</Text>
       <Text style={styles.description}>Escolha o que deseja consultar ou configurar.</Text>
       <View style={styles.dataTabs}>
         {([{key:'reports',title:'Relatórios'},{key:'reminders',title:'Lembretes'},
@@ -629,7 +638,7 @@ export default function App() {
       </>}
     </>;
     return <>
-      <Text style={styles.sectionTitle}>Histórico de serviços</Text>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>Histórico de serviços</Text>
       {assetContext}
       <Text style={[styles.detail,{marginBottom:16}]}>
         {historyExecutions.length} execução(ões) disponível(is).
