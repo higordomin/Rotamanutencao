@@ -1,13 +1,17 @@
 import {validDate} from './logic.ts';
-import type {Execution, WorkOrder} from './types';
+import type {Execution, WorkOrder, Category} from './types';
 import type {RouteRun, RouteRunItem} from './routes';
 
+export type ReportSpecialty=Category|'Todas';
+export const REPORT_SPECIALTIES:readonly ReportSpecialty[]=[
+  'Todas','Mecânica','Elétrica','Inspeção','Segurança','Lubrificação',
+];
 export type ReportExecution = Pick<Execution,
   'id'|'order_title'|'result'|'executed_at'|'asset_label'|'category'|'notes'|'next_due_date'>;
 export type ReportRouteItem = Pick<RouteRunItem,
   'id'|'run_id'|'point_title'|'asset_label'|'status'|'notes'>;
 export type ReportPending = Pick<WorkOrder,
-  'id'|'title'|'due_date'|'priority'|'block_reason'|'partial_reason'|'asset_name'|'asset_code'|'asset_area'>;
+  'id'|'title'|'due_date'|'priority'|'category'|'block_reason'|'partial_reason'|'asset_name'|'asset_code'|'asset_area'>;
 export type ReportPhoto = {
   owner_kind:'os'|'route';owner_id:string; mime_type:'image/jpeg'|'image/png';
   base64:string; caption:string;
@@ -20,6 +24,7 @@ export type ConsolidatedReportData = {
   pendingOrders:ReportPending[];
   photos:ReportPhoto[];
   includedPhotos:boolean;
+  specialty?:ReportSpecialty;
 };
 
 export const MAX_REPORT_DAYS=90;
@@ -37,6 +42,22 @@ export function validateReportPeriod(start:string,end:string):number{
   return days;
 }
 
+/**
+ * Recorte explícito: rotas não têm uma especialidade única, portanto jamais são
+ * atribuídas artificialmente à Mecânica, Elétrica ou qualquer outra.
+ * A busca SQL aplica os mesmos filtros antes da leitura de fotos.
+ */
+export function scopeReportData(input:ConsolidatedReportData):ConsolidatedReportData {
+  const specialty=input.specialty??'Todas';
+  if(!REPORT_SPECIALTIES.includes(specialty))
+    throw new Error('Especialidade inválida para relatório.');
+  if(specialty==='Todas')return input;
+  const executions=input.executions.filter(e=>e.category===specialty);
+  const ids=new Set(executions.map(e=>e.id));
+  return {...input,executions,routeRuns:[],routeItems:[],
+    pendingOrders:input.pendingOrders.filter(o=>o.category===specialty),
+    photos:input.photos.filter(p=>p.owner_kind==='os'&&ids.has(p.owner_id))};
+}
 export function reportSummary(input:ConsolidatedReportData){
   const items=input.routeItems;
   return {
@@ -72,6 +93,7 @@ function resultLabel(s:ReportRouteItem['status']):string{
 /** Conteúdo HTML puro: testável offline e independente do motor de impressão. */
 export function buildConsolidatedHtml(input:ConsolidatedReportData):string {
   validateReportPeriod(input.start,input.end);
+  input=scopeReportData(input);
   const summary=reportSummary(input);
   if(input.executions.length+input.routeRuns.length+input.pendingOrders.length===0)
     throw new Error('Não há registros neste período nem pendências atuais para apresentar.');
@@ -121,7 +143,9 @@ export function buildConsolidatedHtml(input:ConsolidatedReportData):string {
     </style></head><body>
     <header><h1>RotaManutenção · Relatório consolidado</h1>
     <p>Período de execução: ${dateOnly(input.start)} a ${dateOnly(input.end)}<br>
-    Gerado em: ${dateTime(input.generatedAt)} · Gerado offline pelo próprio aparelho</p></header>
+    Gerado em: ${dateTime(input.generatedAt)} · Gerado offline pelo próprio aparelho<br>
+    Especialidade: ${clean(input.specialty??'Todas')}
+    ${input.specialty&&input.specialty!=='Todas'?' · Apenas OS; rotas não possuem especialidade única.':''}</p></header>
     <div class="stats">
       ${[['OS concluídas',summary.osConcluidas],['OS parciais',summary.osParciais],
         ['Rotas finalizadas',summary.rotasFinalizadas],['Pontos executados',summary.pontosExecutados],
@@ -134,7 +158,9 @@ export function buildConsolidatedHtml(input:ConsolidatedReportData):string {
     ${input.executions.length?`<table><thead><tr><th>Quando</th><th>Atividade / equipamento</th><th>Tipo</th><th>Resultado</th><th>Observações</th></tr></thead><tbody>${executionRows}</tbody></table>`:
       '<p class="meta">Nenhuma OS executada no período.</p>'}
     <h2>Rotas finalizadas (${input.routeRuns.length})</h2>
-    ${input.routeRuns.length?routeRows:'<p class="meta">Nenhuma rota finalizada no período.</p>'}
+    ${input.specialty&&input.specialty!=='Todas'?
+      '<p class="meta">Rotas omitidas neste filtro: uma rota pode reunir mais de uma especialidade. Selecione Todas para incluí-las.</p>':
+      input.routeRuns.length?routeRows:'<p class="meta">Nenhuma rota finalizada no período.</p>'}
     <h2>Pendências atuais (${input.pendingOrders.length})</h2>
     ${input.pendingOrders.length?`<table><thead><tr><th>Atividade / equipamento</th><th>Prazo</th><th>Prioridade</th><th>Impedimento ou pendência</th></tr></thead><tbody>${pendingRows}</tbody></table>`:
       '<p class="meta">Nenhuma OS atrasada, impedida ou com execução parcial neste momento.</p>'}
