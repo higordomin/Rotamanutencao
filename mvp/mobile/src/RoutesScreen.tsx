@@ -1,4 +1,4 @@
-import React,{useCallback,useEffect,useMemo,useState} from 'react';
+import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {Alert,KeyboardAvoidingView,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View,Image} from 'react-native';
 import type {Asset,PhotoDraft,Category,Priority} from './types';
 import {createCorrectiveOrder,listRunCorrectives,listRouteAnomalies,
@@ -18,6 +18,7 @@ import {ROUTE_INTERVALS,previewRouteDates,scheduleNeedsConfirmation} from './rou
 import {updateRouteSchedule} from './routes';
 import {routeProgress} from './quickRouteActions';
 import {filterExecutionItems,pagedExecutionItems,nextPendingItem,photosByRouteItem,type ExecutionFilter} from './routeExecutionView';
+import {createActionGuard} from './actionGuard';
 
 const c={bg:'#08101E',panel:'#111E31',field:'#16273D',line:'#24394F',text:'#EFF6FF',
   muted:'#9CB0C8',blue:'#47B7F6',amber:'#FFD075',red:'#FF7D8B',green:'#5DD7AC'};
@@ -103,6 +104,7 @@ function RunItem({item,onSaved,disabled,photos,corrective,onCreateCorrective,onO
   const [status,setStatus]=useState<RouteRunItem['status']>(item.status);
   const [notes,setNotes]=useState(item.notes);
   const [working,setWorking]=useState(false);
+  const pointGuard=useRef(createActionGuard()).current;
   const [expanded,setExpanded]=useState(false);
   const [draftPhotos,setDraftPhotos]=useState<PhotoDraft[]>([]);
   const [creatingCorrective,setCreatingCorrective]=useState(false);
@@ -112,29 +114,36 @@ function RunItem({item,onSaved,disabled,photos,corrective,onCreateCorrective,onO
   const pristine=status===item.status && notes===item.notes
     && draftPhotos.length===0;
   const quickSave=async()=>{
-    if(working || disabled || !pristine || item.status!=='pending')return;
-    setWorking(true);
-    try{
-      await quickCompleteRoutePoint(item.id);
-      await onSaved();
-    }catch(e){
-      Alert.alert('Registro rápido não realizado',e instanceof Error?e.message:String(e));
-    }finally{setWorking(false);}
+    if(disabled || !pristine || item.status!=='pending')return;
+    await pointGuard.run(async()=>{
+      setWorking(true);
+      try{
+        await quickCompleteRoutePoint(item.id);
+        await onSaved();
+      }catch(e){
+        Alert.alert('Registro rápido não realizado',e instanceof Error?e.message:String(e));
+      }finally{setWorking(false);}
+    });
   };
   const addPhoto=async(camera:boolean)=>{
-    if(working || photos.length+draftPhotos.length>=MAX_ROUTE_PHOTOS)return;
-    try {
-      const photo=await selectPhoto(camera);
-      if(photo) setDraftPhotos(current=>current.length+photos.length>=MAX_ROUTE_PHOTOS?current:[...current,photo]);
-    }catch(error){Alert.alert('Não foi possível adicionar foto',error instanceof Error?error.message:String(error));}
+    if(photos.length+draftPhotos.length>=MAX_ROUTE_PHOTOS)return;
+    await pointGuard.run(async()=>{
+      setWorking(true);
+      try {
+        const photo=await selectPhoto(camera);
+        if(photo) setDraftPhotos(current=>current.length+photos.length>=MAX_ROUTE_PHOTOS?current:[...current,photo]);
+      }catch(error){Alert.alert('Não foi possível adicionar foto',error instanceof Error?error.message:String(error));}
+      finally{setWorking(false);}
+    });
   };
   const save=async()=>{
-    if(working)return;
-    setWorking(true);
-    try{await recordRoutePoint(item.id,status,notes,draftPhotos);
-      setDraftPhotos([]);await onSaved();}
-    catch(e){Alert.alert('Registro não salvo',e instanceof Error?e.message:String(e));}
-    finally{setWorking(false);}
+    await pointGuard.run(async()=>{
+      setWorking(true);
+      try{await recordRoutePoint(item.id,status,notes,draftPhotos);
+        setDraftPhotos([]);await onSaved();}
+      catch(e){Alert.alert('Registro não salvo',e instanceof Error?e.message:String(e));}
+      finally{setWorking(false);}
+    });
   };
   return <View style={s.card}>
     <Text style={s.title}>{item.position+1}. {item.point_title}</Text>
@@ -274,6 +283,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   const [editTask,setEditTask]=useState('');
   const [editAssetId,setEditAssetId]=useState<string|null>(null);
   const [busy,setBusy]=useState(false);
+  const routeGuard=useRef(createActionGuard()).current;
   const refresh=useCallback(async()=>{
     const [a,b,occurrences]=await Promise.all([listRoutes(),listRouteRuns(),listRouteAnomalies()]);
     setRoutes(a);setRuns(b);setAnomalies(occurrences);
@@ -309,11 +319,12 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
   const photosByItem=useMemo(()=>photosByRouteItem(savedPhotos),[savedPhotos]);
   const correctivesByItem=useMemo(()=>new Map(correctives.map(link=>[link.item_id,link])),[correctives]);
   const execute=async(action:()=>Promise<void>)=>{
-    if(busy)return;
-    setBusy(true);
-    try{await action();await refresh();onDataChanged?.();}
-    catch(e){Alert.alert('Operação não realizada',e instanceof Error?e.message:String(e));}
-    finally{setBusy(false);}
+    await routeGuard.run(async()=>{
+      setBusy(true);
+      try{await action();await refresh();onDataChanged?.();}
+      catch(e){Alert.alert('Operação não realizada',e instanceof Error?e.message:String(e));}
+      finally{setBusy(false);}
+    });
   };
   return <KeyboardAvoidingView style={{flex:1,backgroundColor:c.bg}} behavior={Platform.OS==='ios'?'padding':'height'}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.page}>
