@@ -3,7 +3,7 @@ import {ActivityIndicator,Alert,Pressable,StyleSheet,Text,View} from 'react-nati
 import {CalendarPicker} from './CalendarPicker';
 import {brazilianDate} from './calendar';
 import {localDate} from './logic';
-import {validateReportPeriod} from './consolidatedReportModel';
+import {validateReportPeriod,REPORT_SPECIALTIES,type ReportSpecialty} from './consolidatedReportModel';
 import {exportConsolidatedPdf} from './consolidatedReport';
 
 const C={panel:'#111E31',surface:'#16273D',border:'#24394F',
@@ -20,6 +20,8 @@ export function ConsolidatedReportPanel(){
   const [start,setStart]=useState(()=>pastDays(7));
   const [end,setEnd]=useState(()=>localDate());
   const [includePhotos,setIncludePhotos]=useState(true);
+  const [specialty,setSpecialty]=useState<ReportSpecialty>('Todas');
+  const [showSpecialties,setShowSpecialties]=useState(false);
   const [picker,setPicker]=useState<'start'|'end'|null>(null);
   const [busy,setBusy]=useState(false);
   const setPreset=(days:number)=>{
@@ -30,15 +32,15 @@ export function ConsolidatedReportPanel(){
     try{validateReportPeriod(start,end);}
     catch(e){Alert.alert('Período inválido',e instanceof Error?e.message:String(e));return;}
     setBusy(true);
-    try{await exportConsolidatedPdf(start,end,includePhotos);}
+    try{await exportConsolidatedPdf(start,end,includePhotos,specialty);}
     catch(e){Alert.alert('Não foi possível gerar PDF',e instanceof Error?e.message:String(e));}
     finally{setBusy(false);}
   };
   return <View style={styles.card}>
     <Text style={styles.title}>Relatório consolidado em PDF</Text>
     <Text style={styles.help}>Reúne OS concluídas ou parciais, rotas finalizadas, anomalias,
-      lubrificantes, quantidades e pendências atuais. Pode compartilhar pelo WhatsApp
-      ou salvar no celular. Não precisa de internet para gerar o arquivo.</Text>
+      e pendências atuais. Pode compartilhar pelo WhatsApp ou salvar no celular.
+      Não precisa de internet para gerar o arquivo.</Text>
     <Text style={styles.label}>Período das execuções</Text>
     <View style={styles.row}>
       {([1,7,30] as const).map(days=><Pressable key={days} accessibilityRole="button"
@@ -61,6 +63,24 @@ export function ConsolidatedReportPanel(){
     {picker&&<CalendarPicker key={picker} value={picker==='start'?start:end}
       onSelect={date=>{if(picker==='start')setStart(date);else setEnd(date);setPicker(null);}}
       onCancel={()=>setPicker(null)}/>}
+    <Text style={styles.label}>Especialidade</Text>
+    <Pressable accessibilityRole="button" accessibilityState={{expanded:showSpecialties}}
+      disabled={busy} onPress={()=>setShowSpecialties(v=>!v)} style={styles.dateButton}>
+      <Text style={styles.dateValue}>{specialty==='Todas'?'Todas as especialidades':specialty}  ▾</Text>
+      <Text style={styles.help}>Toque para filtrar atividades. Rotas entram apenas na opção Todas.</Text>
+    </Pressable>
+    {showSpecialties&&<View style={styles.row}>
+      {REPORT_SPECIALTIES.map(item=><Pressable key={item} accessibilityRole="button"
+        accessibilityState={{selected:specialty===item}} disabled={busy}
+        onPress={()=>{setSpecialty(item);setShowSpecialties(false);}}
+        style={[styles.smallButton,specialty===item&&{backgroundColor:C.accent}]}>
+        <Text style={[styles.smallText,specialty===item&&{color:C.bg}]}>{item}</Text>
+      </Pressable>)}
+    </View>}
+    {specialty!=='Todas'&&<Text style={styles.help}>
+      Somente OS da especialidade {specialty}; rotas multidisciplinares ficam fora deste filtro.
+      Selecione Todas para incluí-las.
+    </Text>}
     <Pressable accessibilityRole="checkbox" accessibilityLabel="Incluir fotos no relatório"
       accessibilityState={{checked:includePhotos}} disabled={busy} onPress={()=>setIncludePhotos(v=>!v)}
       style={styles.checkRow}>
