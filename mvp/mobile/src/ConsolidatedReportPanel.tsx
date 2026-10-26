@@ -5,9 +5,10 @@ import {brazilianDate} from './calendar';
 import {localDate} from './logic';
 import {validateReportPeriod,REPORT_SPECIALTIES,type ReportSpecialty} from './consolidatedReportModel';
 import {exportConsolidatedPdf} from './consolidatedReport';
+import {INDUSTRIAL as THEME,INTERACTION,SPACING,TYPE,RADII} from './design31';
 
-const C={panel:'#111E31',surface:'#16273D',border:'#24394F',
-  text:'#EFF6FF',muted:'#9CB0C8',accent:'#47B7F6',bg:'#08101E'};
+const C={panel:THEME.surface,surface:THEME.elevated,border:THEME.border,
+  text:THEME.ink,muted:THEME.muted,accent:THEME.accent,bg:THEME.background};
 function pastDays(days:number):string {
   const now=new Date();
   now.setHours(12,0,0,0);
@@ -37,7 +38,7 @@ export function ConsolidatedReportPanel(){
     finally{setBusy(false);}
   };
   return <View style={styles.card}>
-    <Text style={styles.title}>Relatório consolidado em PDF</Text>
+    <Text accessibilityRole="header" style={styles.title}>Relatório consolidado em PDF</Text>
     <Text style={styles.help}>Reúne OS concluídas ou parciais, rotas finalizadas, anomalias,
       e pendências atuais. Pode compartilhar pelo WhatsApp ou salvar no celular.
       Não precisa de internet para gerar o arquivo.</Text>
@@ -97,20 +98,20 @@ export function ConsolidatedReportPanel(){
   </View>;
 }
 const styles=StyleSheet.create({
-  card:{padding:15,backgroundColor:C.panel,borderColor:C.border,borderWidth:1,borderRadius:13,marginTop:14,gap:10},
-  title:{fontSize:16,color:C.text,fontWeight:'800'},
-  help:{color:C.muted,fontSize:11,lineHeight:17},
-  label:{color:C.text,fontSize:12,fontWeight:'700',marginTop:4},
-  row:{flexDirection:'row',gap:8,flexWrap:'wrap'},
-  smallButton:{paddingHorizontal:11,paddingVertical:10,backgroundColor:C.surface,borderRadius:9,
-    borderWidth:1,borderColor:C.border,minHeight:40},
-  smallText:{color:C.accent,fontWeight:'700',fontSize:11},
-  dateButton:{flex:1,minWidth:115,padding:11,backgroundColor:C.surface,borderWidth:1,borderColor:C.border,borderRadius:9},
-  dateLabel:{fontSize:10,fontWeight:'700',color:C.muted},
-  dateValue:{fontSize:15,fontWeight:'800',color:C.text,marginTop:4},
-  checkRow:{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:9},
+  card:{padding:SPACING.lg,backgroundColor:C.panel,borderColor:C.border,borderWidth:1,borderRadius:RADII.card,marginTop:SPACING.group,gap:SPACING.md},
+  title:{fontSize:TYPE.section,color:C.text,fontWeight:'900'},
+  help:{color:C.muted,fontSize:TYPE.caption,lineHeight:19},
+  label:{color:C.text,fontSize:TYPE.body,fontWeight:'700',marginTop:SPACING.xs},
+  row:{flexDirection:'row',gap:SPACING.sm,flexWrap:'wrap'},
+  smallButton:{paddingHorizontal:12,paddingVertical:11,backgroundColor:C.surface,borderRadius:RADII.chip,
+    borderWidth:1,borderColor:C.border,minHeight:INTERACTION.minTouch,justifyContent:'center'},
+  smallText:{color:C.accent,fontWeight:'800',fontSize:TYPE.caption},
+  dateButton:{flex:1,minWidth:115,minHeight:INTERACTION.minTouch,padding:13,backgroundColor:C.surface,borderWidth:1,borderColor:C.border,borderRadius:RADII.field},
+  dateLabel:{fontSize:TYPE.caption,fontWeight:'700',color:C.muted},
+  dateValue:{fontSize:TYPE.bodyLarge,fontWeight:'800',color:C.text,marginTop:4},
+  checkRow:{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:11,minHeight:INTERACTION.minTouch},
   checkbox:{fontSize:23,color:C.accent},
-  checkLabel:{flex:1,color:C.text,fontSize:12,fontWeight:'700'},
-  button:{backgroundColor:C.accent,minHeight:46,padding:12,borderRadius:10,alignItems:'center',justifyContent:'center'},
-  buttonText:{fontSize:13,fontWeight:'900',color:C.bg},
+  checkLabel:{flex:1,color:C.text,fontSize:TYPE.body,fontWeight:'700',lineHeight:20},
+  button:{backgroundColor:C.accent,minHeight:INTERACTION.minTouch,padding:12,borderRadius:RADII.field,alignItems:'center',justifyContent:'center'},
+  buttonText:{fontSize:TYPE.body,fontWeight:'900',color:C.bg},
 });
