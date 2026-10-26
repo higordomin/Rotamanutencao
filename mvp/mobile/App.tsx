@@ -148,6 +148,7 @@ export default function App() {
   const [completingOrder, setCompletingOrder] = useState<WorkOrder | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   const [completionResult, setCompletionResult] = useState<ExecutionResult>('completed');
+  const [showNoteTemplates,setShowNoteTemplates]=useState(false);
   const [blockReason, setBlockReason] = useState('');
   const [archiveReason,setArchiveReason]=useState('');
   const [draftPhotos, setDraftPhotos] = useState<PhotoDraft[]>([]);
@@ -309,6 +310,7 @@ export default function App() {
     setCompletingOrder(order);
     setCompletionNotes('');
     setCompletionResult('completed');
+    setShowNoteTemplates(false);
     setDraftPhotos([]);
     setDialog('complete');
   };
@@ -843,19 +845,19 @@ export default function App() {
             </>}
             {dialog === 'complete' && completingOrder && <>
               <Text style={[styles.cardTitle, {marginBottom: 8}]}>{completingOrder.title}</Text>
-              <Text style={styles.fieldLabel}>Resultado do serviço *</Text>
-              <View style={[styles.filters, {marginTop: 2, marginBottom: 8}]}>
-                <Pressable accessibilityRole="button"
-                  accessibilityState={{selected: completionResult === 'completed'}}
-                  style={[styles.choice, completionResult === 'completed' && styles.choiceActive]}
-                  onPress={() => setCompletionResult('completed')}>
-                  <Text style={{color: completionResult === 'completed' ? COLORS.bg : COLORS.text, fontWeight: '800'}}>✓ Concluída</Text>
+              <Text style={styles.fieldLabel}>Como ficou o serviço?</Text>
+              <View style={styles.executionChoices}>
+                <Pressable accessibilityRole="button" accessibilityState={{selected:completionResult==='completed'}}
+                  onPress={()=>setCompletionResult('completed')}
+                  style={[styles.executionChoice,completionResult==='completed'&&styles.executionDone]}>
+                  <Text style={[styles.executionChoiceIcon,{color:COLORS.green}]}>✓</Text>
+                  <Text style={styles.executionChoiceText}>Concluído</Text>
                 </Pressable>
-                <Pressable accessibilityRole="button"
-                  accessibilityState={{selected: completionResult === 'partial'}}
-                  style={[styles.choice, completionResult === 'partial' && styles.choiceActive]}
-                  onPress={() => setCompletionResult('partial')}>
-                  <Text style={{color: completionResult === 'partial' ? COLORS.bg : COLORS.text, fontWeight: '800'}}>◐ Parcial</Text>
+                <Pressable accessibilityRole="button" accessibilityState={{selected:completionResult==='partial'}}
+                  onPress={()=>setCompletionResult('partial')}
+                  style={[styles.executionChoice,completionResult==='partial'&&styles.executionPartial]}>
+                  <Text style={[styles.executionChoiceIcon,{color:COLORS.yellow}]}>◐</Text>
+                  <Text style={styles.executionChoiceText}>Parcial</Text>
                 </Pressable>
               </View>
               <Text style={[styles.hint, {color: completionResult === 'partial' ? COLORS.yellow : COLORS.muted, marginBottom: 16}]}>
@@ -867,8 +869,15 @@ export default function App() {
               </Text>
               <FormField label={completionResult === 'partial' ? 'O que foi feito e o que falta executar? *' : 'O que foi realizado?'}  placeholder="Descreva o serviço executado e anomalias encontradas..."
                 multiline value={completionNotes} onChangeText={setCompletionNotes}/>
-              <Text style={styles.fieldLabel}>Anotação rápida (opcional)</Text>
-              <View style={styles.filters}>
+              <Pressable accessibilityRole="button" accessibilityState={{expanded:showNoteTemplates}}
+                onPress={()=>setShowNoteTemplates(v=>!v)}
+                style={styles.notesToggle}>
+                <Text style={styles.notesToggleText}>
+                  {showNoteTemplates?'Ocultar sugestões de anotação':'＋ Usar uma anotação sugerida'}
+                </Text>
+                <Text style={styles.notesToggleText}>{showNoteTemplates?'⌃':'⌄'}</Text>
+              </Pressable>
+              {showNoteTemplates&&<View style={styles.filters}>
                 {['Executado conforme programação, sem anomalias observadas.',
                   'Executado parcialmente: há pendências a detalhar.',
                   'Anomalia identificada: detalhar causa e ação necessária.'].map(message =>
@@ -877,7 +886,7 @@ export default function App() {
                     setCompletionNotes(prev => prev.trim() ? `${prev.trim()}\n${message}` : message);
                   }}
                     style={styles.choice}><Text style={{fontSize: 12, color: COLORS.text}}>{message}</Text></Pressable>)}
-              </View>
+              </View>}
               <Text style={styles.fieldLabel}>Evidências fotográficas ({draftPhotos.length}/{MAX_PHOTOS_PER_EXECUTION})</Text>
               <View style={styles.cardActions}>
                 <Action label="📷 Tirar foto" secondary disabled={busy || draftPhotos.length >= MAX_PHOTOS_PER_EXECUTION}
@@ -975,4 +984,16 @@ const styles = StyleSheet.create({
     minHeight:48,color:COLORS.text, backgroundColor: COLORS.panel2, marginTop:14,fontSize:15},
   filters: {flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12, marginBottom: 8},
   eventRow: {padding: 12, borderBottomWidth: 1, borderColor: COLORS.border},
+  executionChoices:{flexDirection:'row',gap:10,marginTop:8,marginBottom:16},
+  executionChoice:{flex:1,minHeight:94,borderRadius:14,borderWidth:1,
+    borderColor:COLORS.border,backgroundColor:COLORS.panel2,padding:12,
+    justifyContent:'center',alignItems:'center',gap:9},
+  executionDone:{backgroundColor:COLORS.green+'17',borderColor:COLORS.green+'99'},
+  executionPartial:{backgroundColor:COLORS.yellow+'17',borderColor:COLORS.yellow+'99'},
+  executionChoiceIcon:{fontWeight:'900',fontSize:27},
+  executionChoiceText:{color:COLORS.text,fontWeight:'800',fontSize:14},
+  notesToggle:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',
+    minHeight:48,paddingHorizontal:12,paddingVertical:8,borderColor:COLORS.border,
+    borderWidth:1,borderRadius:11,backgroundColor:COLORS.panel2,marginBottom:8},
+  notesToggleText:{fontSize:13,color:COLORS.accent,fontWeight:'800'},
 });
