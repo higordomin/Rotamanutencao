@@ -31,6 +31,7 @@ import {duplicateOrderDraft, needsPriorityAttention} from './src/operatorActions
 import {preselectAsset, executionBelongsToAssetSnapshot, buildLegacyAssetIndex} from './src/assetWorkflow';
 import {assetAreas,findCatalogAssets} from './src/assetCatalog';
 import {AssetPicker} from './src/AssetPicker';
+import {createActionGuard} from './src/actionGuard';
 
 const COLORS = {
   bg: '#08101E', panel: '#111E31', panel2: '#16273D', border: '#24394F',
@@ -137,6 +138,8 @@ export default function App() {
   const [blockReason, setBlockReason] = useState('');
   const [archiveReason,setArchiveReason]=useState('');
   const [draftPhotos, setDraftPhotos] = useState<PhotoDraft[]>([]);
+  // Evita duplicar operações antes de React atualizar o estado busy.
+  const operationGuard=useRef(createActionGuard()).current;
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -250,11 +253,12 @@ export default function App() {
   );
 
   const handle = async (action: () => Promise<void>) => {
-    if (busy) return;
-    setBusy(true);
-    try { await action(); await refresh(); setDialog(null); }
-    catch (e) { Alert.alert('Não foi possível concluir', e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
+    await operationGuard.run(async()=>{
+      setBusy(true);
+      try { await action(); await refresh(); setDialog(null); }
+      catch (e) { Alert.alert('Não foi possível concluir', e instanceof Error ? e.message : String(e)); }
+      finally { setBusy(false); }
+    });
   };
 
   const openAsset = (asset?: Asset) => {
@@ -307,11 +311,12 @@ export default function App() {
     } catch (e) { Alert.alert('Foto não adicionada', e instanceof Error ? e.message : String(e)); }
   };
   const runExtra = async (action: () => Promise<void>) => {
-    if (busy) return;
-    setBusy(true);
-    try { await action(); }
-    catch (e) { Alert.alert('Não foi possível concluir', e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
+    await operationGuard.run(async()=>{
+      setBusy(true);
+      try { await action(); }
+      catch (e) { Alert.alert('Não foi possível concluir', e instanceof Error ? e.message : String(e)); }
+      finally { setBusy(false); }
+    });
   };
   const requestRestore = () => { void runExtra(async () => {
     const data = await pickBackupFile();
