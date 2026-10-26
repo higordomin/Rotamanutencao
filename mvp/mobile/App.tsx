@@ -629,16 +629,20 @@ export default function App() {
       </>}
     </>;
     return <>
-      <Text style={styles.sectionTitle}>Histórico de execuções</Text>
+      <Text style={styles.sectionTitle}>Histórico de serviços</Text>
       {assetContext}
-      <Text style={[styles.detail, {marginBottom: 16}]}>Cada execução fica registrada no aparelho. {assetFilterId ? 'Exibindo execuções ligadas à TAG por ID ou, quando legado, por retrato exato.' : 'Mostrando os registros mais recentes.'}</Text>
+      <Text style={[styles.detail,{marginBottom:16}]}>
+        {historyExecutions.length} execução(ões) disponível(is).
+        {assetFilterId?' Filtrado pela TAG selecionada, sem alterar os registros originais.':
+          ' Veja quando o serviço foi executado e abra o PDF quando necessário.'}
+      </Text>
       {historyExecutions.length === 0 ? <Text style={styles.empty}>{assetFilterId ? 'Nenhuma execução vinculada encontrada. Confira o histórico geral para registros legados ou de equipamentos excluídos.' : 'Nenhum serviço executado ainda.'}</Text>
         : historyExecutions.slice(0, historyPageSize).map(execution => <View key={execution.id} style={styles.card}>
           <View style={{flexDirection: 'row', justifyContent: 'space-between', gap: 12}}>
             <Text style={[styles.cardTitle, {flex: 1}]}>{execution.order_title}</Text>
             <Pill text={execution.result === 'partial' ? 'Parcial' : 'Concluída'} tone={execution.result === 'partial' ? 'yellow' : 'green'}/>
           </View>
-          <Text style={styles.detail}>{new Date(execution.executed_at).toLocaleString('pt-BR')}</Text>
+          <Text style={styles.detail}>Executada em {new Date(execution.executed_at).toLocaleString('pt-BR')}</Text>
           {!!execution.notes && <Text style={styles.description}>{execution.notes}</Text>}
           <Text style={styles.description}>Prazo anterior: {execution.previous_due_date}</Text>
           {execution.result === 'partial'
