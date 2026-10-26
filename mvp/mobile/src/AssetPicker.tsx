@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useState} from 'react';
 import {FlatList,Keyboard,Modal,Pressable,SafeAreaView,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import type {Asset} from './types';
 import {assetAreas,findCatalogAssets,selectedCatalogAsset} from './assetCatalog';
-import {INDUSTRIAL as C,INTERACTION} from './design31';
+import {INDUSTRIAL as C,INTERACTION,SPACING,TYPE,RADII} from './design31';
 
 const c={bg:C.background,panel:C.surface,field:C.elevated,line:C.border,
   ink:C.ink,muted:C.muted,blue:C.accent,green:C.success,red:C.danger};
@@ -110,33 +110,33 @@ export function AssetPicker({assets,value,onChange,label='Equipamento / TAG',all
   </View>;
 }
 const styles=StyleSheet.create({
-  group:{marginBottom:16},label:{color:c.ink,fontSize:12,fontWeight:'700',marginBottom:7},
-  preview:{backgroundColor:c.field,borderColor:c.line,borderWidth:1,borderRadius:12,
-    padding:13,flexDirection:'row',alignItems:'center',minHeight:64,gap:10},
+  group:{marginBottom:SPACING.lg},label:{color:c.ink,fontSize:TYPE.body,fontWeight:'700',marginBottom:7},
+  preview:{backgroundColor:c.field,borderColor:c.line,borderWidth:1,borderRadius:RADII.field,
+    padding:SPACING.md,flexDirection:'row',alignItems:'center',minHeight:72,gap:10},
   tag:{color:c.blue,fontWeight:'900',fontSize:17},name:{color:c.ink,fontSize:14,fontWeight:'700'},
-  sub:{color:c.muted,fontSize:12,marginTop:3,lineHeight:18},
-  change:{color:c.blue,fontSize:12,fontWeight:'800'},
+  sub:{color:c.muted,fontSize:TYPE.caption,marginTop:3,lineHeight:19},
+  change:{color:c.blue,fontSize:TYPE.caption,fontWeight:'800'},
   modal:{flex:1,backgroundColor:c.bg},header:{flexDirection:'row',alignItems:'center',gap:12,
-    paddingHorizontal:16,paddingTop:18,paddingBottom:12},
-  heading:{color:c.ink,fontSize:24,fontWeight:'900'},
-  outline:{padding:10,borderWidth:1,borderColor:c.line,borderRadius:9},
+    paddingHorizontal:SPACING.screen,paddingTop:SPACING.lg,paddingBottom:SPACING.md},
+  heading:{color:c.ink,fontSize:TYPE.title,fontWeight:'900'},
+  outline:{padding:11,minHeight:INTERACTION.minTouch,borderWidth:1,borderColor:c.line,borderRadius:RADII.chip,justifyContent:'center'},
   link:{color:c.blue,fontSize:12,fontWeight:'800'},
-  search:{marginHorizontal:16,marginBottom:6,backgroundColor:c.field,borderColor:c.blue,
-    borderWidth:1,borderRadius:11,color:c.ink,paddingHorizontal:13,paddingVertical:13},
+  search:{marginHorizontal:SPACING.screen,marginBottom:6,backgroundColor:c.field,borderColor:c.line,
+    borderWidth:1,borderRadius:RADII.field,color:c.ink,paddingHorizontal:14,paddingVertical:13,fontSize:TYPE.body,minHeight:INTERACTION.minTouch},
   areaRow:{paddingHorizontal:16,gap:8,alignItems:'center',paddingVertical:9},
-  chip:{paddingHorizontal:12,paddingVertical:9,backgroundColor:c.field,borderColor:c.line,
-    borderWidth:1,borderRadius:9},chipActive:{backgroundColor:c.blue,borderColor:c.blue},
+  chip:{paddingHorizontal:12,paddingVertical:11,minHeight:INTERACTION.minTouch,justifyContent:'center',backgroundColor:c.field,borderColor:c.line,
+    borderWidth:1,borderRadius:RADII.chip},chipActive:{backgroundColor:c.blue,borderColor:c.blue},
   chipText:{color:c.ink,fontSize:12,fontWeight:'700'},chipTextActive:{color:c.bg},
   count:{paddingHorizontal:16,paddingVertical:9,fontSize:12,color:c.muted},
   radio:{width:28,height:28,borderRadius:14,borderWidth:2,borderColor:c.line,
     alignItems:'center',justifyContent:'center'},
   radioSelected:{backgroundColor:c.green,borderColor:c.green},
   row:{backgroundColor:c.panel,marginBottom:8,borderWidth:1,borderColor:c.line,
-    borderRadius:11,paddingHorizontal:13,paddingVertical:12,flexDirection:'row',
-    gap:14,alignItems:'center',minHeight:78},
+    borderRadius:RADII.field,paddingHorizontal:SPACING.md,paddingVertical:SPACING.md,flexDirection:'row',
+    gap:SPACING.group,alignItems:'center',minHeight:82},
   rowActive:{borderColor:c.green,backgroundColor:c.green+'13'},
   empty:{textAlign:'center',color:c.muted,padding:30,lineHeight:22},
-  footer:{borderTopWidth:1,borderColor:c.line,padding:12,gap:9,
+  footer:{borderTopWidth:1,borderColor:c.line,padding:SPACING.md,gap:9,
     flexDirection:'row',alignItems:'center',backgroundColor:c.panel},
   footerLabel:{color:c.muted,fontSize:10,marginBottom:3,fontWeight:'800',letterSpacing:.6},
   submit:{backgroundColor:c.blue,paddingHorizontal:16,paddingVertical:13,
