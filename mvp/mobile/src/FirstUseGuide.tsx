@@ -1,6 +1,6 @@
 import React from 'react';
 import {Pressable,StyleSheet,Text,View} from 'react-native';
-import {INDUSTRIAL as C,INTERACTION} from './design31';
+import {INDUSTRIAL as C,INTERACTION,SPACING,TYPE,RADII} from './design31';
 import {FIRST_USE_STEPS} from './firstUse34';
 
 /** Guia breve e contextual; nunca cria exemplos dentro da base local. */
@@ -43,18 +43,18 @@ export function FirstUseGuide({onNewAsset,onNewOrder,onOpenAgenda}:{
 const s=StyleSheet.create({
   page:{gap:13,paddingBottom:24,paddingTop:8},
   eyebrow:{fontSize:11,color:C.accent,fontWeight:'900',letterSpacing:1},
-  heading:{fontSize:26,lineHeight:33,fontWeight:'900',color:C.ink},
-  subtitle:{fontSize:14,lineHeight:22,color:C.muted,marginBottom:3},
+  heading:{fontSize:TYPE.hero,lineHeight:33,fontWeight:'900',color:C.ink},
+  subtitle:{fontSize:TYPE.body,lineHeight:22,color:C.muted,marginBottom:3},
   steps:{gap:1,backgroundColor:C.surface,borderWidth:1,borderColor:C.border,
-    borderRadius:16,paddingHorizontal:15,paddingVertical:7},
+    borderRadius:RADII.card,paddingHorizontal:15,paddingVertical:7},
   step:{flexDirection:'row',gap:12,alignItems:'center',paddingVertical:13,
     borderBottomColor:C.border,borderBottomWidth:.5},
   numberBox:{width:34,height:34,borderRadius:10,backgroundColor:C.elevated,
     alignItems:'center',justifyContent:'center'},
   number:{color:C.accent,fontSize:17,fontWeight:'900'},
-  stepTitle:{fontSize:14,fontWeight:'800',color:C.ink},
-  stepDesc:{fontSize:12,lineHeight:18,color:C.muted},
-  primary:{minHeight:INTERACTION.minTouch+4,borderRadius:12,backgroundColor:C.accent,
+  stepTitle:{fontSize:TYPE.body,fontWeight:'800',color:C.ink},
+  stepDesc:{fontSize:TYPE.caption,lineHeight:19,color:C.muted},
+  primary:{minHeight:INTERACTION.minTouch+4,borderRadius:RADII.field,backgroundColor:C.accent,
     paddingHorizontal:16,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
   primaryText:{fontSize:15,fontWeight:'900',color:C.background},
   secondary:{minHeight:INTERACTION.minTouch,borderRadius:12,backgroundColor:C.elevated,
