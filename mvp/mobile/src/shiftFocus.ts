@@ -30,8 +30,9 @@ export function buildShiftFocus(items:readonly AgendaEntry[],today:string):Shift
     if(include)selected.set(item.kind+':'+item.id,item);
   }
   const entries=[...selected.values()].sort((a,b)=>{
-    const rank=(x:AgendaEntry)=>x.attention?0:x.overdue?1:x.blocked?2:x.partial?3:
-      x.dueDate===today?4:5;
+    const rank=(x:AgendaEntry)=>x.kind==='route'&&x.attention?0:
+      x.overdue?1:x.blocked?2:x.attention?3:x.partial?4:
+      x.dueDate===today?5:6;
     return rank(a)-rank(b)||sortPriority(a.priority)-sortPriority(b.priority)
       ||(a.dueDate??'9999-12-31').localeCompare(b.dueDate??'9999-12-31')
       ||a.title.localeCompare(b.title,'pt-BR')||a.id.localeCompare(b.id);
