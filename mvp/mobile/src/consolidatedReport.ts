@@ -8,19 +8,22 @@ import {
   buildConsolidatedHtml,MAX_REPORT_EXECUTIONS,MAX_REPORT_ROUTE_ITEMS,MAX_REPORT_PHOTOS,
   validateReportPeriod,
 } from './consolidatedReportModel';
-import type {ConsolidatedReportData,ReportExecution,ReportPending,ReportRouteItem,ReportPhoto} from './consolidatedReportModel';
+import type {ConsolidatedReportData,ReportExecution,ReportPending,ReportRouteItem,ReportPhoto,ReportSpecialty} from './consolidatedReportModel';
 import type {RouteRun} from './routes';
 
 type ImageRow = {id:string;owner_id:string;filename:string;
   mime_type:'image/jpeg'|'image/png';caption:string;owner_kind:'os'|'route'};
 
 /** Consulta local consistente: nunca usa somente a janela de 500 execuções da tela. */
-async function readReportRows(start:string,end:string,includePhotos:boolean):Promise<{
+async function readReportRows(start:string,end:string,includePhotos:boolean,specialty:ReportSpecialty):Promise<{
   executions:ReportExecution[];routeRuns:RouteRun[];routeItems:ReportRouteItem[];
   pendingOrders:ReportPending[];photos:ImageRow[];
 }> {
   const db=await getDatabase();
   const today=localDate();
+  const onlyOs=specialty!=='Todas';
+  const whereSpecialty=onlyOs?' AND category=?':'';
+  const argSpecialty=onlyOs?[specialty]:[];
   // Expo SQLite retorna Promise<void> neste método: preencher resultado dentro da transação.
   const output:{executions:ReportExecution[];routeRuns:RouteRun[];
     routeItems:ReportRouteItem[];pendingOrders:ReportPending[];photos:ImageRow[]}={
@@ -29,33 +32,35 @@ async function readReportRows(start:string,end:string,includePhotos:boolean):Pro
   await db.withExclusiveTransactionAsync(async tx=>{
     const executions=await tx.getAllAsync<ReportExecution>(`
       SELECT id,order_title,result,executed_at,asset_label,category,notes,next_due_date
-      FROM executions WHERE date(executed_at,'localtime') BETWEEN ? AND ?
-      ORDER BY executed_at DESC,id LIMIT ?`,start,end,MAX_REPORT_EXECUTIONS+1);
-    const routeRuns=await tx.getAllAsync<RouteRun>(`
+      FROM executions WHERE date(executed_at,'localtime') BETWEEN ? AND ?${whereSpecialty}
+      ORDER BY executed_at DESC,id LIMIT ?`,start,end,...argSpecialty,MAX_REPORT_EXECUTIONS+1);
+    const routeRuns=onlyOs?[]:await tx.getAllAsync<RouteRun>(`
       SELECT * FROM route_runs WHERE finished_at IS NOT NULL
       AND date(finished_at,'localtime') BETWEEN ? AND ?
       ORDER BY finished_at DESC,id LIMIT 101`,start,end);
-    const routeItems=await tx.getAllAsync<ReportRouteItem>(`
+    const routeItems=onlyOs?[]:await tx.getAllAsync<ReportRouteItem>(`
       SELECT i.id,i.run_id,i.point_title,i.asset_label,i.status,i.notes
       FROM route_run_items i JOIN route_runs r ON r.id=i.run_id
       WHERE r.finished_at IS NOT NULL AND date(r.finished_at,'localtime') BETWEEN ? AND ?
       ORDER BY r.finished_at DESC,i.position,i.id LIMIT ?`,start,end,MAX_REPORT_ROUTE_ITEMS+1);
     const pendingOrders=await tx.getAllAsync<ReportPending>(`
-      SELECT o.id,o.title,o.due_date,o.priority,o.block_reason,o.partial_reason,
+      SELECT o.id,o.title,o.due_date,o.priority,o.category,o.block_reason,o.partial_reason,
       a.name AS asset_name,a.code AS asset_code,a.area AS asset_area
       FROM work_orders o LEFT JOIN assets a ON a.id=o.asset_id
       WHERE o.archived_at IS NULL AND o.status='pending'
       AND (o.block_reason!='' OR o.partial_reason!='' OR o.due_date<?)
+      ${onlyOs?'AND o.category=?':''}
       ORDER BY o.due_date,CASE o.priority WHEN 'Alta' THEN 0 WHEN 'Média' THEN 1 ELSE 2 END
-      LIMIT 201`,today);
+      LIMIT 201`,today,...argSpecialty);
     let photos:ImageRow[]=[];
     if(includePhotos) {
       const orderImages=await tx.getAllAsync<Omit<ImageRow,'owner_kind'>>(`
         SELECT p.id,p.execution_id AS owner_id,p.filename,p.mime_type,e.order_title AS caption
         FROM execution_photos p JOIN executions e ON e.id=p.execution_id
         WHERE date(e.executed_at,'localtime') BETWEEN ? AND ?
-        ORDER BY e.executed_at DESC,p.created_at,p.id LIMIT ?`,start,end,MAX_REPORT_PHOTOS+1);
-      const routeImages=await tx.getAllAsync<Omit<ImageRow,'owner_kind'>>(`
+        ${onlyOs?'AND e.category=?':''}
+        ORDER BY e.executed_at DESC,p.created_at,p.id LIMIT ?`,start,end,...argSpecialty,MAX_REPORT_PHOTOS+1);
+      const routeImages=onlyOs?[]:await tx.getAllAsync<Omit<ImageRow,'owner_kind'>>(`
         SELECT p.id,p.item_id AS owner_id,p.filename,p.mime_type,
         (r.route_title || ' · ' || i.point_title || ' · ' || i.asset_label) AS caption
         FROM route_run_photos p JOIN route_run_items i ON i.id=p.item_id
@@ -74,9 +79,10 @@ async function readReportRows(start:string,end:string,includePhotos:boolean):Pro
 }
 
 /** Gera e compartilha, sob pedido explícito do usuário, sem alterar SQLite ou enviar para servidores. */
-export async function exportConsolidatedPdf(start:string,end:string,includePhotos:boolean):Promise<void> {
+export async function exportConsolidatedPdf(start:string,end:string,includePhotos:boolean,
+  specialty:ReportSpecialty='Todas'):Promise<void> {
   validateReportPeriod(start,end);
-  const rows=await readReportRows(start,end,includePhotos);
+  const rows=await readReportRows(start,end,includePhotos,specialty);
   if(rows.executions.length>MAX_REPORT_EXECUTIONS||rows.routeRuns.length>100
     ||rows.routeItems.length>MAX_REPORT_ROUTE_ITEMS||rows.pendingOrders.length>200)
     throw new Error('Muitos registros neste relatório. Reduza o período ou resolva pendências atuais.');
@@ -101,7 +107,7 @@ export async function exportConsolidatedPdf(start:string,end:string,includePhoto
   const data:ConsolidatedReportData={
     start,end,generatedAt:new Date().toISOString(),executions:rows.executions,
     routeRuns:rows.routeRuns,routeItems:rows.routeItems,pendingOrders:rows.pendingOrders,
-    photos:pictures,includedPhotos:includePhotos,
+    photos:pictures,includedPhotos:includePhotos,specialty,
   };
   const html=buildConsolidatedHtml(data);
   if(!await Sharing.isAvailableAsync())throw new Error('Compartilhamento indisponível neste dispositivo.');
