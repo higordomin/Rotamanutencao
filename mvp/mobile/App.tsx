@@ -26,6 +26,7 @@ import {ConsolidatedReportPanel} from './src/ConsolidatedReportPanel';
 import {syncLocalReminders} from './src/localReminders';
 import {filterCompletedExecutions} from './src/completedExecutions';
 import {inspectLocalStorage} from './src/storageDiagnostics';
+import {optimizeLocalDatabase} from './src/storageMaintenance';
 import {duplicateOrderDraft, needsPriorityAttention} from './src/operatorActions';
 import {preselectAsset, executionBelongsToAssetSnapshot, buildLegacyAssetIndex} from './src/assetWorkflow';
 import {assetAreas,findCatalogAssets} from './src/assetCatalog';
@@ -534,6 +535,24 @@ export default function App() {
         </View>
       </View>
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>Otimização segura do banco local</Text>
+        <Text style={styles.description}>
+          Reorganiza estatísticas internas do SQLite para melhorar consultas.
+          Não remove equipamentos, OS, históricos, rotas, fotos nem backups.
+          Versões antigas do aplicativo não são apagadas automaticamente.
+        </Text>
+        <View style={styles.cardActions}>
+          <Action secondary disabled={busy} label={busy?'Ocupado...':'Otimizar banco sem apagar dados'}
+            onPress={()=>Alert.alert('Otimizar dados locais?',
+              'A manutenção é não destrutiva. Para sua segurança, mantenha um backup externo atualizado.',
+              [{text:'Cancelar',style:'cancel'},{text:'Otimizar',onPress:()=>{void runExtra(async()=>{
+                const result=await optimizeLocalDatabase();
+                Alert.alert('Otimização concluída',
+                  `Registros preservados: ${result.records}. Fotos preservadas: ${result.photos}. Nenhum histórico foi excluído.`);
+              });}}])}/>
+        </View>
+      </View>
+      <View style={styles.card}>
         <Text style={styles.cardTitle}>Exportar backup completo</Text>
         <Text style={styles.description}>Inclui equipamentos, atividades, execuções e fotos. Salve o JSON em local seguro fora do aplicativo, por exemplo em uma pasta privada.</Text>
         <View style={styles.cardActions}><Action disabled={busy} label={busy ? 'Preparando...' : 'Exportar backup'}
@@ -632,7 +651,7 @@ export default function App() {
     <View style={styles.topbar}>
       <Image source={require('./assets/icon.png')} accessibilityLabel="Logo RotaManutenção" style={styles.logo}/>
       <View style={{flex: 1}}><Text style={styles.brand}>Rota<Text style={{color: COLORS.accent}}>Manutenção</Text></Text>
-        <Text style={styles.brandSub}>MVP 0.24.0 · OFFLINE · USO INDIVIDUAL</Text></View>
+        <Text style={styles.brandSub}>MVP 0.26.0 · OFFLINE · USO INDIVIDUAL</Text></View>
       <Pill text="● Local" tone="green"/>
     </View>
     {!ready ? <View style={[styles.safe, {justifyContent: 'center'}]}><ActivityIndicator color={COLORS.accent} size="large"/></View>
