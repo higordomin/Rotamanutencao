@@ -44,14 +44,16 @@ algoritmo de OS/rotas, JSON backup v11, calendário, lembretes ou PDFs.
 10. QA Android versão `0.35.0`/`versionCode=350`, pacote e certificado QA
     intactos. TypeScript, Node, SQLite e export Android precisam passar.
 
-## Critério de aceitação
+## Resultado da validação — 26/10/2026
 
-GitHub Actions CI + build APK aprovados e testes físicos concluídos. Apenas
-após o usuário aprovar no Android a versão visual 0.35 poderá ser promovida
-a nova base estável no `main`.
+- CI GitHub: TypeScript, export Android, 233/233 testes Node e smoke SQLite aprovados.
+- APK Android QA 0.35.0 (versionCode 350): compilação, identificação e certificado aprovados.
+- Usuário confirmou funcionamento da versão 0.35 no aparelho após instalação.
+- Versão promovida à base estável `main` pelo PR #52, sem migração destrutiva.
+- Testes físicos em outros modelos e configurações Android continuam recomendados.
 
 ## Higiene do repositório
 
-`main` foi consolidado na 0.34 por squash, com histórico antigo preservado no Git.
-Nenhuma documentação de QA ou branch com referências históricas foi apagada.
-Não apagar a base estável durante validação da 0.35.
+`main` foi consolidado na 0.34 pelo PR #51 e atualizado à 0.35 pelo PR #52.
+Histórico Git e branches anteriores foram preservados; PRs antigos foram encerrados
+como substituídos. Nenhum dado local do usuário é alterado por essa organização.
