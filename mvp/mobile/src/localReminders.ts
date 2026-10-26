@@ -3,7 +3,8 @@ import {Platform} from 'react-native';
 import {getDatabase,listOrders} from './db';
 import {listRoutes} from './routes';
 import {validReminderTime} from './reminderPlan';
-import {planDailyAndPriority,type MaintenanceNotice} from './dailyNoticePlan';
+import {planDailyAndPriority} from './dailyNoticePlan';
+import {noticeInputs,previewPlannedReminders,type ReminderPreviewLine} from './reminderPreview';
 
 const CHANNEL='rotamanutencao-lembretes-v2';
 const OWNER='rotamanutencao-local-v1';
@@ -61,14 +62,7 @@ async function resync():Promise<number>{
   if(!permission.granted){await cancelOwned();return 0;}
   await createChannel();
   const [orders,routes]=await Promise.all([listOrders(),listRoutes()]);
-  const items:MaintenanceNotice[]=[
-    ...orders.map(order=>({id:order.id,type:'order' as const,title:order.title,
-      dueDate:order.due_date,blocked:!!order.block_reason,completed:order.status==='completed',
-      priority:order.priority,category:order.category,assetCode:order.asset_code})),
-    ...routes.map(route=>({id:route.id,type:'route' as const,title:route.title,
-      dueDate:route.next_due_date,attentionCount:route.attention_count,
-      completed:false})),
-  ];
+  const items=noticeInputs(orders,routes);
   const next=planDailyAndPriority(items,new Date(),settings.hour,settings.minute);
   // Não apaga notificações agendadas por outros aplicativos ou módulos.
   await cancelOwned();
@@ -164,4 +158,12 @@ export async function getReminderScheduleBreakdown():Promise<{total:number;daily
 export async function countScheduledReminders():Promise<number>{
   const requests=await Notifications.getAllScheduledNotificationsAsync();
   return requests.filter(x=>x.content.data?.rotaOwner===OWNER).length;
+}
+
+/** Prévia somente leitura; não solicita permissão, não agenda e não cancela avisos. */
+export async function getLocalReminderPreview():Promise<ReminderPreviewLine[]>{
+  const settings=await readPreferences();
+  const [orders,routes]=await Promise.all([listOrders(),listRoutes()]);
+  return previewPlannedReminders(noticeInputs(orders,routes),new Date(),
+    settings.hour,settings.minute);
 }
