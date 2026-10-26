@@ -177,12 +177,13 @@ export default function App() {
   }, [refresh]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active' && ready) void refresh().catch(err => {
+      // Não consulta uma base ainda não inicializada ou cuja migração falhou.
+      if (state === 'active' && ready && !initError) void refresh().catch(err => {
         Alert.alert('Erro ao atualizar', String(err));
       });
     });
     return () => subscription.remove();
-  }, [ready, refresh]);
+  }, [ready, refresh, initError]);
 
   const selectedAsset = useMemo(() => assets.find(asset => asset.id === assetFilterId) ?? null,
     [assets, assetFilterId]);
