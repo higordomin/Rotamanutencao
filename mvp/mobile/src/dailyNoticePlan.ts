@@ -1,5 +1,7 @@
 import {localDate,validDate} from './logic.ts';
 import {validReminderTime} from './reminderPlan.ts';
+import {formatDailyNotification,formatPriorityNotification,DEFAULT_NOTICE_APPEARANCE,
+  type NoticeAppearance} from './notificationContent.ts';
 
 export type MaintenanceNotice={
   id:string;
@@ -72,7 +74,7 @@ export function buildDailyDigest(items:MaintenanceNotice[],day:string):{
   const chunks=[basic+'.'];
   if(categories.length)chunks.push(categories.join('; ')+'.');
   if(alerts.length)chunks.push('Atenção: '+alerts.join(', ')+'.');
-  if(!due.length&&!alerts.length)chunks.splice(0,1,'Nenhuma OS ou rota programada para hoje. Tudo em dia.');
+  if(!due.length&&!alerts.length)chunks.splice(0,1,'Nenhuma OS ou rota programada para hoje.');
   return {orders:orders.length,routes:routes.length,overdue,blocked,anomalies,
     categories,title:'RotaManutenção • Programação de hoje',body:chunks.join(' ').slice(0,450)};
 }
@@ -84,24 +86,14 @@ function criticalKind(item:MaintenanceNotice,day:string):NoticeKind|null{
     return 'high';
   return null;
 }
-function criticalContent(item:MaintenanceNotice,kind:NoticeKind):{title:string;body:string}{
-  const name=item.title.slice(0,96);
-  const prefix=item.type==='route'?'Rota':'OS';
-  const tag=item.assetCode?.trim()?` • TAG ${item.assetCode.trim().slice(0,30)}`:'';
-  if(kind==='attention')return {title:`⚠ Rota com pendência • ${name}`,
-    body:`${item.attentionCount} ponto(s) com anomalia ou não executados. Consulte a rota antes de regularizar.`};
-  if(kind==='blocked')return {title:`⚠ OS impedida • ${name}`,
-    body:`Atividade aguardando liberação${tag}. Verifique o impedimento.`};
-  if(kind==='overdue')return {title:`⚠ ${prefix} atrasada • ${name}`,
-    body:`Prazo vencido${tag}. Confira a programação e registre a execução.`};
-  return {title:`⚠ OS de alta prioridade • ${name}`,
-    body:`Manutenção importante para hoje${tag}. Verifique o serviço.`};
-}
 /** Agenda um resumo por dia para a próxima semana e avisos individuais apenas para
  * pendências, impedimentos, atrasos e OS de prioridade Alta.
  * O texto do resumo é um retrato da base na última abertura/sincronização.
  */
-export function planDailyAndPriority(items:MaintenanceNotice[],now:Date,hour:number,minute:number):PlannedNotice[]{
+export function planDailyAndPriority(
+  items:MaintenanceNotice[],now:Date,hour:number,minute:number,
+  appearance:NoticeAppearance=DEFAULT_NOTICE_APPEARANCE,
+):PlannedNotice[]{
   if(!validReminderTime(hour,minute)||Number.isNaN(now.getTime()))
     throw new Error('Horário ou data inválidos.');
   const today=localDate(now);
@@ -110,7 +102,8 @@ export function planDailyAndPriority(items:MaintenanceNotice[],now:Date,hour:num
   for(let i=0;i<DIGEST_DAYS;i++){
     const day=addCalendarDays(firstDay,i);
     const digest=buildDailyDigest(items,day);
-    summaries.push({key:`daily:${day}`,kind:'daily',title:digest.title,body:digest.body,date:dayAt(day,hour,minute)});
+    const content=formatDailyNotification(digest,appearance);
+    summaries.push({key:`daily:${day}`,kind:'daily',title:content.title,body:content.body,date:dayAt(day,hour,minute)});
   }
 
   const critical:PlannedNotice[]=[];
@@ -122,12 +115,12 @@ export function planDailyAndPriority(items:MaintenanceNotice[],now:Date,hour:num
     const targetDay=kind==='high'&&item.dueDate && item.dueDate>firstDay
       ?item.dueDate:firstDay;
     if(targetDay>addCalendarDays(firstDay,DIGEST_DAYS-1))continue;
-    const base=dayAt(targetDay,hour,minute);
-    const alertAt=new Date(base.getTime()+2*60*1000);
-    // Se os 2 minutos de tolerância já passaram, não disparar retroativamente.
-    const scheduled=alertAt.getTime()>now.getTime()?alertAt:
-      new Date(dayAt(addCalendarDays(targetDay,1),hour,minute).getTime()+2*60*1000);
-    const content=criticalContent(item,kind);
+    // Não acrescenta dois minutos artificiais: mesmo horário solicitado para
+    // os avisos críticos, sem disparo retroativo quando o horário já passou.
+    const at=dayAt(targetDay,hour,minute);
+    const scheduled=at.getTime()>now.getTime()?at:
+      dayAt(addCalendarDays(targetDay,1),hour,minute);
+    const content=formatPriorityNotification(item,kind,appearance);
     critical.push({key:`priority:${item.type}:${item.id}`,kind,
       target:item.type,title:content.title,body:content.body,date:scheduled});
   }
