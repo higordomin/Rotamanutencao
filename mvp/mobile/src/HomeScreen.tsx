@@ -31,7 +31,7 @@ export function HomeScreen({orders,routes,onOpenAgenda,onNewOrder,onOpenRoute,on
   return <View style={s.page}>
     <View style={s.intro}>
       <Text style={s.eyebrow}>MEU DIA · {brazilianDate(today)}</Text>
-      <Text style={s.heading}>O que vamos fazer hoje?</Text>
+      <Text accessibilityRole="header" style={s.heading}>O que vamos fazer hoje?</Text>
       <Text style={s.help}>Veja sua prioridade e abra o serviço com um toque.</Text>
     </View>
 
