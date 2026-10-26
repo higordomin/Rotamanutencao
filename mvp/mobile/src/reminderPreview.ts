@@ -1,6 +1,7 @@
 import type {WorkOrder} from './types';
 import type {Route} from './routes';
 import {planDailyAndPriority,type MaintenanceNotice,type PlannedNotice} from './dailyNoticePlan.ts';
+import {DEFAULT_NOTICE_APPEARANCE,type NoticeAppearance} from './notificationContent.ts';
 
 export type ReminderPreviewLine={
   key:string;kind:PlannedNotice['kind'];at:string;title:string;body:string;
@@ -22,11 +23,11 @@ export function noticeInputs(
 /** Simulação de leitura — jamais chama o sistema de notificações ou grava no SQLite. */
 export function previewPlannedReminders(
   inputs:readonly MaintenanceNotice[],now:Date,hour:number,minute:number,
-  count=7,
+  count=7,appearance:NoticeAppearance=DEFAULT_NOTICE_APPEARANCE,
 ):ReminderPreviewLine[]{
   if(!Number.isSafeInteger(count)||count<1||count>40)
     throw new Error('Limite de prévia inválido.');
-  return planDailyAndPriority([...inputs],now,hour,minute)
+  return planDailyAndPriority([...inputs],now,hour,minute,appearance)
     .sort((a,b)=>a.date.getTime()-b.date.getTime()||
       (a.kind==='daily'?1:0)-(b.kind==='daily'?1:0)||a.key.localeCompare(b.key))
     .slice(0,count)
