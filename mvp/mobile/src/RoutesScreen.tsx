@@ -361,7 +361,7 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
                 setRunFilter('pending');setRunPageSize(15);}}/>}
           </>}
           <Text style={s.sub}>Exibindo {Math.min(filteredItems.length,runPageSize)} de {filteredItems.length} ponto(s) encontrados.</Text>
-        </View>}
+        </View>
         {filteredItems.length===0&&<Text style={s.note}>
           {runFilter==='pending'?'Nenhum ponto pendente neste momento.':
             runFilter==='attention'?'Nenhuma anomalia ou ponto não executado registrado.':
