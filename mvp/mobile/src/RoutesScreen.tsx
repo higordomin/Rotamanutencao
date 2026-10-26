@@ -18,7 +18,7 @@ import {ROUTE_INTERVALS,previewRouteDates,scheduleNeedsConfirmation} from './rou
 import {updateRouteSchedule} from './routes';
 import {routeProgress} from './quickRouteActions';
 import {filterExecutionItems,pagedExecutionItems,nextPendingItem,photosByRouteItem,type ExecutionFilter} from './routeExecutionView';
-import {INDUSTRIAL as THEME,INTERACTION} from './design31';
+import {INDUSTRIAL as THEME,INTERACTION,SPACING,TYPE,RADII} from './design31';
 import {mayQuickCompletePoint} from './executionGuide';
 import {createActionGuard} from './actionGuard';
 
@@ -639,22 +639,22 @@ export function RoutesScreen({assets,onDataChanged,initialRouteId,onOpenCorrecti
 }
 const s=StyleSheet.create({
  thumbnail:{width:96,height:78,borderRadius:8,backgroundColor:c.field},
- page:{padding:16,paddingBottom:65,gap:11},card:{backgroundColor:c.panel,borderRadius:16,borderWidth:1,borderColor:c.line,padding:16,gap:9},
- heading:{fontSize:21,fontWeight:'900',color:c.text,marginBottom:6},
- title:{fontSize:15,fontWeight:'800',color:c.text},
- label:{fontSize:12,fontWeight:'700',color:c.muted,marginBottom:6},
- sub:{fontSize:12,color:c.muted,lineHeight:18},
+ page:{padding:SPACING.screen,paddingBottom:72,gap:SPACING.md},card:{backgroundColor:c.panel,borderRadius:RADII.card,borderWidth:1,borderColor:c.line,padding:SPACING.lg,gap:SPACING.sm},
+ heading:{fontSize:TYPE.title,fontWeight:'900',color:c.text,marginBottom:6},
+ title:{fontSize:TYPE.bodyLarge,fontWeight:'800',color:c.text},
+ label:{fontSize:TYPE.body,fontWeight:'700',color:c.muted,marginBottom:6},
+ sub:{fontSize:TYPE.caption,color:c.muted,lineHeight:19},
  note:{fontSize:13,color:c.text,marginTop:8,lineHeight:19},
- input:{color:c.text,backgroundColor:c.field,borderWidth:1,borderColor:c.line,paddingHorizontal:12,minHeight:45,borderRadius:9},
+ input:{color:c.text,backgroundColor:c.field,borderWidth:1,borderColor:c.line,paddingHorizontal:12,minHeight:INTERACTION.minTouch,borderRadius:RADII.field,fontSize:TYPE.body},
  row:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:9},
  planningBox:{backgroundColor:c.field,borderRadius:12,padding:12,marginTop:10,gap:6},
  presetRow:{flexDirection:'row',flexWrap:'wrap',gap:6,marginTop:4},
- preset:{borderColor:c.line,borderWidth:1,borderRadius:8,paddingHorizontal:11,
-   paddingVertical:10,minHeight:40,justifyContent:'center'},
+ preset:{borderColor:c.line,borderWidth:1,borderRadius:RADII.chip,paddingHorizontal:11,
+   paddingVertical:10,minHeight:INTERACTION.minTouch,justifyContent:'center'},
  presetActive:{backgroundColor:c.blue,borderColor:c.blue},
  presetText:{color:c.text,fontWeight:'800',fontSize:12},
  forecast:{backgroundColor:c.panel,padding:11,borderRadius:10,marginTop:5,gap:4},
- hint:{fontSize:11,color:c.muted,lineHeight:16,marginTop:3},
+ hint:{fontSize:TYPE.caption,color:c.muted,lineHeight:18,marginTop:3},
  rowHeader:{flexDirection:'row',alignItems:'center',gap:10,marginBottom:5},
  editor:{backgroundColor:c.field,padding:10,borderRadius:10,marginTop:8,gap:3},
  orderControls:{flexDirection:'row',gap:5},
@@ -663,18 +663,18 @@ const s=StyleSheet.create({
  orderText:{fontSize:20,fontWeight:'800',color:c.blue},
  compactCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:11,gap:4},
  pointCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:4},
- filterCard:{backgroundColor:c.panel,borderRadius:11,borderWidth:1,borderColor:c.line,padding:10,gap:3},
+ filterCard:{backgroundColor:c.panel,borderRadius:RADII.card,borderWidth:1,borderColor:c.line,padding:SPACING.md,gap:SPACING.sm},
  correctiveBox:{backgroundColor:c.field,borderWidth:1,borderColor:c.line,borderRadius:10,padding:11,marginTop:10,gap:8},
- routeLine:{backgroundColor:c.panel,borderRadius:12,borderWidth:1,borderColor:c.line,
-   padding:13,flexDirection:'row',alignItems:'center',gap:10,minHeight:78},
+ routeLine:{backgroundColor:c.panel,borderRadius:RADII.card,borderWidth:1,borderColor:c.line,
+   padding:SPACING.lg,flexDirection:'row',alignItems:'center',gap:10,minHeight:82},
  progressTrack:{marginTop:9,height:7,borderRadius:6,backgroundColor:c.field,overflow:'hidden'},
  progressBar:{height:7,backgroundColor:c.green,borderRadius:6},
  btn:{backgroundColor:c.blue,minHeight:INTERACTION.minTouch,borderRadius:11,
    paddingHorizontal:14,paddingVertical:11,justifyContent:'center',alignItems:'center'},
  btnText:{color:c.bg,fontWeight:'800',fontSize:12},
  outline:{backgroundColor:c.field,borderColor:c.line,borderWidth:1},
- chip:{backgroundColor:c.field,borderRadius:10,borderWidth:1,borderColor:c.line,
-   minHeight:44,justifyContent:'center',paddingVertical:10,paddingHorizontal:10},
+ chip:{backgroundColor:c.field,borderRadius:RADII.chip,borderWidth:1,borderColor:c.line,
+   minHeight:INTERACTION.minTouch,justifyContent:'center',paddingVertical:10,paddingHorizontal:10},
  chipActive:{backgroundColor:c.blue,borderColor:c.blue},
  chipText:{color:c.text,fontSize:12,fontWeight:'700'},
  asset:{backgroundColor:c.field,borderRadius:8,padding:9,borderColor:c.line,borderWidth:1,marginTop:5},
@@ -686,8 +686,8 @@ const s=StyleSheet.create({
  pointStatus:{fontSize:12,fontWeight:'800'},
  stepLabel:{fontSize:13,color:c.text,fontWeight:'800',marginTop:7},
  resultChoices:{flexDirection:'row',gap:7,marginTop:3},
- resultChoice:{flex:1,minHeight:91,borderRadius:13,alignItems:'center',justifyContent:'center',
+ resultChoice:{flex:1,minHeight:96,borderRadius:RADII.card,alignItems:'center',justifyContent:'center',
    backgroundColor:c.field,borderWidth:1,borderColor:c.line,padding:7,gap:7},
  resultSymbol:{fontSize:25,fontWeight:'900',color:c.muted},
- resultName:{fontSize:12,fontWeight:'800',color:c.text,textAlign:'center'},
+ resultName:{fontSize:TYPE.caption,fontWeight:'800',color:c.text,textAlign:'center'},
 });
