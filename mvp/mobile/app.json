@@ -2,7 +2,7 @@
   "expo": {
     "name": "RotaManutenção",
     "slug": "rotamanutencao",
-    "version": "0.33.0",
+    "version": "0.34.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "android": {
@@ -11,7 +11,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#08101E"
       },
-      "versionCode": 330,
+      "versionCode": 340,
       "permissions": [
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.SCHEDULE_EXACT_ALARM"
