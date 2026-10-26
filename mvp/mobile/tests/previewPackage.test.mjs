@@ -49,3 +49,9 @@ test('versões futuras preservam ID QA e incrementam somente versionCode', () =>
 test('configuração sem versionCode explícito falha para evitar updates errados', () => {
   assert.throws(() => resolveAppConfig({config:{...base,android:{package:'br.com.rotamanutencao.app'}}}), /versionCode/);
 });
+
+
+test('Android declara acesso especial a alarmes pontuais sem prometer concessão automática', () => {
+  assert.ok(expo.android.permissions?.includes('android.permission.SCHEDULE_EXACT_ALARM'));
+  assert.ok(expo.android.permissions?.includes('android.permission.POST_NOTIFICATIONS'));
+});
