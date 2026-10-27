@@ -531,8 +531,83 @@ def test_weekly_productivity_is_sqlite_snapshot_and_not_a_percentage():
 
 
 
+def test_delete_unstarted_os_preserves_history_and_rejects_stale_screen():
+    """Executa o DELETE do db.ts real, não uma versão reinventada no teste."""
+    db = open_sqlite()
+    # O SQL é interpolado como template string TypeScript: extrair diretamente.
+    anchor = "DELETE FROM work_orders WHERE id=? AND updated_at=? AND status='pending'"
+    assert anchor in source
+    sql = anchor + source.split(anchor, 1)[1].split('`', 1)[0]
+    assert sql.count('?') == 2
+    assert "NOT EXISTS(SELECT 1 FROM executions" in sql
+    assert "NOT EXISTS(SELECT 1 FROM order_events" in sql
+    assert "NOT EXISTS(SELECT 1 FROM route_corrective_links" in sql
+
+    timestamp = '2026-10-27T09:00:00Z'
+
+    def seed(os_id, state='pending', archived=False):
+        db.execute("""INSERT INTO work_orders(id,title,description,category,priority,
+          recurrence_days,due_date,status,archived_at,created_at,updated_at)
+          VALUES(?, 'OS de teste', '', 'Mecânica', 'Média',
+          0, '2026-10-27', ?, ?, ?, ?)""",
+          (os_id, state, timestamp if archived else None, timestamp, timestamp))
+
+    def erase(os_id, expected=timestamp):
+        return db.execute(sql, (os_id, expected)).rowcount
+
+    seed('nova')
+    assert erase('nova') == 1
+    assert db.execute("SELECT COUNT(*) FROM work_orders WHERE id='nova'").fetchone()[0] == 0
+
+    seed('arquivada', archived=True)
+    assert erase('arquivada') == 1
+
+    seed('alterada')
+    db.execute("UPDATE work_orders SET updated_at='novo' WHERE id='alterada'")
+    assert erase('alterada') == 0
+
+    seed('finalizada', state='completed')
+    assert erase('finalizada') == 0
+
+    seed('impedida')
+    db.execute("UPDATE work_orders SET block_reason='Peça ausente' WHERE id='impedida'")
+    assert erase('impedida') == 0
+
+    seed('parcial')
+    db.execute("UPDATE work_orders SET partial_reason='Peça faltante' WHERE id='parcial'")
+    assert erase('parcial') == 0
+
+    seed('com-evento')
+    db.execute("""INSERT INTO order_events(id,order_id,event_type,reason,created_at)
+      VALUES('evento','com-evento','blocked','Peça',?)""", (timestamp,))
+    assert erase('com-evento') == 0
+    assert db.execute("SELECT COUNT(*) FROM order_events WHERE id='evento'").fetchone()[0] == 1
+
+    seed('executada')
+    db.execute("""INSERT INTO executions(id,order_id,order_title,notes,executed_at,
+      previous_due_date) VALUES('execucao','executada','OS','OK',?,'2026-10-27')""", (timestamp,))
+    db.execute("""INSERT INTO execution_photos(id,execution_id,filename,mime_type,created_at)
+      VALUES('foto','execucao','foto_exclusao.jpg','image/jpeg',?)""", (timestamp,))
+    assert erase('executada') == 0
+    assert db.execute("SELECT COUNT(*) FROM execution_photos WHERE id='foto'").fetchone()[0] == 1
+
+    seed('corretiva')
+    db.execute("INSERT INTO route_runs(id,route_title,started_at) VALUES('run','Rota',?)",
+      (timestamp,))
+    db.execute("""INSERT INTO route_run_items(id,run_id,point_id,point_title,position)
+      VALUES('item','run','point','Verificar',0)""")
+    db.execute("""INSERT INTO route_corrective_links(item_id,order_id,created_at)
+      VALUES('item','corretiva',?)""", (timestamp,))
+    assert erase('corretiva') == 0
+    assert db.execute("SELECT COUNT(*) FROM route_corrective_links WHERE order_id='corretiva'").fetchone()[0] == 1
+
+    assert db.execute('PRAGMA foreign_key_check').fetchall() == []
+    assert db.execute("SELECT COUNT(*) FROM work_orders").fetchone()[0] == 7
+
+
 if __name__ == '__main__':
     test_fresh()
+    test_delete_unstarted_os_preserves_history_and_rejects_stale_screen()
     test_legacy_upgrade()
     test_routes_and_snapshot_history()
     test_old_route_migration_and_schedule()
@@ -547,4 +622,4 @@ if __name__ == '__main__':
     test_route_edit_reorder_and_duplicate_preserve_history()
     test_corrective_order_link_is_unique_and_survives_status_updates()
     test_weekly_productivity_is_sqlite_snapshot_and_not_a_percentage()
-    print('OK: preferência notificações locais, rotas, OS, migração, cascata e rollback SQLite')
+    print('OK: SQLite, exclui apenas OS sem histórico, preserva fotos/anomalias e bloqueia exclusão obsoleta')

@@ -6,6 +6,7 @@ import {
 import {
   initializeDatabase, listAssets, listExecutions, listOrders, localDate,
   completeOrder, removeAsset, archiveOrder, restoreArchivedOrder, listArchivedOrders,
+  inspectOrderDeletion, deleteUnstartedOrder,
   saveAsset, saveOrder, validDate, listAllPhotos,
   setImpediment, releaseImpediment, listRecentEvents,
 } from './src/db';
@@ -363,6 +364,25 @@ export default function App() {
       {text:'Reativar',onPress:()=>{void handle(()=>restoreArchivedOrder(order.id));}}],
   );
 
+  const confirmDeleteOrder=(order:WorkOrder)=>{
+    if(busy)return;
+    void runExtra(async()=>{
+      const deletion=await inspectOrderDeletion(order.id);
+      if(deletion.reason){
+        Alert.alert('Histórico protegido',`${deletion.reason}\n\nA exclusão definitiva é permitida somente para OS sem execuções ou outros registros.`,
+          [{text:'Entendi'}]);
+        return;
+      }
+      Alert.alert('Excluir esta OS definitivamente?',
+        `“${order.title}” será apagada do planejamento, agenda e lembretes. Não será possível desfazer sem um backup anterior.\n\nDeseja realmente excluir?`,
+        [
+          {text:'Cancelar',style:'cancel'},
+          {text:'Excluir OS',style:'destructive',
+            onPress:()=>{void handle(()=>deleteUnstartedOrder(order.id,deletion.updatedAt));}},
+        ]);
+    });
+  };
+
   const confirmDeleteAsset = (asset: Asset) => Alert.alert(
     'Excluir equipamento?', 'As atividades vinculadas serão mantidas, mas perderão o vínculo com o equipamento.',
     [{text: 'Cancelar', style: 'cancel'}, {text: 'Excluir', style: 'destructive',
@@ -403,8 +423,12 @@ export default function App() {
       </View>
       <View style={styles.cardActions}>
         {archived?
-          <Action label="Reativar OS" secondary disabled={busy}
-            onPress={()=>confirmRestoreOrder(order)}/>:
+          <>
+            <Action label="Reativar OS" secondary disabled={busy}
+              onPress={()=>confirmRestoreOrder(order)}/>
+            <Action label="Excluir OS" secondary dangerous disabled={busy}
+              onPress={()=>confirmDeleteOrder(order)}/>
+          </>:
           <>
             {!done && !isBlocked && <Action label="✓ Executar" onPress={() => openComplete(order)}/>}
             {!done && (isBlocked
@@ -414,8 +438,10 @@ export default function App() {
                   onPress={() => openBlock(order)}/>)}
             <Action label="Editar" secondary onPress={() => openOrder(order)}/>
             <Action label="Duplicar" secondary disabled={busy} onPress={() => openDuplicateOrder(order)}/>
-            <Action label="Arquivar" dangerous disabled={busy}
+            <Action label="Arquivar" secondary disabled={busy}
               onPress={()=>openArchiveOrder(order)}/>
+            <Action label="Excluir OS" secondary dangerous disabled={busy}
+              onPress={()=>confirmDeleteOrder(order)}/>
           </>}
       </View>
     </View>;

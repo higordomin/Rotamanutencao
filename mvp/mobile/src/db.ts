@@ -4,6 +4,7 @@ import {deletePhotoFile, persistPhoto, MAX_PHOTOS_PER_EXECUTION} from './evidenc
 import {localDate, addDays, validDate} from './logic';
 import {completionPlan, executionDecision} from './operations';
 import {buildLegacyAssetIndex, inferLegacyAssetId} from './assetWorkflow';
+import {orderDeletionBlockReason,type OrderDeletionFacts} from './orderDeletion36';
 export {localDate, addDays, validDate} from './logic';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -240,6 +241,42 @@ export async function restoreArchivedOrder(orderId:string):Promise<void>{
     `UPDATE work_orders SET archived_at=NULL,archive_reason='',updated_at=?
      WHERE id=? AND archived_at IS NOT NULL`,new Date().toISOString(),orderId);
   if(result.changes!==1)throw new Error('OS não encontrada ou já reativada.');
+}
+
+/**
+ * Prévia para o aviso antes da exclusão: informa quando a OS precisa ser arquivada.
+ * Não supõe que a lista de 500 execuções carregada na UI contém todo o histórico.
+ */
+export async function inspectOrderDeletion(orderId:string):Promise<{reason:string|null;updatedAt:string}>{
+  const db=await database();
+  const data=await db.getFirstAsync<OrderDeletionFacts & {updated_at:string}>(`
+    SELECT o.status,o.block_reason,o.blocked_at,o.partial_reason,o.partial_at,o.updated_at,
+      (SELECT COUNT(*) FROM executions e WHERE e.order_id=o.id) AS executions,
+      (SELECT COUNT(*) FROM order_events ev WHERE ev.order_id=o.id) AS events,
+      (SELECT COUNT(*) FROM route_corrective_links l WHERE l.order_id=o.id) AS corrective_links
+    FROM work_orders o WHERE o.id=?`,orderId);
+  if(!data)throw new Error('Esta OS não existe mais. Atualize a tela.');
+  return {reason:orderDeletionBlockReason(data),updatedAt:data.updated_at};
+}
+
+/**
+ * Exclusão permanente somente para OS pendentes sem nenhuma evidência vinculada.
+ * O único DELETE é atômico, reavalia os vínculos no mesmo comando e usa
+ * updated_at para rejeitar confirmação obsoleta. Não apaga fotos ou históricos.
+ */
+export async function deleteUnstartedOrder(orderId:string,expectedUpdatedAt:string):Promise<void>{
+  if(!orderId||!expectedUpdatedAt)throw new Error('Seleção de OS inválida.');
+  const db=await database();
+  const result=await db.runAsync(`
+    DELETE FROM work_orders WHERE id=? AND updated_at=? AND status='pending'
+      AND COALESCE(block_reason,'')='' AND blocked_at IS NULL
+      AND COALESCE(partial_reason,'')='' AND partial_at IS NULL
+      AND NOT EXISTS(SELECT 1 FROM executions e WHERE e.order_id=work_orders.id)
+      AND NOT EXISTS(SELECT 1 FROM order_events ev WHERE ev.order_id=work_orders.id)
+      AND NOT EXISTS(SELECT 1 FROM route_corrective_links l WHERE l.order_id=work_orders.id)
+  `,orderId,expectedUpdatedAt);
+  if(result.changes!==1)
+    throw new Error('A OS mudou ou possui histórico protegido. Atualize a lista e use Arquivar se necessário.');
 }
 
 export async function listExecutions(): Promise<Execution[]> {
