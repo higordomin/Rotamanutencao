@@ -227,7 +227,8 @@ export default function App() {
       if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
       if (orderFilter === 'Prioritárias' && !needsPriorityAttention(order)) return false;
       if (orderFilter === 'Concluídas' || orderFilter === 'Arquivadas') return false; // A aba Concluídas mostra execuções históricas, não estados de OS.
-      return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', orderSector(order), order.category, order.block_reason, order.partial_reason]
+      return !term || matchesSector(orderSector(order),search)
+        || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.category, order.block_reason, order.partial_reason]
         .some(value => sectorKey(value).includes(term));
     });
   }, [orders, search, orderFilter, today, assetFilterId,sectorFilter]);
@@ -255,8 +256,9 @@ export default function App() {
     const term=sectorKey(search);
     return archivedOrders.filter(o=>(!assetFilterId || o.asset_id===assetFilterId)
       && (!sectorFilter||matchesSector(orderSector(o),sectorFilter)) && (!term ||
-      [o.title,o.description,o.asset_code||'',o.asset_name||'',orderSector(o),o.archive_reason]
-        .some(value=>sectorKey(value).includes(term))));
+      (matchesSector(orderSector(o),search) ||
+       [o.title,o.description,o.asset_code||'',o.asset_name||'',o.archive_reason]
+        .some(value=>sectorKey(value).includes(term)))));
   },[archivedOrders,search,assetFilterId,sectorFilter]);
   const activityList:ActivityListItem[]=useMemo(()=>orderFilter==='Concluídas'
     ?completedExecutions.map(value=>({kind:'execution' as const,value}))
