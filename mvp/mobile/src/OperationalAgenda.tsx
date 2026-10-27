@@ -12,6 +12,7 @@ import {
 import {agendaPreviewRows,agendaVisualLabel,agendaVisualStatus} from './agendaVisual';
 import {buildShiftFocus,shiftFocusPreview} from './shiftFocus';
 import {readWeeklyProductivity,type WeeklyProductivity} from './weeklyProductivity';
+import {SectorInput} from './SectorInput';
 import {INDUSTRIAL as THEME,INTERACTION,SPACING,TYPE,RADII} from './design31';
 
 const C={bg:THEME.background,panel:THEME.surface,field:THEME.elevated,
@@ -73,7 +74,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
 }){
   const [day,setDay]=useState(()=>localDate());
   const [view,setView]=useState<AgendaView>('day');
-  const [type,setType]=useState<AgendaType>('all');
+  const type:AgendaType='order';
   const [specialty,setSpecialty]=useState<AgendaSpecialty>('Todas');
   const [area,setArea]=useState('');
   const [filtersOpen,setFiltersOpen]=useState(false);
@@ -103,7 +104,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
   const page=pageFromDate(day);
   const grid=useMemo(()=>monthGrid(page),[page.year,page.month]);
   const period=agendaPeriod(day,view);
-  const hasFilters=type!=='all'||specialty!=='Todas'||!!area;
+  const hasFilters=specialty!=='Todas'||!!area;
 
   const focus=(target:string,newView:AgendaView=view)=>{
     setDay(target);setView(newView);setMoreScheduled(false);setMoreBacklog(false);
@@ -119,9 +120,6 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
       }else focus(shiftAgendaDate(day,delta*7),view);
     }catch{/* navegação não ultrapassa os limites da agenda */}
   };
-  const selectType=(value:AgendaType)=>{
-    setType(value);if(value==='route')setSpecialty('Todas');changeFilter();
-  };
   const mainRows=agendaPreviewRows(scheduled,moreScheduled);
   const backlogRows=agendaPreviewRows(backlog,moreBacklog);
   const shiftRows=shiftFocusPreview(shift.entries,moreScheduled);
@@ -132,7 +130,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
     contentContainerStyle={s.page}>
     <View style={s.header}>
       <Text accessibilityRole="header" style={s.heading}>Minha agenda de manutenção</Text>
-      <Text style={s.subheading}>OS e rotas organizadas para o seu dia.</Text>
+      <Text style={s.subheading}>Ordens de serviço organizadas por data e setor.</Text>
     </View>
 
     <View style={s.metrics}>
@@ -163,7 +161,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
     </View>
     {shiftMode&&<View style={s.shiftPanel}>
       <Text style={s.sectionTitle}>Prioridades do turno</Text>
-      <Text style={s.hint}>Uma linha por OS ou rota. Impedimentos exigem liberação;
+      <Text style={s.hint}>Uma linha por ordem de serviço. Impedimentos exigem liberação;
         esta tela não executa nem conclui serviços automaticamente.</Text>
       <View style={s.focusNumbers}>
         <Text style={s.focusMetric}>⚠ {shift.attention} ocorrência(s)</Text>
@@ -177,7 +175,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
         {productivity?<Text style={s.weekText}>
           ✓ {productivity.osCompleted} OS concluída(s) ·
           ↻ {productivity.osPartial} execução(ões) parcial(is) ·
-          ⇢ {productivity.routesFinished} rota(s) finalizada(s)
+          ✓ {productivity.ordersCompleted} OS concluída(s)
         </Text>:<Text style={s.hint}>{productivityError?'Não foi possível consultar os registros.':'Consultando registros locais…'}</Text>}
         <Text style={s.hint}>Contagens reais do SQLite; não representam horas trabalhadas ou produtividade percentual.</Text>
       </View>
@@ -259,7 +257,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
         <Text style={s.emptyTitle}>{shiftMode?
           'Nenhuma pendência prioritária identificada.':'Nenhuma atividade programada neste período.'}</Text>
         <Text style={s.emptyDetail}>{shiftMode?
-          'Confira o calendário para atividades futuras ou rotas avulsas.':
+          'Confira o calendário para ordens futuras.':
           'Selecione outro dia ou confira as pendências.'}</Text>
       </View>:<View style={s.activityList}>
         {currentRows.map(entry=><ActivityRow key={entry.kind+':'+entry.id} item={entry}
@@ -276,32 +274,19 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
         </Pressable>
       </View>
       {filtersOpen&&<View style={s.filterPanel}>
-        <Text style={s.filterTitle}>Tipo de atividade</Text>
-        <View style={s.filterRow}>
-          <Chip title="Todas" selected={type==='all'} onPress={()=>selectType('all')}/>
-          <Chip title="OS" selected={type==='order'} onPress={()=>selectType('order')}/>
-          <Chip title="Rotas" selected={type==='route'} onPress={()=>selectType('route')}/>
-        </View>
         <Text style={s.filterTitle}>Especialidade</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={s.filterRow}>{SPECIALTIES.map(value=><Chip key={value} title={value}
             selected={specialty===value} onPress={()=>{
               setSpecialty(value);
-              if(value!=='Todas'&&type==='route')setType('all');
               changeFilter();
             }}/>)}</View>
         </ScrollView>
-        <Text style={s.hint}>O filtro de especialidade se aplica às OS; rotas ainda não têm essa classificação.</Text>
-        <Text style={s.filterTitle}>Área ou setor</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={s.filterRow}>
-            <Chip title="Todas" selected={!area} onPress={()=>{setArea('');changeFilter();}}/>
-            {areas.map(value=><Chip key={value} title={value} selected={area===value}
-              onPress={()=>{setArea(value);changeFilter();}}/>)}
-          </View>
-        </ScrollView>
+        <SectorInput label="Pesquisar setor na agenda" value={area}
+          onChange={value=>{setArea(value);changeFilter();}} options={areas}
+          placeholder="Ex.: sala de cortes"/>
         {hasFilters&&<Pressable accessibilityRole="button" style={s.clearButton}
-          onPress={()=>{setType('all');setSpecialty('Todas');setArea('');changeFilter();}}>
+          onPress={()=>{setSpecialty('Todas');setArea('');changeFilter();}}>
           <Text style={s.link}>Limpar filtros</Text>
         </Pressable>}
       </View>}
