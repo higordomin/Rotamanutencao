@@ -95,6 +95,15 @@ def open_sqlite(legacy=False, legacy_routes=False, legacy_history=False, legacy_
                 conn.execute('ALTER TABLE work_orders ADD COLUMN archived_at TEXT')
             else:
                 conn.execute("ALTER TABLE work_orders ADD COLUMN archive_reason TEXT NOT NULL DEFAULT ''")
+    # Migração 0.37: coluna própria por OS, sem tocar nos registros anteriores.
+    order_columns={row[1] for row in conn.execute('PRAGMA table_info(work_orders)')}
+    if 'sector' not in order_columns:
+        conn.execute("ALTER TABLE work_orders ADD COLUMN sector TEXT NOT NULL DEFAULT ''")
+        conn.execute("""UPDATE work_orders SET sector=(
+          SELECT a.area FROM assets a WHERE a.id=work_orders.asset_id)
+          WHERE sector='' AND EXISTS(SELECT 1 FROM assets a
+          WHERE a.id=work_orders.asset_id AND TRIM(a.area)!='')""")
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_orders_sector ON work_orders(sector)')
     fields = [row[1] for row in conn.execute('PRAGMA table_info(executions)')]
     # O schema inicial é legado: espelhar também migração de snapshots/área usada no app.
     if 'asset_label' not in fields:
@@ -152,6 +161,7 @@ def test_legacy_upgrade():
     assert db.execute('SELECT count(*) FROM work_orders').fetchone()[0] == 1, 'Migração não pode apagar OS antigas'
     assert db.execute("SELECT block_reason FROM work_orders WHERE id='o'").fetchone()[0] == ''
     assert db.execute("SELECT blocked_at FROM work_orders WHERE id='o'").fetchone()[0] is None
+    assert db.execute("SELECT sector FROM work_orders WHERE id='o'").fetchone()[0]=='Produção'
     assert db.execute('PRAGMA foreign_key_check').fetchall() == []
     assert db.execute("SELECT partial_reason,partial_at FROM work_orders WHERE id='o'").fetchone() == ('', None)
     db.execute("""INSERT INTO executions(id,order_id,order_title,notes,executed_at,previous_due_date,next_due_date,asset_label,category,result)
@@ -531,6 +541,26 @@ def test_weekly_productivity_is_sqlite_snapshot_and_not_a_percentage():
 
 
 
+def test_sector_is_independent_and_searchable():
+    db=open_sqlite()
+    now='2026-10-27T11:00:00Z'
+    db.execute("""INSERT INTO work_orders(id,title,description,category,priority,sector,recurrence_days,
+      due_date,status,created_at,updated_at)
+      VALUES('sala1','Inspecionar motor','', 'Mecânica','Alta','Sala de Cortes',0,
+        '2026-10-27','pending',?,?)""",(now,now))
+    db.execute("""INSERT INTO work_orders(id,title,description,category,priority,sector,recurrence_days,
+      due_date,status,created_at,updated_at)
+      VALUES('sala2','Trocar sensor','', 'Elétrica','Média','Sala de Cortes',0,
+        '2026-10-27','pending',?,?)""",(now,now))
+    db.execute("""INSERT INTO work_orders(id,title,description,category,priority,sector,recurrence_days,
+      due_date,status,created_at,updated_at)
+      VALUES('emb1','Esteira de embalagem','', 'Mecânica','Média','Embalagem',0,
+        '2026-10-27','pending',?,?)""",(now,now))
+    assert db.execute("SELECT COUNT(*) FROM work_orders WHERE sector='Sala de Cortes'").fetchone()[0]==2
+    assert db.execute("SELECT COUNT(*) FROM work_orders WHERE asset_id IS NULL AND sector='Sala de Cortes'").fetchone()[0]==2
+    assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+
+
 def test_delete_unstarted_os_preserves_history_and_rejects_stale_screen():
     """Executa o DELETE do db.ts real, não uma versão reinventada no teste."""
     db = open_sqlite()
@@ -607,6 +637,7 @@ def test_delete_unstarted_os_preserves_history_and_rejects_stale_screen():
 
 if __name__ == '__main__':
     test_fresh()
+    test_sector_is_independent_and_searchable()
     test_delete_unstarted_os_preserves_history_and_rejects_stale_screen()
     test_legacy_upgrade()
     test_routes_and_snapshot_history()

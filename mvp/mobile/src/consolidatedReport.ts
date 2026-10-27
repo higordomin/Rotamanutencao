@@ -21,9 +21,9 @@ async function readReportRows(start:string,end:string,includePhotos:boolean,spec
 }> {
   const db=await getDatabase();
   const today=localDate();
-  const onlyOs=specialty!=='Todas';
-  const whereSpecialty=onlyOs?' AND category=?':'';
-  const argSpecialty=onlyOs?[specialty]:[];
+  const onlyOs=true; // Relatório atual exclusivamente de OS; rotas legadas ficam apenas no backup.
+  const whereSpecialty=specialty==='Todas'?'':' AND category=?';
+  const argSpecialty=specialty==='Todas'?[]:[specialty];
   // Expo SQLite retorna Promise<void> neste método: preencher resultado dentro da transação.
   const output:{executions:ReportExecution[];routeRuns:RouteRun[];
     routeItems:ReportRouteItem[];pendingOrders:ReportPending[];photos:ImageRow[]}={

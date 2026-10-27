@@ -32,7 +32,7 @@ test('backup v11 exporta e restaura vínculos em ordem de dependências',()=>{
   const backup=source('src/backup.ts');
   const db=source('src/db.ts');
   const validator=source('src/backupValidation.ts');
-  assert.ok(backup.includes('version: 11'));
+  assert.ok(backup.includes('version: 12'));
   assert.ok(backup.includes('route_corrective_links: rows.route_corrective_links'));
   assert.ok(db.includes('SELECT * FROM route_corrective_links'));
   assert.ok(db.includes("DELETE FROM route_corrective_links"));

@@ -3,7 +3,6 @@ export const bottomTabs=[
   {label:'Início',caption:'Início',icon:'⌂'},
   {label:'Agenda',caption:'Agenda',icon:'▦'},
   {label:'Atividades',caption:'OS',icon:'☑'},
-  {label:'Rotas',caption:'Rotas',icon:'⇢'},
   {label:'Mais',caption:'Mais',icon:'⋯'},
 ] as const;
 export const moreDestinations=[

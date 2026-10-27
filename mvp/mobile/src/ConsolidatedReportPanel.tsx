@@ -39,7 +39,7 @@ export function ConsolidatedReportPanel(){
   };
   return <View style={styles.card}>
     <Text accessibilityRole="header" style={styles.title}>Relatório consolidado em PDF</Text>
-    <Text style={styles.help}>Reúne OS concluídas ou parciais, rotas finalizadas, anomalias,
+    <Text style={styles.help}>Reúne OS concluídas ou parciais, anotações, registros, 
       e pendências atuais. Pode compartilhar pelo WhatsApp ou salvar no celular.
       Não precisa de internet para gerar o arquivo.</Text>
     <Text style={styles.label}>Período das execuções</Text>
@@ -68,7 +68,7 @@ export function ConsolidatedReportPanel(){
     <Pressable accessibilityRole="button" accessibilityState={{expanded:showSpecialties}}
       disabled={busy} onPress={()=>setShowSpecialties(v=>!v)} style={styles.dateButton}>
       <Text style={styles.dateValue}>{specialty==='Todas'?'Todas as especialidades':specialty}  ▾</Text>
-      <Text style={styles.help}>Toque para filtrar atividades. Rotas entram apenas na opção Todas.</Text>
+      <Text style={styles.help}>Filtre as ordens de serviço pela especialidade.</Text>
     </Pressable>
     {showSpecialties&&<View style={styles.row}>
       {REPORT_SPECIALTIES.map(item=><Pressable key={item} accessibilityRole="button"
@@ -79,8 +79,7 @@ export function ConsolidatedReportPanel(){
       </Pressable>)}
     </View>}
     {specialty!=='Todas'&&<Text style={styles.help}>
-      Somente OS da especialidade {specialty}; rotas multidisciplinares ficam fora deste filtro.
-      Selecione Todas para incluí-las.
+      Somente ordens de serviço da especialidade {specialty}. Selecione Todas para reunir as especialidades.
     </Text>}
     <Pressable accessibilityRole="checkbox" accessibilityLabel="Incluir fotos no relatório"
       accessibilityState={{checked:includePhotos}} disabled={busy} onPress={()=>setIncludePhotos(v=>!v)}

@@ -18,7 +18,7 @@ export type HomeOverview = {
  */
 export function buildHomeOverview(
   orders:ReadonlyArray<Pick<WorkOrder,'id'|'title'|'status'|'archived_at'|'due_date'|
-    'priority'|'asset_area'|'asset_code'|'asset_name'|'category'|'block_reason'|'partial_reason'>>,
+    'priority'|'sector'|'asset_area'|'asset_code'|'asset_name'|'category'|'block_reason'|'partial_reason'>>,
   routes:ReadonlyArray<Pick<Route,'id'|'title'|'area'|'next_due_date'|'recurrence_days'|'attention_count'>>,
   today=localDate(),
   limit=3,
