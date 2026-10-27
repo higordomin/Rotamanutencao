@@ -767,7 +767,6 @@ export default function App() {
           accessibilityLabel={item.label==='Atividades'?'Ordens de serviço':item.label}
           accessibilityState={{selected:active}}
           onPress={()=>{
-            if(item.label==='Rotas')setSelectedRouteId(null);
             setAssetFilterId(null);
             setTab(item.label);
           }}
