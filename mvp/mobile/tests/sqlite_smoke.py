@@ -534,10 +534,6 @@ def test_weekly_productivity_is_sqlite_snapshot_and_not_a_percentage():
 def test_delete_unstarted_os_preserves_history_and_rejects_stale_screen():
     """Executa o DELETE do db.ts real, não uma versão reinventada no teste."""
     db = open_sqlite()
-    code = re.search(
-        r'export async function deleteUnstartedOrder\\(.*?'
-        r'DELETE FROM work_orders(.*?)\\\\n?\\s*`',
-        source, re.S)
     # O SQL é interpolado como template string TypeScript: extrair diretamente.
     anchor = "DELETE FROM work_orders WHERE id=? AND updated_at=? AND status='pending'"
     assert anchor in source
