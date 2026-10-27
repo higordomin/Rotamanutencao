@@ -4,7 +4,7 @@ import {duplicateOrderDraft, needsPriorityAttention} from '../src/operatorAction
 
 const os = {
   id: 'os-101', title: 'Lubrificar mancais', description: 'Graxa HD2T',
-  category: 'Lubrificação', priority: 'Alta', asset_id: 'asset-7',
+  category: 'Lubrificação', priority: 'Alta', asset_id: 'asset-7', sector:'Sala de Cortes',
   recurrence_days: 30, due_date: '2026-10-01', status: 'pending',
   archived_at: null, archive_reason: '', block_reason: 'Falta peça',
   blocked_at: '2026-10-20T12:00:00Z', partial_reason: 'Parte não executada',
@@ -17,7 +17,7 @@ test('duplicar OS preenche apenas dados do novo planejamento e atualiza a data',
   const original = structuredClone(os);
   assert.deepEqual(duplicateOrderDraft(os, '2026-10-21'), {
     title: 'Lubrificar mancais', description: 'Graxa HD2T',
-    category: 'Lubrificação', priority: 'Alta', asset_id: 'asset-7',
+    category: 'Lubrificação', priority: 'Alta', asset_id: 'asset-7', sector:'Sala de Cortes', sector:'Sala de Cortes',
     recurrence_days: 30, due_date: '2026-10-21',
   });
   assert.deepEqual(os, original, 'não alterar a OS de origem');
