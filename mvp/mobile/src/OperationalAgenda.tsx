@@ -174,8 +174,7 @@ export function OperationalAgenda({orders,routes,onOpenRoute,onOpenOrder}:{
         <Text style={s.filterTitle}>Registros dos últimos 7 dias</Text>
         {productivity?<Text style={s.weekText}>
           ✓ {productivity.osCompleted} OS concluída(s) ·
-          ↻ {productivity.osPartial} execução(ões) parcial(is) ·
-          ✓ {productivity.ordersCompleted} OS concluída(s)
+          ↻ {productivity.osPartial} execução(ões) parcial(is)
         </Text>:<Text style={s.hint}>{productivityError?'Não foi possível consultar os registros.':'Consultando registros locais…'}</Text>}
         <Text style={s.hint}>Contagens reais do SQLite; não representam horas trabalhadas ou produtividade percentual.</Text>
       </View>
