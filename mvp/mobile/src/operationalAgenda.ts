@@ -1,5 +1,6 @@
 import {localDate,validDate} from './logic.ts';
 import type {Category,Priority,WorkOrder} from './types';
+import {matchesSector,orderSector} from './sectors37.ts';
 import type {Route} from './routes';
 
 export type AgendaView='day'|'week'|'month';
@@ -17,7 +18,7 @@ export const NO_AREA='Sem área';
 /** Agenda usa a data atualmente programada, nunca fabrica próximas recorrências. */
 export function buildAgendaEntries(
   orders:ReadonlyArray<Pick<WorkOrder,'id'|'title'|'status'|'archived_at'|'due_date'|'priority'|
-    'asset_area'|'asset_code'|'asset_name'|'category'|'block_reason'|'partial_reason'>>,
+    'sector'|'asset_area'|'asset_code'|'asset_name'|'category'|'block_reason'|'partial_reason'>>,
   routes:ReadonlyArray<Pick<Route,'id'|'title'|'area'|'next_due_date'|'recurrence_days'|'attention_count'>>,
   today=localDate(),
 ):AgendaEntry[]{
@@ -26,7 +27,7 @@ export function buildAgendaEntries(
   for(const o of orders){
     if(o.status!=='pending'||o.archived_at!==null)continue;
     const date=validDate(o.due_date)?o.due_date:null;
-    const area=o.asset_area?.trim()||NO_AREA;
+    const area=orderSector(o)||NO_AREA;
     result.push({
       kind:'order',id:o.id,title:o.title,area,subtitle:[o.category,
         o.asset_code||o.asset_name||'Sem equipamento'].filter(Boolean).join(' · '),
@@ -66,7 +67,7 @@ export function filterAgenda(items:readonly AgendaEntry[],filter:AgendaFilter):A
   return items.filter(item=>
     (filter.type==='all'||filter.type===item.kind)
     &&(filter.specialty==='Todas'||item.specialty===filter.specialty)
-    &&(!filter.area||item.area===filter.area)
+    &&(!filter.area||matchesSector(item.area,filter.area))
   );
 }
 
