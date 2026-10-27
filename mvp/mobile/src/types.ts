@@ -29,6 +29,8 @@ export type WorkOrder = {
   category: Category;
   priority: Priority;
   asset_id: string | null;
+  /** Setor próprio da OS, independente de TAG/equipamento. */
+  sector: string;
   asset_name: string | null;
   asset_code: string | null;
   asset_area: string | null;
@@ -71,12 +73,12 @@ export type ExecutionPhoto = {
 export type PhotoDraft = {uri: string; mime_type: string};
 export type AssetDraft = Pick<Asset, 'name' | 'code' | 'area'>;
 export type OrderDraft = Pick<WorkOrder,
-  'title' | 'description' | 'category' | 'priority' | 'asset_id' | 'recurrence_days' | 'due_date'
+  'title' | 'description' | 'category' | 'priority' | 'asset_id' | 'sector' | 'recurrence_days' | 'due_date'
 >;
 
 export type BackupData = {
   format: 'rotamanutencao-offline';
-  version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+  version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
   exported_at: string;
   assets: Asset[];
   work_orders: Omit<WorkOrder, 'asset_name' | 'asset_code' | 'asset_area'>[];
