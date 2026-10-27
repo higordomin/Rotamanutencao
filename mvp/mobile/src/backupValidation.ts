@@ -12,8 +12,8 @@ const ident = (v: unknown): v is string => str(v, 100) && v.length > 0;
 const iso = (v: unknown): v is string => str(v, 50) && !Number.isNaN(Date.parse(v));
 
 export function validateBackup(data: unknown): asserts data is BackupData {
-  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(data.version as number))
-    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6, v7, v8, v9, v10 ou v11.');
+  if (!isObj(data) || data.format !== 'rotamanutencao-offline' || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(data.version as number))
+    throw new Error('Arquivo incompatível. É necessário um backup RotaManutenção v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 ou v12.');
   if (!Array.isArray(data.assets) || data.assets.length > MAX_RECORDS) throw new Error('Equipamentos inválidos.');
   if (!Array.isArray(data.work_orders) || data.work_orders.length > MAX_RECORDS) throw new Error('Atividades inválidas.');
   if (!Array.isArray(data.executions) || data.executions.length > MAX_RECORDS) throw new Error('Execuções inválidas.');
@@ -42,6 +42,8 @@ export function validateBackup(data: unknown): asserts data is BackupData {
   }
   for (const o of data.work_orders) {
     if (!str(o.title, 300) || !o.title.trim() || !str(o.description, 10000)
+      || ((data.version as number) >= 12 && (!str(o.sector,120) || !o.sector.trim()))
+      || (o.sector !== undefined && !str(o.sector,120))
       || !ALLOWED_CATEGORIES.has(o.category) || !ALLOWED_PRIORITIES.has(o.priority)
       || (o.asset_id !== null && (!ident(o.asset_id) || !aIds.has(o.asset_id)))
       || !Number.isSafeInteger(o.recurrence_days) || o.recurrence_days < 0 || o.recurrence_days > 36500
