@@ -18,6 +18,8 @@ test('setor da OS independe de equipamento e aceita nomes antigos de TAG',()=>{
 });
 test('pesquisa setores por nome parcial, sem acentos e sem distinção de maiúsculas',()=>{
   assert.ok(matchesSector('Sala de Cortes','sala de cortes'));
+  assert.ok(matchesSector('Sala de Corte','sala de cortes'));
+  assert.ok(matchesSector('Sala de Cortes','sala de corte'));
   assert.ok(matchesSector('SALÁ  DE CORTES','sala de cortes'));
   assert.ok(matchesSector('Sala de Cortes 01','cortes'));
   assert.ok(matchesSector('Sala de Cortes','de sala'));
