@@ -21,14 +21,18 @@ export function knownSectors(
   }
   return [...names.values()].sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true,sensitivity:'base'}));
 }
+/** Busca tolerante a singular/plural: "Sala de Cortes" também acha "Sala de Corte". */
+export function matchesSector(value:string,filter:string):boolean{
+  const words=sectorKey(filter).split(' ').filter(Boolean);
+  const normalized=sectorKey(value);
+  return words.every(word=>{
+    const stem=word.length>3&&word.endsWith('s')?word.slice(0,-1):word;
+    return normalized.includes(stem);
+  });
+}
 export function sectorSuggestions(names:readonly string[],query:string,limit=8):string[]{
   const key=sectorKey(query);
-  return names.filter(s=>!key||sectorKey(s).includes(key)).slice(0,limit);
-}
-export function matchesSector(value:string,filter:string):boolean{
-  const terms=sectorKey(filter).split(' ').filter(Boolean);
-  const normalized=sectorKey(value);
-  return terms.every(term=>normalized.includes(term));
+  return names.filter(s=>!key||matchesSector(s,key)).slice(0,limit);
 }
 export function orderSector<T extends {sector?:string|null;asset_area?:string|null}>(o:T):string{
   return cleanSector(o.sector??'')||cleanSector(o.asset_area??'');
