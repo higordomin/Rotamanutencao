@@ -42,7 +42,7 @@ export function validateBackup(data: unknown): asserts data is BackupData {
   }
   for (const o of data.work_orders) {
     if (!str(o.title, 300) || !o.title.trim() || !str(o.description, 10000)
-      || ((data.version as number) >= 12 && (!str(o.sector,120) || !o.sector.trim()))
+      || ((data.version as number) >= 12 && !str(o.sector,120))
       || (o.sector !== undefined && !str(o.sector,120))
       || !ALLOWED_CATEGORIES.has(o.category) || !ALLOWED_PRIORITIES.has(o.priority)
       || (o.asset_id !== null && (!ident(o.asset_id) || !aIds.has(o.asset_id)))
