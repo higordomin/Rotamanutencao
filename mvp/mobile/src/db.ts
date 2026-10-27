@@ -514,9 +514,10 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
     }
     for (const o of data.work_orders) {
       await tx.runAsync(`INSERT INTO work_orders
-        (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at,
+        (id,title,description,category,priority,asset_id,sector,recurrence_days,due_date,status,created_at,updated_at,
           block_reason,blocked_at,partial_reason,partial_at,archived_at,archive_reason)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
+        cleanSector(o.sector || data.assets.find(a=>a.id===o.asset_id)?.area || ''),
         o.recurrence_days,o.due_date,o.status,o.created_at,o.updated_at, o.block_reason ?? '', o.blocked_at ?? null,
         o.partial_reason ?? '', o.partial_at ?? null, o.archived_at ?? null,o.archive_reason ?? '');
     }
