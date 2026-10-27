@@ -14,6 +14,7 @@ export function duplicateOrderDraft(order: WorkOrder, newDueDate: string): Order
     category: order.category,
     priority: order.priority,
     asset_id: order.asset_id,
+    sector: order.sector,
     recurrence_days: order.recurrence_days,
     due_date: newDueDate,
   };
