@@ -232,11 +232,21 @@ export default function App() {
     });
   }, [orders, search, orderFilter, today, assetFilterId,sectorFilter]);
 
-  const completedExecutions = useMemo(
-    () => filterCompletedExecutions(executions,search).filter(execution =>
-      !assetFilterId || (!!selectedAsset && executionBelongsToAssetSnapshot(execution, selectedAsset,legacyAssetIndex))),
-    [executions,search,assetFilterId,selectedAsset,legacyAssetIndex],
-  );
+  const sectorByOrderId=useMemo(()=>new Map(
+    [...orders,...archivedOrders].map(o=>[o.id,orderSector(o)] as const)),
+    [orders,archivedOrders]);
+  const completedExecutions = useMemo(()=>{
+    const matchesExisting=new Set(filterCompletedExecutions(executions,search).map(e=>e.id));
+    return executions.filter(execution=>{
+      if(execution.result!=='completed')return false;
+      if(assetFilterId && (!selectedAsset ||
+        !executionBelongsToAssetSnapshot(execution,selectedAsset,legacyAssetIndex)))return false;
+      const sector=sectorByOrderId.get(execution.order_id)||'';
+      if(sectorFilter && !matchesSector(sector,sectorFilter))return false;
+      return matchesExisting.has(execution.id)||
+        (!!search.trim()&&matchesSector(sector,search));
+    });
+  },[executions,search,assetFilterId,selectedAsset,legacyAssetIndex,sectorByOrderId,sectorFilter]);
   const historyExecutions = useMemo(() => executions.filter(execution =>
     !assetFilterId || (!!selectedAsset && executionBelongsToAssetSnapshot(execution,selectedAsset,legacyAssetIndex))),
     [executions,assetFilterId,selectedAsset,legacyAssetIndex],
@@ -440,7 +450,7 @@ export default function App() {
         <Text style={[styles.cardTitle,{flex:1}]}>{execution.order_title}</Text>
         <Pill text="✓ Concluída" tone="green"/>
       </View>
-      <Text style={styles.detail}>{execution.category}{execution.asset_label?' · '+execution.asset_label:''}</Text>
+      <Text style={styles.detail}>{execution.category} · Setor: {sectorByOrderId.get(execution.order_id)||'Não informado'}{execution.asset_label?' · '+execution.asset_label:''}</Text>
       <Text style={styles.detail}>Realizada em: {new Date(execution.executed_at).toLocaleString('pt-BR')}</Text>
       <Text style={styles.detail}>Prazo executado: {brazilianDate(execution.previous_due_date)}</Text>
       {execution.next_due_date?
