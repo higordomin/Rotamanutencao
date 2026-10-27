@@ -18,9 +18,7 @@ import {exportBackup, pickBackupFile, restoreBackup} from './src/backup';
 import {inspectBackup} from './src/backupInspection';
 import {CalendarPicker} from './src/CalendarPicker';
 import {brazilianDate} from './src/calendar';
-import {RoutesScreen} from './src/RoutesScreen';
 import {OperationalAgenda} from './src/OperationalAgenda';
-import {listRoutes,listAssetRouteHistory,type AssetRouteHistoryItem,type Route} from './src/routes';
 import {HomeScreen} from './src/HomeScreen';
 import {ReminderSettings} from './src/ReminderSettings';
 import {ConsolidatedReportPanel} from './src/ConsolidatedReportPanel';
@@ -32,6 +30,8 @@ import {duplicateOrderDraft, needsPriorityAttention} from './src/operatorActions
 import {preselectAsset, executionBelongsToAssetSnapshot, buildLegacyAssetIndex} from './src/assetWorkflow';
 import {assetAreas,findCatalogAssets} from './src/assetCatalog';
 import {AssetPicker} from './src/AssetPicker';
+import {SectorInput} from './src/SectorInput';
+import {knownSectors,matchesSector,orderSector,sectorKey} from './src/sectors37';
 import {createActionGuard} from './src/actionGuard';
 import {MoreMenu} from './src/MoreMenu';
 import {FirstUseGuide} from './src/FirstUseGuide';
@@ -52,7 +52,7 @@ const categories: Category[] = ['Lubrificação', 'Mecânica', 'Elétrica', 'Ins
 const priorities: Priority[] = ['Baixa', 'Média', 'Alta'];
 const initialOrder = (): OrderDraft => ({
   title: '', description: '', category: 'Lubrificação', priority: 'Média',
-  asset_id: null, recurrence_days: 30, due_date: localDate(),
+  asset_id: null, sector:'', recurrence_days: 30, due_date: localDate(),
 });
 const initialAsset = (): AssetDraft => ({name: '', code: '', area: ''});
 
@@ -108,14 +108,13 @@ export default function App() {
   const [tab, setTab] = useState<AppTab>('Início');
   const [dataSection,setDataSection]=useState<'reports'|'reminders'|'storage'>('reports');
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [routes, setRoutes] = useState<Route[]>([]);
-  const [selectedRouteId,setSelectedRouteId] = useState<string|null>(null);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [archivedOrders,setArchivedOrders]=useState<WorkOrder[]>([]);
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [evidence, setEvidence] = useState<ExecutionPhoto[]>([]);
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [search, setSearch] = useState('');
+  const [sectorFilter,setSectorFilter] = useState('');
   const [assetSearch, setAssetSearch] = useState('');
   const [assetAreaFilter,setAssetAreaFilter] = useState('');
   const [assetPageSize,setAssetPageSize] = useState(30);
@@ -123,9 +122,6 @@ export default function App() {
   const [assetFilterId, setAssetFilterId] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('Todas');
   const [historyPageSize, setHistoryPageSize] = useState(40);
-  const [routeHistoryPageSize,setRouteHistoryPageSize] = useState(25);
-  const [routeHistory,setRouteHistory] = useState<AssetRouteHistoryItem[]>([]);
-  const [routeHistoryLoading,setRouteHistoryLoading] = useState(false);
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -177,11 +173,11 @@ export default function App() {
   };
 
   const refresh = useCallback(async () => {
-    const [a, o, e, p, ev, r, archived] = await Promise.all([
-      listAssets(), listOrders(), listExecutions(), listAllPhotos(), listRecentEvents(), listRoutes(),
+    const [a, o, e, p, ev, archived] = await Promise.all([
+      listAssets(), listOrders(), listExecutions(), listAllPhotos(), listRecentEvents(),
       listArchivedOrders(),
     ]);
-    setAssets(a); setOrders(o); setExecutions(e); setEvidence(p); setEvents(ev); setRoutes(r);
+    setAssets(a); setOrders(o); setExecutions(e); setEvidence(p); setEvents(ev);
     setArchivedOrders(archived);
     void syncLocalReminders().catch(err=>console.warn('Lembretes não atualizados:',String(err)));
   }, []);
@@ -213,20 +209,6 @@ export default function App() {
     return counts;
   },[orders]);
   const legacyAssetIndex = useMemo(() => buildLegacyAssetIndex(assets),[assets]);
-  useEffect(()=>{
-    let cancelled=false;
-    setRouteHistory([]);
-    if(!selectedAsset || tab!=='Histórico') {
-      setRouteHistoryLoading(false);
-      return ()=>{cancelled=true;};
-    }
-    setRouteHistoryLoading(true);
-    void listAssetRouteHistory(selectedAsset,assets)
-      .then(rows=>{if(!cancelled)setRouteHistory(rows);})
-      .catch(err=>{if(!cancelled)Alert.alert('Histórico de rotas indisponível',String(err));})
-      .finally(()=>{if(!cancelled)setRouteHistoryLoading(false);});
-    return ()=>{cancelled=true;};
-  },[selectedAsset,assets,tab]);
   const today = localDate();
   const stateOf = (order: WorkOrder) => taskState(order, today);
   const evidenceByExecution = useMemo(() => {
@@ -234,19 +216,21 @@ export default function App() {
     for (const photo of evidence) grouped.set(photo.execution_id, [...(grouped.get(photo.execution_id) ?? []), photo]);
     return grouped;
   }, [evidence]);
+  const sectorOptions=useMemo(()=>knownSectors([...orders,...archivedOrders],assets),[orders,archivedOrders,assets]);
   const visibleOrders = useMemo(() => {
-    const term = search.trim().toLocaleLowerCase('pt-BR');
+    const term = sectorKey(search);
     return orders.filter(order => {
       if (assetFilterId && order.asset_id !== assetFilterId) return false;
+      if(sectorFilter && !matchesSector(orderSector(order),sectorFilter))return false;
       const state = taskState(order, today);
       if (orderFilter === 'Pendentes' && ['completed', 'blocked'].includes(state)) return false;
       if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
       if (orderFilter === 'Prioritárias' && !needsPriorityAttention(order)) return false;
       if (orderFilter === 'Concluídas' || orderFilter === 'Arquivadas') return false; // A aba Concluídas mostra execuções históricas, não estados de OS.
-      return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason, order.partial_reason]
-        .some(value => value.toLocaleLowerCase('pt-BR').includes(term));
+      return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', orderSector(order), order.category, order.block_reason, order.partial_reason]
+        .some(value => sectorKey(value).includes(term));
     });
-  }, [orders, search, orderFilter, today, assetFilterId]);
+  }, [orders, search, orderFilter, today, assetFilterId,sectorFilter]);
 
   const completedExecutions = useMemo(
     () => filterCompletedExecutions(executions,search).filter(execution =>
@@ -258,11 +242,12 @@ export default function App() {
     [executions,assetFilterId,selectedAsset,legacyAssetIndex],
   );
   const archivedVisible=useMemo(()=>{
-    const term=search.trim().toLocaleLowerCase('pt-BR');
-    return archivedOrders.filter(o=>(!assetFilterId || o.asset_id===assetFilterId) && (!term ||
-      [o.title,o.description,o.asset_code||'',o.asset_name||'',o.asset_area||'',o.archive_reason]
-        .some(value=>value.toLocaleLowerCase('pt-BR').includes(term))));
-  },[archivedOrders,search,assetFilterId]);
+    const term=sectorKey(search);
+    return archivedOrders.filter(o=>(!assetFilterId || o.asset_id===assetFilterId)
+      && (!sectorFilter||matchesSector(orderSector(o),sectorFilter)) && (!term ||
+      [o.title,o.description,o.asset_code||'',o.asset_name||'',orderSector(o),o.archive_reason]
+        .some(value=>sectorKey(value).includes(term))));
+  },[archivedOrders,search,assetFilterId,sectorFilter]);
   const activityList:ActivityListItem[]=useMemo(()=>orderFilter==='Concluídas'
     ?completedExecutions.map(value=>({kind:'execution' as const,value}))
     :orderFilter==='Arquivadas'
@@ -292,9 +277,9 @@ export default function App() {
     setRecurrenceInput(String(order?.recurrence_days ?? 30));
     setOrderDraft(order ? {
       title: order.title, description: order.description, category: order.category,
-      priority: order.priority, asset_id: order.asset_id,
+      priority: order.priority, asset_id: order.asset_id,sector:orderSector(order),
       recurrence_days: order.recurrence_days, due_date: order.due_date,
-    } : asset ? preselectAsset(initialOrder(),asset) : initialOrder());
+    } : asset ? {...preselectAsset(initialOrder(),asset),sector:asset.area} : initialOrder());
     setDialog('order');
   };
   const openDuplicateOrder = (order: WorkOrder) => {
@@ -400,6 +385,7 @@ export default function App() {
       <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
         <View style={{flex: 1}}>
           <Text style={styles.cardTitle}>{order.title}</Text>
+          <Text style={[styles.detail,{color:COLORS.accent,fontWeight:'800'}]}>Setor: {orderSector(order)||'Não informado'}</Text>
           <Text style={styles.detail}>{[order.asset_code, order.asset_name].filter(Boolean).join(' · ') || 'Sem equipamento'} · {order.category}</Text>
         </View>
         <Pill text={archived ? 'Arquivada' : done ? 'Concluída' : isBlocked ? 'Impedida' : isPartial ? 'Parcial' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
@@ -478,7 +464,6 @@ export default function App() {
     setAssetFilterId(asset.id);
     setSearch('');
     setHistoryPageSize(40);
-    setRouteHistoryPageSize(25);
     if (view === 'orders') { setOrderFilter('Todas'); setTab('Atividades'); }
     else setTab('Histórico');
   };
@@ -525,17 +510,17 @@ export default function App() {
       setTab(page);
     }}/>;
     if (tab === 'Início') return shouldShowFirstUseGuide({
-      assets:assets.length,orders:orders.length,routes:routes.length,
+      assets:assets.length,orders:orders.length,routes:0,
       executions:executions.length,archived:archivedOrders.length,
     }) ? <FirstUseGuide
       onNewAsset={()=>openAsset()}
       onNewOrder={()=>openOrder()}
       onOpenAgenda={()=>setTab('Agenda')}
     /> : <HomeScreen
-      orders={orders} routes={routes}
+      orders={orders} routes={[]}
       onOpenAgenda={()=>setTab('Agenda')}
       onNewOrder={()=>openOrder()}
-      onOpenRoute={id=>{setSelectedRouteId(id);setTab('Rotas');}}
+      onOpenRoute={()=>{}}
       onOpenOrder={id=>{
         const order=orders.find(o=>o.id===id);
         if(!order){Alert.alert('OS não encontrada','Atualize a lista de atividades.');return;}
@@ -615,7 +600,7 @@ export default function App() {
         <Text style={styles.cardTitle}>Otimização segura do banco local</Text>
         <Text style={styles.description}>
           Reorganiza estatísticas internas do SQLite para melhorar consultas.
-          Não remove equipamentos, OS, históricos, rotas, fotos nem backups.
+          Não remove equipamentos, OS, históricos, fotos nem backups.
           Versões antigas do aplicativo não são apagadas automaticamente.
         </Text>
         <View style={styles.cardActions}>
@@ -650,7 +635,6 @@ export default function App() {
               `Versão: ${summary.version}\nExportado em: ${new Date(summary.exportedAt).toLocaleString('pt-BR')}\n` +
               `Equipamentos: ${summary.assets}\nAtividades: ${summary.orders}\nArquivadas: ${summary.archivedOrders}\nImpedimentos ativos: ${summary.impediments}\n` +
               `Execuções: ${summary.executions}\nFotos: ${summary.photos}\nEventos: ${summary.events}\n` +
-              `Rotas: ${summary.routes}\nRotas periódicas: ${summary.scheduledRoutes}\nRotas com pendências: ${summary.routesWithAttention}\nPontos: ${summary.routePoints}\nExecuções de rota: ${summary.routeRuns}\nFotos dos pontos: ${summary.routePhotos}\n\n` +
               'Verificação estrutural aprovada. Não houve restauração nem alteração dos seus dados. ' +
               'Esta verificação não comprova que o arquivo pode ser restaurado integralmente em qualquer aparelho.');
           }); }}/></View>
@@ -697,27 +681,6 @@ export default function App() {
         </View>)}
       {historyExecutions.length > historyPageSize && <Action secondary label={`Carregar mais registros (${historyExecutions.length - historyPageSize} restantes)`} onPress={() => setHistoryPageSize(n => n + 40)}/> }
       {selectedAsset && <>
-        <Text style={[styles.sectionTitle,{marginTop:26}]}>Pontos de rota deste equipamento</Text>
-        <Text style={styles.detail}>Execuções de manutenção e inspeções vinculadas à TAG, com fotos e ocorrências. Até 300 registros recentes por consulta.</Text>
-        {routeHistoryLoading ? <ActivityIndicator color={COLORS.accent} style={{marginTop:16}}/> :
-          routeHistory.length===0 ? <Text style={styles.empty}>Nenhum ponto de rota vinculado a esta TAG. Registros antigos ambíguos permanecem no histórico geral das rotas.</Text> :
-          routeHistory.slice(0,routeHistoryPageSize).map(item=><View key={item.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{item.point_title}</Text>
-            <Text style={styles.detail}>{item.route_title} · {new Date(item.started_at).toLocaleString('pt-BR')}</Text>
-            <Text style={styles.detail}>Equipamento na execução: {item.asset_label||'Sem identificação no retrato'}</Text>
-            <View style={styles.chips}>
-              <Pill text={item.status==='done'?'Executado':item.status==='anomaly'?'Anomalia':item.status==='skipped'?'Não executado':'Pendente'}
-                tone={item.status==='done'?'green':item.status==='anomaly'?'red':'yellow'}/>
-
-            </View>
-            {!!item.notes&&<Text style={styles.description}>Registro: {item.notes}</Text>}
-            <Text style={styles.detail}>{item.photo_count} foto(s) anexada(s)</Text>
-            {!!item.first_photo&&<Image source={{uri:evidenceUri(item.first_photo)}} style={styles.thumb}/>}
-          </View>)}
-        {routeHistory.length>routeHistoryPageSize&&<Action secondary label={`Carregar mais pontos (${routeHistory.length-routeHistoryPageSize} restantes)`}
-          onPress={()=>setRouteHistoryPageSize(size=>size+25)}/>}
-      </>}
-      {!assetFilterId && events.length > 0 && <>
         <Text style={[styles.sectionTitle, {marginTop: 26}]}>Ocorrências / impedimentos</Text>
         <Text style={styles.detail}>Registros de bloqueio, liberação e execução (últimos 250 eventos).</Text>
         {events.slice(0, 25).map(ev => <View key={ev.id} style={styles.eventRow}>
@@ -749,13 +712,8 @@ export default function App() {
             finally { setReady(true); }
           })(); }}/>
         </View>
-      : tab === 'Rotas' ? <RoutesScreen assets={assets} initialRouteId={selectedRouteId}
-          onOpenCorrective={title=>{setSearch(title);setOrderFilter('Todas');setTab('Atividades');}}
-          onDataChanged={()=>{
-            void refresh().catch(err=>console.warn('Falha ao atualizar painel:',String(err)));
-          }}/>
-      : tab === 'Agenda' ? <OperationalAgenda orders={orders} routes={routes}
-           onOpenRoute={id=>{setSelectedRouteId(id);setTab('Rotas');}}
+      : tab === 'Agenda' ? <OperationalAgenda orders={orders} routes={[]}
+           onOpenRoute={()=>{}}
            onOpenOrder={(id,mode)=>{
              const order=orders.find(o=>o.id===id);
              if(!order){Alert.alert('OS indisponível','A atividade pode ter sido arquivada ou alterada.');return;}
@@ -782,8 +740,11 @@ export default function App() {
                 ?`${archivedVisible.length} OS arquivada(s)`
                 :`${orders.length} ativas • ${archivedOrders.length} arquivadas`}</Text></View>
               <Action label="+ Nova" onPress={() => openOrder()}/></View>
-            <TextInput accessibilityLabel="Buscar atividades" placeholder="Buscar por TAG, equipamento ou atividade..."
+            <TextInput accessibilityLabel="Buscar atividades" placeholder="Pesquisar OS, setor, TAG ou equipamento..."
               placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch} style={styles.searchField}/>
+            <SectorInput label="Filtrar ordens por setor" placeholder="Ex.: sala de cortes"
+              value={sectorFilter} onChange={setSectorFilter} options={sectorOptions}/>
+            {!!sectorFilter&&<Action label="Limpar filtro de setor" secondary onPress={()=>setSectorFilter('')}/>}
             <View style={styles.filters}>
               {(['Todas', 'Pendentes', 'Impedidas', 'Prioritárias', 'Concluídas', 'Arquivadas'] as const).map(filter =>
                 <Pressable key={filter} accessibilityRole="button" accessibilityState={{selected: orderFilter === filter}}
@@ -857,8 +818,15 @@ export default function App() {
                 onChange={v => setOrderDraft({...orderDraft, category: v})}/>
               <Choices label="Prioridade" value={orderDraft.priority} options={priorities}
                 onChange={v => setOrderDraft({...orderDraft, priority: v})}/>
+              <SectorInput label="Setor da OS *" value={orderDraft.sector}
+                onChange={value=>setOrderDraft(current=>({...current,sector:value}))}
+                options={sectorOptions} placeholder="Ex.: Sala de Cortes"/>
               <AssetPicker assets={assets} value={orderDraft.asset_id} allowNone
-                onChange={id=>setOrderDraft(current=>({...current,asset_id:id}))}/>
+                onChange={id=>setOrderDraft(current=>{
+                  const picked=assets.find(a=>a.id===id);
+                  return {...current,asset_id:id,
+                    sector:!current.sector.trim()&&picked?.area?picked.area:current.sector};
+                })}/>
               <Text style={styles.fieldLabel}>Data programada *</Text>
               <Pressable accessibilityRole="button" accessibilityLabel="Abrir calendário para escolher data"
                 style={styles.dateField} onPress={() => {Keyboard.dismiss(); setCalendarOpen(true);}}>
