@@ -5,6 +5,7 @@ import {localDate, addDays, validDate} from './logic';
 import {completionPlan, executionDecision} from './operations';
 import {buildLegacyAssetIndex, inferLegacyAssetId} from './assetWorkflow';
 import {orderDeletionBlockReason,type OrderDeletionFacts} from './orderDeletion36';
+import {cleanSector,MAX_SECTOR_LENGTH} from './sectors37';
 export {localDate, addDays, validDate} from './logic';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -42,6 +43,7 @@ export async function initializeDatabase(): Promise<void> {
       category TEXT NOT NULL,
       priority TEXT NOT NULL,
       asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+      sector TEXT NOT NULL DEFAULT '',
       recurrence_days INTEGER NOT NULL DEFAULT 0 CHECK (recurrence_days >= 0),
       due_date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','completed')),
@@ -155,6 +157,12 @@ export async function initializeDatabase(): Promise<void> {
   if (!fields.some(f => f.name === 'category'))
     await db.execAsync("ALTER TABLE executions ADD COLUMN category TEXT NOT NULL DEFAULT ''");
   const orderFields = await db.getAllAsync<{name: string}>("PRAGMA table_info(work_orders)");
+  if (!orderFields.some(f => f.name === 'sector')) {
+    await db.execAsync("ALTER TABLE work_orders ADD COLUMN sector TEXT NOT NULL DEFAULT ''");
+    await db.execAsync(`UPDATE work_orders SET sector=(SELECT a.area FROM assets a WHERE a.id=work_orders.asset_id)
+      WHERE sector='' AND EXISTS(SELECT 1 FROM assets a WHERE a.id=work_orders.asset_id AND TRIM(a.area)!='')`);
+  }
+  await db.execAsync('CREATE INDEX IF NOT EXISTS idx_orders_sector ON work_orders(sector)');
   if (!orderFields.some(f => f.name === 'archived_at'))
     await db.execAsync('ALTER TABLE work_orders ADD COLUMN archived_at TEXT');
   if (!orderFields.some(f => f.name === 'archive_reason'))
@@ -305,6 +313,9 @@ export async function saveAsset(input: AssetDraft, existingId?: string): Promise
 export async function saveOrder(input: OrderDraft, existingId?: string): Promise<void> {
   const db = await database();
   const title = input.title.trim();
+  const sector = cleanSector(input.sector);
+  if(!sector)throw new Error('Escolha ou informe o setor da OS.');
+  if(sector.length>MAX_SECTOR_LENGTH)throw new Error('O nome do setor deve ter até 120 caracteres.');
   if (!title) throw new Error('Informe o título da atividade.');
   if (title.length > 300 || input.description.length > 10000)
     throw new Error('Título ou descrição excede o limite permitido.');
@@ -313,17 +324,17 @@ export async function saveOrder(input: OrderDraft, existingId?: string): Promise
     throw new Error('A periodicidade precisa ser 0 ou um número inteiro de dias.');
   const now = new Date().toISOString();
   if (existingId) {
-    const result = await db.runAsync(`UPDATE work_orders SET title=?,description=?,category=?,priority=?,asset_id=?,
+    const result = await db.runAsync(`UPDATE work_orders SET title=?,description=?,category=?,priority=?,asset_id=?,sector=?,
       recurrence_days=?,due_date=?,updated_at=? WHERE id=? AND archived_at IS NULL`,
       title, input.description.trim(), input.category, input.priority,
-      input.asset_id, input.recurrence_days, input.due_date, now, existingId);
+      input.asset_id, sector, input.recurrence_days, input.due_date, now, existingId);
     if (result.changes !== 1) throw new Error('Atividade excluída ou desatualizada. Atualize a tela.');
   } else {
     await db.runAsync(`INSERT INTO work_orders
-      (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      (id,title,description,category,priority,asset_id,sector,recurrence_days,due_date,status,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       makeId(), title, input.description.trim(), input.category, input.priority,
-      input.asset_id, input.recurrence_days, input.due_date, 'pending', now, now);
+      input.asset_id, sector, input.recurrence_days, input.due_date, 'pending', now, now);
   }
 }
 
