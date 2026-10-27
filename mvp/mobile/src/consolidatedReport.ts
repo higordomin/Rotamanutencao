@@ -21,7 +21,7 @@ async function readReportRows(start:string,end:string,includePhotos:boolean,spec
 }> {
   const db=await getDatabase();
   const today=localDate();
-  const onlyOs=specialty!=='Todas';
+  const onlyOs=true; // Relatório atual exclusivamente de OS; rotas legadas ficam apenas no backup.
   const whereSpecialty=onlyOs?' AND category=?':'';
   const argSpecialty=onlyOs?[specialty]:[];
   // Expo SQLite retorna Promise<void> neste método: preencher resultado dentro da transação.
