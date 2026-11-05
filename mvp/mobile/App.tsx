@@ -85,7 +85,7 @@ function FormField({label, value, onChangeText, placeholder, multiline = false, 
       multiline={multiline} keyboardType={keyboardType} value={value} onChangeText={onChangeText}
       onFocus={onFocus} returnKeyType={multiline ? 'default' : 'done'}
       onSubmitEditing={multiline ? undefined : () => Keyboard.dismiss()}
-      style={[styles.field, multiline && {height: 84, textAlignVertical: 'top'}]}/>
+      style={[styles.field, multiline && {minHeight: 120, textAlignVertical: 'top'}]}/>
   </View>;
 }
 
@@ -870,35 +870,85 @@ export default function App() {
                 onPress={() => { void handle(() => saveAsset(assetDraft, editingAsset),finishAssetSave); }}/>
             </>}
             {dialog === 'order' && <>
-              {duplicateSource && <Text style={styles.description}>Nova OS independente baseada em “{duplicateSource}”. Confira o prazo (ajustado para hoje), equipamento e periodicidade antes de salvar. Fotos, histórico, impedimentos e pendências não serão copiados.</Text>}
-              <FormField label="Atividade *" placeholder="Ex.: Lubrificar mancais" value={orderDraft.title}
-                onChangeText={v => setOrderDraft({...orderDraft, title: v})}/>
-              <FormField label="Descrição" placeholder="Pontos, graxa, procedimentos..." multiline
-                value={orderDraft.description} onChangeText={v => setOrderDraft({...orderDraft, description: v})}/>
-              <Choices label="Especialidade" value={orderDraft.category} options={categories}
-                onChange={v => setOrderDraft({...orderDraft, category: v})}/>
-              <Choices label="Prioridade" value={orderDraft.priority} options={priorities}
-                onChange={v => setOrderDraft({...orderDraft, priority: v})}/>
-              <SectorInput label="Setor da OS *" value={orderDraft.sector}
-                onChange={value=>setOrderDraft(current=>({...current,sector:value}))}
+              {duplicateSource&&<Text style={styles.hint}>
+                OS nova baseada em “{duplicateSource}”. Confira setor, data e repetição.
+              </Text>}
+              <Text style={styles.hint}>Comece pelo serviço e pelo setor. Equipamento cadastrado não é obrigatório.</Text>
+              <FormField label="O que precisa fazer? *"
+                placeholder="Ex.: Lubrificar bombas da Sala de Cortes"
+                value={orderDraft.title}
+                onChangeText={v=>setOrderDraft(current=>({...current,title:v}))}/>
+              <SectorInput label="Onde? Setor *" value={orderDraft.sector}
+                onChange={sector=>setOrderDraft(current=>({...current,sector}))}
                 options={sectorOptions} placeholder="Ex.: Sala de Cortes"/>
-              <AssetPicker assets={assets} value={orderDraft.asset_id} allowNone
-                onChange={id=>setOrderDraft(current=>{
-                  const picked=assets.find(a=>a.id===id);
-                  return {...current,asset_id:id,
-                    sector:!current.sector.trim()&&picked?.area?picked.area:current.sector};
-                })}/>
-              <Text style={styles.fieldLabel}>Data programada *</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="Abrir calendário para escolher data"
-                style={styles.dateField} onPress={() => {Keyboard.dismiss(); setCalendarOpen(true);}}>
-                <Text style={styles.dateFieldText}>📅  {brazilianDate(orderDraft.due_date)}</Text>
-                <Text style={styles.dateFieldHint}>Alterar  ›</Text>
+              <FormField label="Descrição ou lista de equipamentos (opcional)" multiline
+                placeholder={"Ex.: Bombas B-01, B-02, B-03\nOu cole as TAGs da OS de papel; não precisa cadastrá-las."}
+                value={orderDraft.description}
+                onChangeText={description=>setOrderDraft(current=>({...current,description}))}/>
+              <Text style={styles.fieldLabel}>Quando fazer? *</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Escolher data da OS"
+                style={styles.dateField} onPress={()=>{Keyboard.dismiss();setCalendarOpen(true);}}>
+                <Text style={styles.dateFieldText}>📅 {brazilianDate(orderDraft.due_date)}</Text>
+                <Text style={styles.dateFieldHint}>Alterar ›</Text>
               </Pressable>
-              <FormField label="Repetir a cada quantos dias? (0 = avulsa)" keyboardType="numeric"
-                value={recurrenceInput} onChangeText={setRecurrenceInput} onFocus={focusLastField}/>
-              <Text style={[styles.hint, {marginBottom: 15}]}>Ao executar uma atividade recorrente, a próxima data será calculada a partir do dia da execução.</Text>
-              <Action disabled={busy || !validDate(orderDraft.due_date) || !/^\d+$/.test(recurrenceInput)} label={busy ? 'Salvando...' : 'Salvar atividade'}
-                onPress={() => { void handle(() => saveOrder({...orderDraft, recurrence_days: Number(recurrenceInput)}, editingOrder)); }}/>
+              <Text style={styles.fieldLabel}>Repetir esta OS</Text>
+              <View style={[styles.filters,{marginTop:0}]}>
+                {([['0','Uma vez'],['7','A cada 7 dias'],['30','A cada 30 dias']] as const)
+                  .map(([value,label])=><Pressable key={value} accessibilityRole="button"
+                    accessibilityState={{selected:recurrenceInput===value}}
+                    onPress={()=>setRecurrenceInput(value)}
+                    style={[styles.choice,recurrenceInput===value&&styles.choiceActive]}>
+                    <Text style={{color:recurrenceInput===value?COLORS.bg:COLORS.text,
+                      fontSize:TYPE.caption,fontWeight:'800'}}>{label}</Text>
+                  </Pressable>)}
+                <Pressable accessibilityRole="button"
+                  accessibilityState={{selected:!['0','7','30'].includes(recurrenceInput)}}
+                  onPress={()=>setRecurrenceInput('1')}
+                  style={[styles.choice,!['0','7','30'].includes(recurrenceInput)&&styles.choiceActive]}>
+                  <Text style={{color:!['0','7','30'].includes(recurrenceInput)?COLORS.bg:COLORS.text,
+                    fontSize:TYPE.caption,fontWeight:'800'}}>Outro</Text>
+                </Pressable>
+              </View>
+              {!['0','7','30'].includes(recurrenceInput)&&
+                <FormField label="Intervalo em dias" keyboardType="numeric"
+                  value={recurrenceInput} onChangeText={setRecurrenceInput}
+                  onFocus={focusLastField}/>}
+              <Pressable accessibilityRole="button"
+                accessibilityState={{expanded:showOrderAdvanced}}
+                onPress={()=>setShowOrderAdvanced(v=>!v)}
+                style={styles.notesToggle}>
+                <Text style={styles.notesToggleText}>
+                  {showOrderAdvanced?'Ocultar detalhes opcionais':'Mais detalhes (opcional)'}
+                </Text>
+                <Text style={styles.notesToggleText}>{showOrderAdvanced?'⌃':'⌄'}</Text>
+              </Pressable>
+              {!showOrderAdvanced&&<Text style={styles.hint}>
+                Tipo: {orderDraft.category} · Prioridade: {orderDraft.priority} ·
+                {orderDraft.asset_id?' Equipamento prioritário vinculado':' Sem TAG vinculada'}
+              </Text>}
+              {showOrderAdvanced&&<View style={styles.orderExtras}>
+                <Choices label="Tipo de manutenção" value={orderDraft.category} options={categories}
+                  onChange={category=>setOrderDraft(current=>({...current,category}))}/>
+                <Choices label="Prioridade" value={orderDraft.priority} options={priorities}
+                  onChange={priority=>setOrderDraft(current=>({...current,priority}))}/>
+                <Text style={styles.hint}>TAG opcional: use somente para máquinas críticas.
+                  Para OS com dezenas de equipamentos, escreva a lista na descrição.</Text>
+                <AssetPicker assets={assets} value={orderDraft.asset_id} allowNone
+                  label="Equipamento prioritário (opcional)"
+                  onChange={asset_id=>setOrderDraft(current=>{
+                    const selected=assets.find(a=>a.id===asset_id);
+                    return {...current,asset_id,
+                      sector:!current.sector.trim()&&selected?.area?selected.area:current.sector};
+                  })}/>
+                <Action secondary label="＋ Cadastrar equipamento prioritário"
+                  disabled={busy} onPress={openAssetFromOrder}/>
+              </View>}
+              <Action disabled={busy||!orderDraft.title.trim()||!orderDraft.sector.trim()||
+                !validDate(orderDraft.due_date)||!/^[0-9]+$/.test(recurrenceInput)}
+                label={busy?'Salvando...':'Salvar OS'}
+                onPress={()=>{void handle(()=>saveOrder({
+                  ...orderDraft,recurrence_days:Number(recurrenceInput),
+                },editingOrder));}}/>
             </>}
             {dialog === 'archive' && completingOrder && <>
               <Text style={styles.cardTitle}>{completingOrder.title}</Text>
