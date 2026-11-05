@@ -6,8 +6,6 @@ export function shouldShowFirstUseGuide(c:LocalCounts):boolean{
   return Object.values(c).every(n=>Number.isSafeInteger(n)&&n===0);
 }
 export const FIRST_USE_STEPS=[
-  {number:1,title:'Identifique o equipamento',description:'Cadastre TAG, nome e setor para localizar serviços. É opcional.'},
-  {number:2,title:'Crie sua primeira OS',description:'Escolha o setor, serviço e programe a data ou frequência.'},
-  {number:3,title:'Registre o resultado',description:'Conclua, aponte uma anomalia ou informe por que não foi executado.'},
-  {number:4,title:'Consulte o histórico',description:'Registros e fotos ficam salvos somente neste aparelho.'},
+  {number:1,title:'Anote uma tarefa',description:'Digite o serviço, o setor e a data. Cadastrar o equipamento é opcional.'},
+  {number:2,title:'Volte para registrar',description:'Quando fizer o serviço, abra a OS para concluir ou marcar pendência. Tudo fica no aparelho.'},
 ] as const;

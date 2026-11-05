@@ -9,9 +9,9 @@ export function FirstUseGuide({onNewAsset,onNewOrder,onOpenAgenda}:{
 }){
   return <View style={s.page}>
     <Text style={s.eyebrow}>BEM-VINDO AO ROTAMANUTENÇÃO</Text>
-    <Text accessibilityRole="header" style={s.heading}>Sua manutenção, organizada.</Text>
+    <Text accessibilityRole="header" style={s.heading}>Organize seu trabalho em dois passos.</Text>
     <Text style={s.subtitle}>
-      Tudo funciona sem internet e sem cadastro de usuário. Comece por uma atividade ou adicione um equipamento.
+      Comece criando uma OS. Você pode cadastrar só os equipamentos que considera prioritários.
     </Text>
     <View style={s.steps}>
       {FIRST_USE_STEPS.map(step=><View key={step.number} style={s.step}>
@@ -27,15 +27,15 @@ export function FirstUseGuide({onNewAsset,onNewOrder,onOpenAgenda}:{
       <Text style={s.primaryText}>→</Text>
     </Pressable>
     <Pressable accessibilityRole="button" onPress={onNewAsset} style={s.secondary}>
-      <Text style={s.secondaryText}>⚙ Cadastrar equipamento</Text>
+      <Text style={s.secondaryText}>Cadastrar equipamento prioritário (opcional)</Text>
     </Pressable>
     <Pressable accessibilityRole="button" onPress={onOpenAgenda} style={s.agendaLink}>
-      <Text style={s.agendaLinkText}>Conhecer a agenda  ›</Text>
+      <Text style={s.agendaLinkText}>Ver agenda ›</Text>
     </Pressable>
     <View style={s.privacy}>
       <Text style={s.privacyTitle}>● Seus dados ficam no aparelho</Text>
       <Text style={s.privacyDesc}>
-        Depois de registrar os primeiros serviços, faça backups pela área Mais → Relatórios e dados → Backup e dados.
+        Suas OS são salvas neste aparelho. Faça backup periodicamente em Mais → Relatórios e dados.
       </Text>
     </View>
   </View>;

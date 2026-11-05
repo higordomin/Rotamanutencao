@@ -85,7 +85,7 @@ function FormField({label, value, onChangeText, placeholder, multiline = false, 
       multiline={multiline} keyboardType={keyboardType} value={value} onChangeText={onChangeText}
       onFocus={onFocus} returnKeyType={multiline ? 'default' : 'done'}
       onSubmitEditing={multiline ? undefined : () => Keyboard.dismiss()}
-      style={[styles.field, multiline && {height: 84, textAlignVertical: 'top'}]}/>
+      style={[styles.field, multiline && {minHeight: 120, textAlignVertical: 'top'}]}/>
   </View>;
 }
 
@@ -115,6 +115,10 @@ export default function App() {
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [search, setSearch] = useState('');
   const [sectorFilter,setSectorFilter] = useState('');
+  const [showOrderFilters,setShowOrderFilters] = useState(false);
+  const [expandedOrderId,setExpandedOrderId] = useState<string|null>(null);
+  const [showOrderAdvanced,setShowOrderAdvanced] = useState(false);
+  const [returnToOrderFromAsset,setReturnToOrderFromAsset]=useState(false);
   const [assetSearch, setAssetSearch] = useState('');
   const [assetAreaFilter,setAssetAreaFilter] = useState('');
   const [assetPageSize,setAssetPageSize] = useState(30);
@@ -169,7 +173,9 @@ export default function App() {
   const closeDialog = () => {
     Keyboard.dismiss();
     if (calendarOpen) setCalendarOpen(false);
-    else setDialog(null);
+    else if(dialog==='asset'&&returnToOrderFromAsset){
+      setReturnToOrderFromAsset(false);setDialog('order');
+    }else setDialog(null);
   };
 
   const refresh = useCallback(async () => {
@@ -268,16 +274,17 @@ export default function App() {
     [orderFilter,completedExecutions,archivedVisible,visibleOrders],
   );
 
-  const handle = async (action: () => Promise<void>) => {
+  const handle = async (action: () => Promise<void>,afterSuccess?:()=>void) => {
     await operationGuard.run(async()=>{
       setBusy(true);
-      try { await action(); await refresh(); setDialog(null); }
+      try { await action(); await refresh(); if(afterSuccess)afterSuccess(); else setDialog(null); }
       catch (e) { Alert.alert('Não foi possível concluir', e instanceof Error ? e.message : String(e)); }
       finally { setBusy(false); }
     });
   };
 
   const openAsset = (asset?: Asset) => {
+    setReturnToOrderFromAsset(false);
     setEditingAsset(asset?.id);
     setAssetDraft(asset ? {name: asset.name, code: asset.code, area: asset.area} : initialAsset());
     setDialog('asset');
@@ -285,6 +292,7 @@ export default function App() {
   const openOrder = (order?: WorkOrder, asset?: Asset) => {
     setDuplicateSource(null);
     setCalendarOpen(false);
+    setShowOrderAdvanced(!!order?.asset_id || (order?.category!==undefined && order.category!=='Lubrificação') || (order?.priority!==undefined && order.priority!=='Média'));
     setEditingOrder(order?.id);
     setRecurrenceInput(String(order?.recurrence_days ?? 30));
     setOrderDraft(order ? {
@@ -294,12 +302,27 @@ export default function App() {
     } : asset ? {...preselectAsset(initialOrder(),asset),sector:asset.area} : initialOrder());
     setDialog('order');
   };
+  const openAssetFromOrder=()=>{
+    setEditingAsset(undefined);
+    setAssetDraft({name:'',code:'',area:orderDraft.sector});
+    setReturnToOrderFromAsset(true);
+    setShowOrderAdvanced(true);
+    setDialog('asset');
+  };
+  const finishAssetSave=()=>{
+    if(returnToOrderFromAsset){
+      setReturnToOrderFromAsset(false);
+      setShowOrderAdvanced(true);
+      setDialog('order');
+    }else setDialog(null);
+  };
   const openDuplicateOrder = (order: WorkOrder) => {
     try {
       const draft = duplicateOrderDraft(order, localDate());
       setCalendarOpen(false);
       setEditingOrder(undefined); // Salvar criará uma OS nova, com ID e histórico próprios.
       setRecurrenceInput(String(draft.recurrence_days));
+      setShowOrderAdvanced(!!draft.asset_id||draft.priority!=='Média'||draft.category!=='Lubrificação');
       setOrderDraft(draft);
       setDuplicateSource(order.title);
       setDialog('order');
@@ -388,60 +411,61 @@ export default function App() {
 
   function orderCard(order: WorkOrder) {
     const archived=!!order.archived_at;
-    const state = stateOf(order);
-    const overdueOrder = state === 'overdue';
-    const done = state === 'completed';
-    const isBlocked = state === 'blocked';
-    const isPartial = !done && !!order.partial_reason?.trim();
+    const state=stateOf(order);
+    const done=state==='completed';
+    const blocked=state==='blocked';
+    const expanded=expandedOrderId===order.id;
     return <View key={order.id} style={styles.card}>
-      <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
-        <View style={{flex: 1}}>
+      <View style={{flexDirection:'row',alignItems:'flex-start',gap:10,justifyContent:'space-between'}}>
+        <View style={{flex:1,gap:4}}>
           <Text style={styles.cardTitle}>{order.title}</Text>
-          <Text style={[styles.detail,{color:COLORS.accent,fontWeight:'800'}]}>Setor: {orderSector(order)||'Não informado'}</Text>
-          <Text style={styles.detail}>{[order.asset_code, order.asset_name].filter(Boolean).join(' · ') || 'Sem equipamento'} · {order.category}</Text>
+          <Text style={{color:COLORS.accent,fontSize:TYPE.body,fontWeight:'700'}}>
+            {orderSector(order)||'Setor não informado'}
+          </Text>
+          <Text style={styles.detail}>📅 {brazilianDate(order.due_date)}</Text>
         </View>
-        <Pill text={archived ? 'Arquivada' : done ? 'Concluída' : isBlocked ? 'Impedida' : isPartial ? 'Parcial' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
-          tone={done ? 'green' : isBlocked || overdueOrder ? 'red' : isPartial || order.due_date === today ? 'yellow' : 'blue'}/>
+        <Pill text={archived?'Arquivada':done?'Concluída':blocked?'Impedida':
+          order.partial_reason?.trim()?'Parcial':state==='overdue'?'Atrasada':
+          order.due_date===today?'Hoje':'Programada'}
+          tone={done?'green':blocked||state==='overdue'?'red':
+            order.partial_reason?.trim()||order.due_date===today?'yellow':'blue'}/>
       </View>
-      {archived&&<View style={styles.blockAlert}>
-        <Text style={{color:COLORS.yellow,fontWeight:'800'}}>OS ARQUIVADA — HISTÓRICO PRESERVADO</Text>
-        <Text style={styles.description}>Motivo: {order.archive_reason}</Text>
-        <Text style={styles.detail}>Arquivada em {new Date(order.archived_at!).toLocaleString('pt-BR')}</Text>
-      </View>}
-      {!!order.description && <Text style={styles.description}>{order.description}</Text>}
-      {isPartial && <View style={[styles.blockAlert, {backgroundColor: COLORS.panel2}]}>
-        <Text style={{color: COLORS.yellow, fontWeight: '800'}}>↻ EXECUÇÃO PARCIAL — PENDÊNCIA ABERTA</Text>
-        <Text style={{color: COLORS.text, marginTop: 4}}>{order.partial_reason}</Text>
-      </View>}
-      {isBlocked && <View style={styles.blockAlert}><Text style={{color: COLORS.yellow, fontWeight: '800'}}>⚠ IMPEDIMENTO</Text><Text style={{color: COLORS.text, marginTop: 4}}>{order.block_reason}</Text></View>}
-      <View style={styles.chips}>
-        <Pill text={`📅 ${order.due_date}`}/>
-        <Pill text={order.recurrence_days === 0 ? 'Avulsa' : `A cada ${order.recurrence_days} dias`}/>
-        <Pill text={`Prioridade ${order.priority}`} tone={order.priority === 'Alta' ? 'red' : 'blue'}/>
+      <View style={[styles.cardActions,{marginTop:12}]}>
+        {!archived&&!done&&<Action label={blocked?'Liberar':'Registrar serviço'}
+          disabled={busy} onPress={()=>blocked?
+            void handle(()=>releaseImpediment(order.id)):openComplete(order)}/>}
+        <Action secondary label={expanded?'Ocultar detalhes':'Mais opções'}
+          onPress={()=>setExpandedOrderId(expanded?null:order.id)}/>
       </View>
-      <View style={styles.cardActions}>
-        {archived?
+      {expanded&&<View style={styles.orderExtras}>
+        {!!order.description&&<Text style={styles.description}>{order.description}</Text>}
+        {!!order.asset_name&&<Text style={styles.detail}>
+          Equipamento prioritário: {order.asset_code||order.asset_name}
+          {order.asset_code?' · '+order.asset_name:''}
+        </Text>}
+        <Text style={styles.detail}>{order.category} · Prioridade {order.priority}</Text>
+        <Text style={styles.detail}>
+          {order.recurrence_days===0?'Serviço único':`Repetir a cada ${order.recurrence_days} dias`}
+        </Text>
+        {archived&&<Text style={styles.description}>Arquivada: {order.archive_reason}</Text>}
+        {!!order.block_reason&&<Text style={styles.description}>Impedimento: {order.block_reason}</Text>}
+        {!!order.partial_reason&&<Text style={styles.description}>Pendente: {order.partial_reason}</Text>}
+        <View style={styles.cardActions}>
+          {archived?<Action label="Reativar OS" secondary disabled={busy}
+            onPress={()=>confirmRestoreOrder(order)}/>:
           <>
-            <Action label="Reativar OS" secondary disabled={busy}
-              onPress={()=>confirmRestoreOrder(order)}/>
-            <Action label="Excluir OS" secondary dangerous disabled={busy}
-              onPress={()=>confirmDeleteOrder(order)}/>
-          </>:
-          <>
-            {!done && !isBlocked && <Action label="✓ Executar" onPress={() => openComplete(order)}/>}
-            {!done && (isBlocked
-              ? <Action label="Liberar" secondary disabled={busy}
-                  onPress={() => { void handle(() => releaseImpediment(order.id)); }}/>
-              : <Action label="⚠ Impedimento" secondary disabled={busy}
-                  onPress={() => openBlock(order)}/>)}
-            <Action label="Editar" secondary onPress={() => openOrder(order)}/>
-            <Action label="Duplicar" secondary disabled={busy} onPress={() => openDuplicateOrder(order)}/>
+            <Action label="Editar OS" secondary onPress={()=>openOrder(order)}/>
+            <Action label="Duplicar" secondary disabled={busy}
+              onPress={()=>openDuplicateOrder(order)}/>
             <Action label="Arquivar" secondary disabled={busy}
               onPress={()=>openArchiveOrder(order)}/>
-            <Action label="Excluir OS" secondary dangerous disabled={busy}
-              onPress={()=>confirmDeleteOrder(order)}/>
+            {!blocked&&!done&&<Action label="Registrar impedimento" secondary
+              onPress={()=>openBlock(order)}/>}
           </>}
-      </View>
+          <Action label="Excluir OS" secondary dangerous disabled={busy}
+            onPress={()=>confirmDeleteOrder(order)}/>
+        </View>
+      </View>}
     </View>;
   }
 
@@ -529,10 +553,10 @@ export default function App() {
       onNewOrder={()=>openOrder()}
       onOpenAgenda={()=>setTab('Agenda')}
     /> : <HomeScreen
-      orders={orders} routes={[]}
+      orders={orders}
       onOpenAgenda={()=>setTab('Agenda')}
       onNewOrder={()=>openOrder()}
-      onOpenRoute={()=>{}}
+      onOpenOrders={()=>setTab('Atividades')}
       onOpenOrder={id=>{
         const order=orders.find(o=>o.id===id);
         if(!order){Alert.alert('OS não encontrada','Atualize a lista de atividades.');return;}
@@ -752,18 +776,44 @@ export default function App() {
                 ?`${archivedVisible.length} OS arquivada(s)`
                 :`${orders.length} ativas • ${archivedOrders.length} arquivadas`}</Text></View>
               <Action label="+ Nova" onPress={() => openOrder()}/></View>
-            <TextInput accessibilityLabel="Buscar atividades" placeholder="Pesquisar OS, setor, TAG ou equipamento..."
-              placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch} style={styles.searchField}/>
-            <SectorInput label="Filtrar ordens por setor" placeholder="Ex.: sala de cortes"
-              value={sectorFilter} onChange={setSectorFilter} options={sectorOptions}/>
-            {!!sectorFilter&&<Action label="Limpar filtro de setor" secondary onPress={()=>setSectorFilter('')}/>}
-            <View style={styles.filters}>
-              {(['Todas', 'Pendentes', 'Impedidas', 'Prioritárias', 'Concluídas', 'Arquivadas'] as const).map(filter =>
-                <Pressable key={filter} accessibilityRole="button" accessibilityState={{selected: orderFilter === filter}}
-                  onPress={() => setOrderFilter(filter)} style={[styles.choice, orderFilter === filter && styles.choiceActive]}>
-                  <Text style={{color: orderFilter === filter ? COLORS.bg : COLORS.text, fontWeight: '700', fontSize: 12}}>{filter}</Text>
+            <TextInput accessibilityLabel="Pesquisar ordens de serviço e setores"
+              placeholder="Buscar OS ou setor (ex.: Sala de Cortes)"
+              placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch}
+              style={styles.searchField}/>
+            <View style={[styles.filters,{marginTop:10}]}>
+              {(['Todas','Pendentes','Concluídas'] as const).map(filter=>
+                <Pressable key={filter} accessibilityRole="button"
+                  accessibilityState={{selected:orderFilter===filter}}
+                  onPress={()=>setOrderFilter(filter)}
+                  style={[styles.choice,orderFilter===filter&&styles.choiceActive]}>
+                  <Text style={{color:orderFilter===filter?COLORS.bg:COLORS.text,
+                    fontWeight:'700',fontSize:TYPE.caption}}>{filter}</Text>
                 </Pressable>)}
+              <Pressable accessibilityRole="button"
+                accessibilityState={{expanded:showOrderFilters}}
+                onPress={()=>setShowOrderFilters(v=>!v)}
+                style={[styles.choice,(showOrderFilters||sectorFilter||
+                  ['Impedidas','Prioritárias','Arquivadas'].includes(orderFilter))&&{borderColor:COLORS.accent}]}>
+                <Text style={{color:COLORS.accent,fontSize:TYPE.caption,fontWeight:'800'}}>
+                  {showOrderFilters?'Ocultar filtros':(['Impedidas','Prioritárias','Arquivadas'].includes(orderFilter)?orderFilter:'Outros filtros')}{sectorFilter?' • setor':''}
+                </Text>
+              </Pressable>
             </View>
+            {showOrderFilters&&<View style={styles.orderExtras}>
+              <SectorInput label="Filtrar por setor (opcional)" placeholder="Digite um setor"
+                value={sectorFilter} onChange={setSectorFilter} options={sectorOptions}/>
+              {!!sectorFilter&&<Action label="Limpar setor" secondary onPress={()=>setSectorFilter('')}/>}
+              <View style={styles.filters}>
+                {(['Impedidas','Prioritárias','Arquivadas'] as const).map(filter=>
+                  <Pressable key={filter} accessibilityRole="button"
+                    accessibilityState={{selected:orderFilter===filter}}
+                    onPress={()=>{setOrderFilter(filter);setShowOrderFilters(false);}}
+                    style={[styles.choice,orderFilter===filter&&styles.choiceActive]}>
+                    <Text style={{color:orderFilter===filter?COLORS.bg:COLORS.text,
+                      fontWeight:'700',fontSize:TYPE.caption}}>{filter}</Text>
+                  </Pressable>)}
+              </View>
+            </View>}
           </>}
           ListEmptyComponent={<Text style={styles.empty}>{orderFilter==='Concluídas'
             ? 'Nenhuma execução concluída encontrada. OS recorrentes já executadas aparecem aqui.'
@@ -817,38 +867,88 @@ export default function App() {
               <FormField label="Área / Setor" placeholder="Ex.: Paletização" value={assetDraft.area}
                 onChangeText={v => setAssetDraft({...assetDraft, area: v})}/>
               <Action disabled={busy} label={busy ? 'Salvando...' : 'Salvar equipamento'}
-                onPress={() => { void handle(() => saveAsset(assetDraft, editingAsset)); }}/>
+                onPress={() => { void handle(() => saveAsset(assetDraft, editingAsset),finishAssetSave); }}/>
             </>}
             {dialog === 'order' && <>
-              {duplicateSource && <Text style={styles.description}>Nova OS independente baseada em “{duplicateSource}”. Confira o prazo (ajustado para hoje), equipamento e periodicidade antes de salvar. Fotos, histórico, impedimentos e pendências não serão copiados.</Text>}
-              <FormField label="Atividade *" placeholder="Ex.: Lubrificar mancais" value={orderDraft.title}
-                onChangeText={v => setOrderDraft({...orderDraft, title: v})}/>
-              <FormField label="Descrição" placeholder="Pontos, graxa, procedimentos..." multiline
-                value={orderDraft.description} onChangeText={v => setOrderDraft({...orderDraft, description: v})}/>
-              <Choices label="Especialidade" value={orderDraft.category} options={categories}
-                onChange={v => setOrderDraft({...orderDraft, category: v})}/>
-              <Choices label="Prioridade" value={orderDraft.priority} options={priorities}
-                onChange={v => setOrderDraft({...orderDraft, priority: v})}/>
-              <SectorInput label="Setor da OS *" value={orderDraft.sector}
-                onChange={value=>setOrderDraft(current=>({...current,sector:value}))}
+              {duplicateSource&&<Text style={styles.hint}>
+                OS nova baseada em “{duplicateSource}”. Confira setor, data e repetição.
+              </Text>}
+              <Text style={styles.hint}>Comece pelo serviço e pelo setor. Equipamento cadastrado não é obrigatório.</Text>
+              <FormField label="O que precisa fazer? *"
+                placeholder="Ex.: Lubrificar bombas da Sala de Cortes"
+                value={orderDraft.title}
+                onChangeText={v=>setOrderDraft(current=>({...current,title:v}))}/>
+              <SectorInput label="Onde? Setor *" value={orderDraft.sector}
+                onChange={sector=>setOrderDraft(current=>({...current,sector}))}
                 options={sectorOptions} placeholder="Ex.: Sala de Cortes"/>
-              <AssetPicker assets={assets} value={orderDraft.asset_id} allowNone
-                onChange={id=>setOrderDraft(current=>{
-                  const picked=assets.find(a=>a.id===id);
-                  return {...current,asset_id:id,
-                    sector:!current.sector.trim()&&picked?.area?picked.area:current.sector};
-                })}/>
-              <Text style={styles.fieldLabel}>Data programada *</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="Abrir calendário para escolher data"
-                style={styles.dateField} onPress={() => {Keyboard.dismiss(); setCalendarOpen(true);}}>
-                <Text style={styles.dateFieldText}>📅  {brazilianDate(orderDraft.due_date)}</Text>
-                <Text style={styles.dateFieldHint}>Alterar  ›</Text>
+              <FormField label="Descrição ou lista de equipamentos (opcional)" multiline
+                placeholder={"Ex.: Bombas B-01, B-02, B-03\nOu cole as TAGs da OS de papel; não precisa cadastrá-las."}
+                value={orderDraft.description}
+                onChangeText={description=>setOrderDraft(current=>({...current,description}))}/>
+              <Text style={styles.fieldLabel}>Quando fazer? *</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Escolher data da OS"
+                style={styles.dateField} onPress={()=>{Keyboard.dismiss();setCalendarOpen(true);}}>
+                <Text style={styles.dateFieldText}>📅 {brazilianDate(orderDraft.due_date)}</Text>
+                <Text style={styles.dateFieldHint}>Alterar ›</Text>
               </Pressable>
-              <FormField label="Repetir a cada quantos dias? (0 = avulsa)" keyboardType="numeric"
-                value={recurrenceInput} onChangeText={setRecurrenceInput} onFocus={focusLastField}/>
-              <Text style={[styles.hint, {marginBottom: 15}]}>Ao executar uma atividade recorrente, a próxima data será calculada a partir do dia da execução.</Text>
-              <Action disabled={busy || !validDate(orderDraft.due_date) || !/^\d+$/.test(recurrenceInput)} label={busy ? 'Salvando...' : 'Salvar atividade'}
-                onPress={() => { void handle(() => saveOrder({...orderDraft, recurrence_days: Number(recurrenceInput)}, editingOrder)); }}/>
+              <Text style={styles.fieldLabel}>Repetir esta OS</Text>
+              <View style={[styles.filters,{marginTop:0}]}>
+                {([['0','Uma vez'],['7','A cada 7 dias'],['30','A cada 30 dias']] as const)
+                  .map(([value,label])=><Pressable key={value} accessibilityRole="button"
+                    accessibilityState={{selected:recurrenceInput===value}}
+                    onPress={()=>setRecurrenceInput(value)}
+                    style={[styles.choice,recurrenceInput===value&&styles.choiceActive]}>
+                    <Text style={{color:recurrenceInput===value?COLORS.bg:COLORS.text,
+                      fontSize:TYPE.caption,fontWeight:'800'}}>{label}</Text>
+                  </Pressable>)}
+                <Pressable accessibilityRole="button"
+                  accessibilityState={{selected:!['0','7','30'].includes(recurrenceInput)}}
+                  onPress={()=>setRecurrenceInput('1')}
+                  style={[styles.choice,!['0','7','30'].includes(recurrenceInput)&&styles.choiceActive]}>
+                  <Text style={{color:!['0','7','30'].includes(recurrenceInput)?COLORS.bg:COLORS.text,
+                    fontSize:TYPE.caption,fontWeight:'800'}}>Outro</Text>
+                </Pressable>
+              </View>
+              {!['0','7','30'].includes(recurrenceInput)&&
+                <FormField label="Intervalo em dias" keyboardType="numeric"
+                  value={recurrenceInput} onChangeText={setRecurrenceInput}
+                  onFocus={focusLastField}/>}
+              <Pressable accessibilityRole="button"
+                accessibilityState={{expanded:showOrderAdvanced}}
+                onPress={()=>setShowOrderAdvanced(v=>!v)}
+                style={styles.notesToggle}>
+                <Text style={styles.notesToggleText}>
+                  {showOrderAdvanced?'Ocultar detalhes opcionais':'Mais detalhes (opcional)'}
+                </Text>
+                <Text style={styles.notesToggleText}>{showOrderAdvanced?'⌃':'⌄'}</Text>
+              </Pressable>
+              {!showOrderAdvanced&&<Text style={styles.hint}>
+                Tipo: {orderDraft.category} · Prioridade: {orderDraft.priority} ·
+                {orderDraft.asset_id?' Equipamento prioritário vinculado':' Sem TAG vinculada'}
+              </Text>}
+              {showOrderAdvanced&&<View style={styles.orderExtras}>
+                <Choices label="Tipo de manutenção" value={orderDraft.category} options={categories}
+                  onChange={category=>setOrderDraft(current=>({...current,category}))}/>
+                <Choices label="Prioridade" value={orderDraft.priority} options={priorities}
+                  onChange={priority=>setOrderDraft(current=>({...current,priority}))}/>
+                <Text style={styles.hint}>TAG opcional: use somente para máquinas críticas.
+                  Para OS com dezenas de equipamentos, escreva a lista na descrição.</Text>
+                <AssetPicker assets={assets} value={orderDraft.asset_id} allowNone
+                  label="Equipamento prioritário (opcional)"
+                  onChange={asset_id=>setOrderDraft(current=>{
+                    const selected=assets.find(a=>a.id===asset_id);
+                    return {...current,asset_id,
+                      sector:!current.sector.trim()&&selected?.area?selected.area:current.sector};
+                  })}/>
+                <Action secondary label="＋ Cadastrar equipamento prioritário"
+                  disabled={busy} onPress={openAssetFromOrder}/>
+              </View>}
+              <Action disabled={busy||!orderDraft.title.trim()||!orderDraft.sector.trim()||
+                !validDate(orderDraft.due_date)||!/^[0-9]+$/.test(recurrenceInput)}
+                label={busy?'Salvando...':'Salvar OS'}
+                onPress={()=>{void handle(()=>saveOrder({
+                  ...orderDraft,recurrence_days:Number(recurrenceInput),
+                },editingOrder));}}/>
             </>}
             {dialog === 'archive' && completingOrder && <>
               <Text style={styles.cardTitle}>{completingOrder.title}</Text>
@@ -983,6 +1083,7 @@ const styles = StyleSheet.create({
   card: {padding:SPACING.lg,backgroundColor:COLORS.panel,borderRadius:RADII.card,marginTop:SPACING.md,borderWidth:1,
     borderColor: COLORS.border},
   cardTitle: {fontSize:TYPE.bodyLarge,fontWeight:'800',color:COLORS.text,lineHeight:22},
+  orderExtras:{marginTop:12,paddingTop:12,borderTopWidth:1,borderTopColor:COLORS.border,gap:7},
   detail: {fontSize:TYPE.caption,color:COLORS.muted,marginTop:5,lineHeight:18},
   description: {fontSize:TYPE.body,color:COLORS.muted,lineHeight:21,marginTop:SPACING.sm},
   chips: {flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 15},

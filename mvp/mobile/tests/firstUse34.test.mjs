@@ -12,8 +12,8 @@ test('não considera contagens inválidas como instalação nova',()=>{
    assert.equal(shouldShowFirstUseGuide({...empty,orders:count}),false);
 });
 test('ensina o fluxo sem criar dados ou prometer login',()=>{
- assert.equal(FIRST_USE_STEPS.length,4);
- assert.deepEqual(FIRST_USE_STEPS.map(s=>s.number),[1,2,3,4]);
+ assert.equal(FIRST_USE_STEPS.length,2);
+ assert.deepEqual(FIRST_USE_STEPS.map(s=>s.number),[1,2]);
  assert.match(FIRST_USE_STEPS[0].description,/opcional/);
  assert.match(FIRST_USE_STEPS.at(-1).description,/aparelho/);
 });
