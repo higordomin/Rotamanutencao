@@ -411,60 +411,61 @@ export default function App() {
 
   function orderCard(order: WorkOrder) {
     const archived=!!order.archived_at;
-    const state = stateOf(order);
-    const overdueOrder = state === 'overdue';
-    const done = state === 'completed';
-    const isBlocked = state === 'blocked';
-    const isPartial = !done && !!order.partial_reason?.trim();
+    const state=stateOf(order);
+    const done=state==='completed';
+    const blocked=state==='blocked';
+    const expanded=expandedOrderId===order.id;
     return <View key={order.id} style={styles.card}>
-      <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
-        <View style={{flex: 1}}>
+      <View style={{flexDirection:'row',alignItems:'flex-start',gap:10,justifyContent:'space-between'}}>
+        <View style={{flex:1,gap:4}}>
           <Text style={styles.cardTitle}>{order.title}</Text>
-          <Text style={[styles.detail,{color:COLORS.accent,fontWeight:'800'}]}>Setor: {orderSector(order)||'Não informado'}</Text>
-          <Text style={styles.detail}>{[order.asset_code, order.asset_name].filter(Boolean).join(' · ') || 'Sem equipamento'} · {order.category}</Text>
+          <Text style={{color:COLORS.accent,fontSize:TYPE.body,fontWeight:'700'}}>
+            {orderSector(order)||'Setor não informado'}
+          </Text>
+          <Text style={styles.detail}>📅 {brazilianDate(order.due_date)}</Text>
         </View>
-        <Pill text={archived ? 'Arquivada' : done ? 'Concluída' : isBlocked ? 'Impedida' : isPartial ? 'Parcial' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
-          tone={done ? 'green' : isBlocked || overdueOrder ? 'red' : isPartial || order.due_date === today ? 'yellow' : 'blue'}/>
+        <Pill text={archived?'Arquivada':done?'Concluída':blocked?'Impedida':
+          order.partial_reason?.trim()?'Parcial':state==='overdue'?'Atrasada':
+          order.due_date===today?'Hoje':'Programada'}
+          tone={done?'green':blocked||state==='overdue'?'red':
+            order.partial_reason?.trim()||order.due_date===today?'yellow':'blue'}/>
       </View>
-      {archived&&<View style={styles.blockAlert}>
-        <Text style={{color:COLORS.yellow,fontWeight:'800'}}>OS ARQUIVADA — HISTÓRICO PRESERVADO</Text>
-        <Text style={styles.description}>Motivo: {order.archive_reason}</Text>
-        <Text style={styles.detail}>Arquivada em {new Date(order.archived_at!).toLocaleString('pt-BR')}</Text>
-      </View>}
-      {!!order.description && <Text style={styles.description}>{order.description}</Text>}
-      {isPartial && <View style={[styles.blockAlert, {backgroundColor: COLORS.panel2}]}>
-        <Text style={{color: COLORS.yellow, fontWeight: '800'}}>↻ EXECUÇÃO PARCIAL — PENDÊNCIA ABERTA</Text>
-        <Text style={{color: COLORS.text, marginTop: 4}}>{order.partial_reason}</Text>
-      </View>}
-      {isBlocked && <View style={styles.blockAlert}><Text style={{color: COLORS.yellow, fontWeight: '800'}}>⚠ IMPEDIMENTO</Text><Text style={{color: COLORS.text, marginTop: 4}}>{order.block_reason}</Text></View>}
-      <View style={styles.chips}>
-        <Pill text={`📅 ${order.due_date}`}/>
-        <Pill text={order.recurrence_days === 0 ? 'Avulsa' : `A cada ${order.recurrence_days} dias`}/>
-        <Pill text={`Prioridade ${order.priority}`} tone={order.priority === 'Alta' ? 'red' : 'blue'}/>
+      <View style={[styles.cardActions,{marginTop:12}]}>
+        {!archived&&!done&&<Action label={blocked?'Liberar':'Registrar serviço'}
+          disabled={busy} onPress={()=>blocked?
+            void handle(()=>releaseImpediment(order.id)):openComplete(order)}/>}
+        <Action secondary label={expanded?'Ocultar detalhes':'Mais opções'}
+          onPress={()=>setExpandedOrderId(expanded?null:order.id)}/>
       </View>
-      <View style={styles.cardActions}>
-        {archived?
+      {expanded&&<View style={styles.orderExtras}>
+        {!!order.description&&<Text style={styles.description}>{order.description}</Text>}
+        {!!order.asset_name&&<Text style={styles.detail}>
+          Equipamento prioritário: {order.asset_code||order.asset_name}
+          {order.asset_code?' · '+order.asset_name:''}
+        </Text>}
+        <Text style={styles.detail}>{order.category} · Prioridade {order.priority}</Text>
+        <Text style={styles.detail}>
+          {order.recurrence_days===0?'Serviço único':`Repetir a cada ${order.recurrence_days} dias`}
+        </Text>
+        {archived&&<Text style={styles.description}>Arquivada: {order.archive_reason}</Text>}
+        {!!order.block_reason&&<Text style={styles.description}>Impedimento: {order.block_reason}</Text>}
+        {!!order.partial_reason&&<Text style={styles.description}>Pendente: {order.partial_reason}</Text>}
+        <View style={styles.cardActions}>
+          {archived?<Action label="Reativar OS" secondary disabled={busy}
+            onPress={()=>confirmRestoreOrder(order)}/>:
           <>
-            <Action label="Reativar OS" secondary disabled={busy}
-              onPress={()=>confirmRestoreOrder(order)}/>
-            <Action label="Excluir OS" secondary dangerous disabled={busy}
-              onPress={()=>confirmDeleteOrder(order)}/>
-          </>:
-          <>
-            {!done && !isBlocked && <Action label="✓ Executar" onPress={() => openComplete(order)}/>}
-            {!done && (isBlocked
-              ? <Action label="Liberar" secondary disabled={busy}
-                  onPress={() => { void handle(() => releaseImpediment(order.id)); }}/>
-              : <Action label="⚠ Impedimento" secondary disabled={busy}
-                  onPress={() => openBlock(order)}/>)}
-            <Action label="Editar" secondary onPress={() => openOrder(order)}/>
-            <Action label="Duplicar" secondary disabled={busy} onPress={() => openDuplicateOrder(order)}/>
+            <Action label="Editar OS" secondary onPress={()=>openOrder(order)}/>
+            <Action label="Duplicar" secondary disabled={busy}
+              onPress={()=>openDuplicateOrder(order)}/>
             <Action label="Arquivar" secondary disabled={busy}
               onPress={()=>openArchiveOrder(order)}/>
-            <Action label="Excluir OS" secondary dangerous disabled={busy}
-              onPress={()=>confirmDeleteOrder(order)}/>
+            {!blocked&&!done&&<Action label="Registrar impedimento" secondary
+              onPress={()=>openBlock(order)}/>}
           </>}
-      </View>
+          <Action label="Excluir OS" secondary dangerous disabled={busy}
+            onPress={()=>confirmDeleteOrder(order)}/>
+        </View>
+      </View>}
     </View>;
   }
 
@@ -1006,6 +1007,7 @@ const styles = StyleSheet.create({
   card: {padding:SPACING.lg,backgroundColor:COLORS.panel,borderRadius:RADII.card,marginTop:SPACING.md,borderWidth:1,
     borderColor: COLORS.border},
   cardTitle: {fontSize:TYPE.bodyLarge,fontWeight:'800',color:COLORS.text,lineHeight:22},
+  orderExtras:{marginTop:12,paddingTop:12,borderTopWidth:1,borderTopColor:COLORS.border,gap:7},
   detail: {fontSize:TYPE.caption,color:COLORS.muted,marginTop:5,lineHeight:18},
   description: {fontSize:TYPE.body,color:COLORS.muted,lineHeight:21,marginTop:SPACING.sm},
   chips: {flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 15},
