@@ -54,7 +54,7 @@ test('formulário recolhe as opções e mantém dias personalizados em campo edi
   assert.match(component,/Personalizado em dias/);
   assert.match(component,/onChangeText=\{setCustom\}/);
   assert.match(component,/disabled=\{!validRecurrenceInput\(custom\)\}/);
-  assert.match(app,/<RecurrencePicker39 value=\{recurrenceInput\} onChange=\{setRecurrenceInput\}/>);
+  assert.match(app,/<RecurrencePicker39 value=\{recurrenceInput\} onChange=\{setRecurrenceInput\}/);
   assert.match(app,/recurrenceSummary\(String\(order\.recurrence_days\)\)/);
   assert.match(app,/!validRecurrenceInput\(recurrenceInput\)/);
 });
