@@ -31,6 +31,8 @@ import {preselectAsset, executionBelongsToAssetSnapshot, buildLegacyAssetIndex} 
 import {assetAreas,findCatalogAssets} from './src/assetCatalog';
 import {AssetPicker} from './src/AssetPicker';
 import {SectorInput} from './src/SectorInput';
+import {RecurrencePicker39} from './src/RecurrencePicker39';
+import {recurrenceSummary,validRecurrenceInput} from './src/recurrencePresets39';
 import {knownSectors,matchesSector,orderSector,sectorKey} from './src/sectors37';
 import {createActionGuard} from './src/actionGuard';
 import {MoreMenu} from './src/MoreMenu';
@@ -445,7 +447,7 @@ export default function App() {
         </Text>}
         <Text style={styles.detail}>{order.category} · Prioridade {order.priority}</Text>
         <Text style={styles.detail}>
-          {order.recurrence_days===0?'Serviço único':`Repetir a cada ${order.recurrence_days} dias`}
+          {recurrenceSummary(String(order.recurrence_days))}
         </Text>
         {archived&&<Text style={styles.description}>Arquivada: {order.archive_reason}</Text>}
         {!!order.block_reason&&<Text style={styles.description}>Impedimento: {order.block_reason}</Text>}
@@ -891,28 +893,7 @@ export default function App() {
                 <Text style={styles.dateFieldText}>📅 {brazilianDate(orderDraft.due_date)}</Text>
                 <Text style={styles.dateFieldHint}>Alterar ›</Text>
               </Pressable>
-              <Text style={styles.fieldLabel}>Repetir esta OS</Text>
-              <View style={[styles.filters,{marginTop:0}]}>
-                {([['0','Uma vez'],['7','A cada 7 dias'],['30','A cada 30 dias']] as const)
-                  .map(([value,label])=><Pressable key={value} accessibilityRole="button"
-                    accessibilityState={{selected:recurrenceInput===value}}
-                    onPress={()=>setRecurrenceInput(value)}
-                    style={[styles.choice,recurrenceInput===value&&styles.choiceActive]}>
-                    <Text style={{color:recurrenceInput===value?COLORS.bg:COLORS.text,
-                      fontSize:TYPE.caption,fontWeight:'800'}}>{label}</Text>
-                  </Pressable>)}
-                <Pressable accessibilityRole="button"
-                  accessibilityState={{selected:!['0','7','30'].includes(recurrenceInput)}}
-                  onPress={()=>setRecurrenceInput('1')}
-                  style={[styles.choice,!['0','7','30'].includes(recurrenceInput)&&styles.choiceActive]}>
-                  <Text style={{color:!['0','7','30'].includes(recurrenceInput)?COLORS.bg:COLORS.text,
-                    fontSize:TYPE.caption,fontWeight:'800'}}>Outro</Text>
-                </Pressable>
-              </View>
-              {!['0','7','30'].includes(recurrenceInput)&&
-                <FormField label="Intervalo em dias" keyboardType="numeric"
-                  value={recurrenceInput} onChangeText={setRecurrenceInput}
-                  onFocus={focusLastField}/>}
+              <RecurrencePicker39 value={recurrenceInput} onChange={setRecurrenceInput}/>
               <Pressable accessibilityRole="button"
                 accessibilityState={{expanded:showOrderAdvanced}}
                 onPress={()=>setShowOrderAdvanced(v=>!v)}
@@ -944,7 +925,7 @@ export default function App() {
                   disabled={busy} onPress={openAssetFromOrder}/>
               </View>}
               <Action disabled={busy||!orderDraft.title.trim()||!orderDraft.sector.trim()||
-                !validDate(orderDraft.due_date)||!/^[0-9]+$/.test(recurrenceInput)}
+                !validDate(orderDraft.due_date)||!validRecurrenceInput(recurrenceInput)}
                 label={busy?'Salvando...':'Salvar OS'}
                 onPress={()=>{void handle(()=>saveOrder({
                   ...orderDraft,recurrence_days:Number(recurrenceInput),
