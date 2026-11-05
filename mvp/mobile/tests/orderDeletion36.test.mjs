@@ -28,7 +28,9 @@ test('OS concluída e ainda sem histórico acessível não é apagada por engano
 });
 test('UI oferece ação em OS ativas e arquivadas e exige confirmação destrutiva',()=>{
   const screen=fs.readFileSync(new URL('../App.tsx',import.meta.url),'utf8');
-  assert.equal((screen.match(/label="Excluir OS"/g)||[]).length,2);
+  // A exclusão foi movida para "Mais opções", em vez de aparecer em todos os cartões.
+  assert.equal((screen.match(/label="Excluir OS"/g)||[]).length,1);
+  assert.match(screen,/expanded&&<View style={styles.orderExtras}>/);
   assert.match(screen,/style:'destructive'[\s\S]*?deleteUnstartedOrder/);
   assert.match(screen,/Histórico protegido/);
   assert.match(screen,/inspectOrderDeletion\(order\.id\)/);
