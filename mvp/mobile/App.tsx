@@ -795,7 +795,7 @@ export default function App() {
                 style={[styles.choice,(showOrderFilters||sectorFilter||
                   ['Impedidas','Prioritárias','Arquivadas'].includes(orderFilter))&&{borderColor:COLORS.accent}]}>
                 <Text style={{color:COLORS.accent,fontSize:TYPE.caption,fontWeight:'800'}}>
-                  {showOrderFilters?'Menos filtros':'Outros filtros'}{sectorFilter?' • setor':''}
+                  {showOrderFilters?'Ocultar filtros':(['Impedidas','Prioritárias','Arquivadas'].includes(orderFilter)?orderFilter:'Outros filtros')}{sectorFilter?' • setor':''}
                 </Text>
               </Pressable>
             </View>
