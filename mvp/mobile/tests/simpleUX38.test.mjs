@@ -40,8 +40,8 @@ test('ordem mensal aceita muitas TAGs em texto, sem exigir qualquer equipamento 
   const db=read('src/db.ts');
   assert.match(source,/Descrição ou lista de equipamentos \(opcional\)/);
   assert.match(source,/Para OS com dezenas de equipamentos, escreva a lista na descrição/);
-  assert.match(source,/onPress=\{\(\)=>setRecurrenceInput\(value\)\}/);
-  assert.match(source,/\['0','7','30'\]/);
+  assert.match(source,/<RecurrencePicker39 value=\\{recurrenceInput\\} onChange=\\{setRecurrenceInput\\}/>);
+  assert.match(read('src/recurrencePresets39.ts'),/label:'Mensal',days:30/);
   assert.match(source,/<AssetPicker assets=\{assets\} value=\{orderDraft\.asset_id\} allowNone/);
   // A OS continua independente de equipamento: o banco aceita asset_id nulo.
   assert.match(db,/asset_id TEXT REFERENCES assets\(id\) ON DELETE SET NULL/);
