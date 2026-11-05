@@ -776,18 +776,44 @@ export default function App() {
                 ?`${archivedVisible.length} OS arquivada(s)`
                 :`${orders.length} ativas • ${archivedOrders.length} arquivadas`}</Text></View>
               <Action label="+ Nova" onPress={() => openOrder()}/></View>
-            <TextInput accessibilityLabel="Buscar atividades" placeholder="Pesquisar OS, setor, TAG ou equipamento..."
-              placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch} style={styles.searchField}/>
-            <SectorInput label="Filtrar ordens por setor" placeholder="Ex.: sala de cortes"
-              value={sectorFilter} onChange={setSectorFilter} options={sectorOptions}/>
-            {!!sectorFilter&&<Action label="Limpar filtro de setor" secondary onPress={()=>setSectorFilter('')}/>}
-            <View style={styles.filters}>
-              {(['Todas', 'Pendentes', 'Impedidas', 'Prioritárias', 'Concluídas', 'Arquivadas'] as const).map(filter =>
-                <Pressable key={filter} accessibilityRole="button" accessibilityState={{selected: orderFilter === filter}}
-                  onPress={() => setOrderFilter(filter)} style={[styles.choice, orderFilter === filter && styles.choiceActive]}>
-                  <Text style={{color: orderFilter === filter ? COLORS.bg : COLORS.text, fontWeight: '700', fontSize: 12}}>{filter}</Text>
+            <TextInput accessibilityLabel="Pesquisar ordens de serviço e setores"
+              placeholder="Buscar OS ou setor (ex.: Sala de Cortes)"
+              placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch}
+              style={styles.searchField}/>
+            <View style={[styles.filters,{marginTop:10}]}>
+              {(['Todas','Pendentes','Concluídas'] as const).map(filter=>
+                <Pressable key={filter} accessibilityRole="button"
+                  accessibilityState={{selected:orderFilter===filter}}
+                  onPress={()=>setOrderFilter(filter)}
+                  style={[styles.choice,orderFilter===filter&&styles.choiceActive]}>
+                  <Text style={{color:orderFilter===filter?COLORS.bg:COLORS.text,
+                    fontWeight:'700',fontSize:TYPE.caption}}>{filter}</Text>
                 </Pressable>)}
+              <Pressable accessibilityRole="button"
+                accessibilityState={{expanded:showOrderFilters}}
+                onPress={()=>setShowOrderFilters(v=>!v)}
+                style={[styles.choice,(showOrderFilters||sectorFilter||
+                  ['Impedidas','Prioritárias','Arquivadas'].includes(orderFilter))&&{borderColor:COLORS.accent}]}>
+                <Text style={{color:COLORS.accent,fontSize:TYPE.caption,fontWeight:'800'}}>
+                  {showOrderFilters?'Menos filtros':'Outros filtros'}{sectorFilter?' • setor':''}
+                </Text>
+              </Pressable>
             </View>
+            {showOrderFilters&&<View style={styles.orderExtras}>
+              <SectorInput label="Filtrar por setor (opcional)" placeholder="Digite um setor"
+                value={sectorFilter} onChange={setSectorFilter} options={sectorOptions}/>
+              {!!sectorFilter&&<Action label="Limpar setor" secondary onPress={()=>setSectorFilter('')}/>}
+              <View style={styles.filters}>
+                {(['Impedidas','Prioritárias','Arquivadas'] as const).map(filter=>
+                  <Pressable key={filter} accessibilityRole="button"
+                    accessibilityState={{selected:orderFilter===filter}}
+                    onPress={()=>{setOrderFilter(filter);setShowOrderFilters(false);}}
+                    style={[styles.choice,orderFilter===filter&&styles.choiceActive]}>
+                    <Text style={{color:orderFilter===filter?COLORS.bg:COLORS.text,
+                      fontWeight:'700',fontSize:TYPE.caption}}>{filter}</Text>
+                  </Pressable>)}
+              </View>
+            </View>}
           </>}
           ListEmptyComponent={<Text style={styles.empty}>{orderFilter==='Concluídas'
             ? 'Nenhuma execução concluída encontrada. OS recorrentes já executadas aparecem aqui.'
