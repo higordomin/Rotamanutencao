@@ -115,6 +115,10 @@ export default function App() {
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [search, setSearch] = useState('');
   const [sectorFilter,setSectorFilter] = useState('');
+  const [showOrderFilters,setShowOrderFilters] = useState(false);
+  const [expandedOrderId,setExpandedOrderId] = useState<string|null>(null);
+  const [showOrderAdvanced,setShowOrderAdvanced] = useState(false);
+  const [returnToOrderFromAsset,setReturnToOrderFromAsset]=useState(false);
   const [assetSearch, setAssetSearch] = useState('');
   const [assetAreaFilter,setAssetAreaFilter] = useState('');
   const [assetPageSize,setAssetPageSize] = useState(30);
@@ -169,7 +173,9 @@ export default function App() {
   const closeDialog = () => {
     Keyboard.dismiss();
     if (calendarOpen) setCalendarOpen(false);
-    else setDialog(null);
+    else if(dialog==='asset'&&returnToOrderFromAsset){
+      setReturnToOrderFromAsset(false);setDialog('order');
+    }else setDialog(null);
   };
 
   const refresh = useCallback(async () => {
@@ -268,16 +274,17 @@ export default function App() {
     [orderFilter,completedExecutions,archivedVisible,visibleOrders],
   );
 
-  const handle = async (action: () => Promise<void>) => {
+  const handle = async (action: () => Promise<void>,afterSuccess?:()=>void) => {
     await operationGuard.run(async()=>{
       setBusy(true);
-      try { await action(); await refresh(); setDialog(null); }
+      try { await action(); await refresh(); if(afterSuccess)afterSuccess(); else setDialog(null); }
       catch (e) { Alert.alert('Não foi possível concluir', e instanceof Error ? e.message : String(e)); }
       finally { setBusy(false); }
     });
   };
 
   const openAsset = (asset?: Asset) => {
+    setReturnToOrderFromAsset(false);
     setEditingAsset(asset?.id);
     setAssetDraft(asset ? {name: asset.name, code: asset.code, area: asset.area} : initialAsset());
     setDialog('asset');
@@ -285,6 +292,7 @@ export default function App() {
   const openOrder = (order?: WorkOrder, asset?: Asset) => {
     setDuplicateSource(null);
     setCalendarOpen(false);
+    setShowOrderAdvanced(!!order?.asset_id || (order?.category!==undefined && order.category!=='Lubrificação') || (order?.priority!==undefined && order.priority!=='Média'));
     setEditingOrder(order?.id);
     setRecurrenceInput(String(order?.recurrence_days ?? 30));
     setOrderDraft(order ? {
@@ -294,12 +302,27 @@ export default function App() {
     } : asset ? {...preselectAsset(initialOrder(),asset),sector:asset.area} : initialOrder());
     setDialog('order');
   };
+  const openAssetFromOrder=()=>{
+    setEditingAsset(undefined);
+    setAssetDraft({name:'',code:'',area:orderDraft.sector});
+    setReturnToOrderFromAsset(true);
+    setShowOrderAdvanced(true);
+    setDialog('asset');
+  };
+  const finishAssetSave=()=>{
+    if(returnToOrderFromAsset){
+      setReturnToOrderFromAsset(false);
+      setShowOrderAdvanced(true);
+      setDialog('order');
+    }else setDialog(null);
+  };
   const openDuplicateOrder = (order: WorkOrder) => {
     try {
       const draft = duplicateOrderDraft(order, localDate());
       setCalendarOpen(false);
       setEditingOrder(undefined); // Salvar criará uma OS nova, com ID e histórico próprios.
       setRecurrenceInput(String(draft.recurrence_days));
+      setShowOrderAdvanced(!!draft.asset_id||draft.priority!=='Média'||draft.category!=='Lubrificação');
       setOrderDraft(draft);
       setDuplicateSource(order.title);
       setDialog('order');
@@ -529,10 +552,10 @@ export default function App() {
       onNewOrder={()=>openOrder()}
       onOpenAgenda={()=>setTab('Agenda')}
     /> : <HomeScreen
-      orders={orders} routes={[]}
+      orders={orders}
       onOpenAgenda={()=>setTab('Agenda')}
       onNewOrder={()=>openOrder()}
-      onOpenRoute={()=>{}}
+      onOpenOrders={()=>setTab('Atividades')}
       onOpenOrder={id=>{
         const order=orders.find(o=>o.id===id);
         if(!order){Alert.alert('OS não encontrada','Atualize a lista de atividades.');return;}
@@ -817,7 +840,7 @@ export default function App() {
               <FormField label="Área / Setor" placeholder="Ex.: Paletização" value={assetDraft.area}
                 onChangeText={v => setAssetDraft({...assetDraft, area: v})}/>
               <Action disabled={busy} label={busy ? 'Salvando...' : 'Salvar equipamento'}
-                onPress={() => { void handle(() => saveAsset(assetDraft, editingAsset)); }}/>
+                onPress={() => { void handle(() => saveAsset(assetDraft, editingAsset),finishAssetSave); }}/>
             </>}
             {dialog === 'order' && <>
               {duplicateSource && <Text style={styles.description}>Nova OS independente baseada em “{duplicateSource}”. Confira o prazo (ajustado para hoje), equipamento e periodicidade antes de salvar. Fotos, histórico, impedimentos e pendências não serão copiados.</Text>}
