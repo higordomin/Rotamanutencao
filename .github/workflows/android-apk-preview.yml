@@ -51,7 +51,7 @@ jobs:
           BADGING="$("$BUILD_TOOLS/aapt" dump badging "$APK" | grep -m 1 '^package:')"
           echo "$BADGING"
           [[ "$BADGING" == *"name='br.com.rotamanutencao.qa'"* ]] || { echo 'ID QA alterado!'; exit 1; }
-          [[ "$BADGING" == *"versionCode='350'"* ]] || { echo 'versionCode inesperado!'; exit 1; }
+          [[ "$BADGING" == *"versionCode='360'"* ]] || { echo 'versionCode inesperado!'; exit 1; }
           "$BUILD_TOOLS/aapt" dump permissions "$APK" | grep -F 'android.permission.SCHEDULE_EXACT_ALARM' || {
             echo 'Permissão de alarmes exatos não apareceu no manifesto nativo!'; exit 1;
           }
@@ -64,7 +64,7 @@ jobs:
       - name: Publicar artefato instalável de teste
         uses: actions/upload-artifact@v4
         with:
-          name: RotaManutencao-0_35_0-APK
+          name: RotaManutencao-0_36_0-APK
           path: mvp/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7

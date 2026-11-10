@@ -25,6 +25,19 @@ export function addDays(date: string, days: number): string {
   return result;
 }
 
+/** Acrescenta meses de calendário: 31/jan + 1 mês = último dia de fevereiro. */
+export function addMonths(date: string, months: number): string {
+  if (!validDate(date) || !Number.isSafeInteger(months) || months < 1 || months > 1200)
+    throw new Error('Data ou intervalo em meses inválido.');
+  const [y,m,d]=date.split('-').map(Number);
+  const first=new Date(Date.UTC(y,m-1+months,1));
+  const year=first.getUTCFullYear(),month=first.getUTCMonth();
+  const lastDay=new Date(Date.UTC(year,month+1,0)).getUTCDate();
+  const result=[String(year),String(month+1).padStart(2,'0'),String(Math.min(d,lastDay)).padStart(2,'0')].join('-');
+  if(!validDate(result))throw new Error('Data futura fora do intervalo permitido.');
+  return result;
+}
+
 export type RouteStatus = 'pending' | 'completed';
 export type TaskState = 'blocked' | 'completed' | 'overdue' | 'today' | 'upcoming';
 export function taskState(task: {status: RouteStatus; block_reason?: string | null; due_date: string}, today = localDate()): TaskState {

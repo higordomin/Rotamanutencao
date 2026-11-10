@@ -46,6 +46,11 @@ export async function initializeDatabase(): Promise<void> {
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','completed')),
       archived_at TEXT,
       archive_reason TEXT NOT NULL DEFAULT '',
+      mp_code TEXT,
+      source_os_number TEXT NOT NULL DEFAULT '',
+      source_asset_label TEXT NOT NULL DEFAULT '',
+      planned_minutes INTEGER,
+      recurrence_months INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -166,6 +171,17 @@ export async function initializeDatabase(): Promise<void> {
     await db.execAsync("ALTER TABLE work_orders ADD COLUMN partial_reason TEXT NOT NULL DEFAULT ''");
   if (!orderFields.some(f => f.name === 'partial_at'))
     await db.execAsync('ALTER TABLE work_orders ADD COLUMN partial_at TEXT');
+  if (!orderFields.some(f=>f.name==='mp_code'))
+    await db.execAsync('ALTER TABLE work_orders ADD COLUMN mp_code TEXT');
+  if (!orderFields.some(f=>f.name==='source_os_number'))
+    await db.execAsync("ALTER TABLE work_orders ADD COLUMN source_os_number TEXT NOT NULL DEFAULT ''");
+  if (!orderFields.some(f=>f.name==='source_asset_label'))
+    await db.execAsync("ALTER TABLE work_orders ADD COLUMN source_asset_label TEXT NOT NULL DEFAULT ''");
+  if (!orderFields.some(f=>f.name==='planned_minutes'))
+    await db.execAsync('ALTER TABLE work_orders ADD COLUMN planned_minutes INTEGER');
+  if (!orderFields.some(f=>f.name==='recurrence_months'))
+    await db.execAsync('ALTER TABLE work_orders ADD COLUMN recurrence_months INTEGER NOT NULL DEFAULT 0');
+  await db.execAsync('CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_mp_code ON work_orders(mp_code)');
   if (!fields.some(f => f.name === 'result'))
     await db.execAsync("ALTER TABLE executions ADD COLUMN result TEXT NOT NULL DEFAULT 'completed' CHECK(result IN ('completed','partial'))");
   if (!fields.some(f => f.name === 'asset_id')) {
@@ -277,9 +293,10 @@ export async function saveOrder(input: OrderDraft, existingId?: string): Promise
   const now = new Date().toISOString();
   if (existingId) {
     const result = await db.runAsync(`UPDATE work_orders SET title=?,description=?,category=?,priority=?,asset_id=?,
-      recurrence_days=?,due_date=?,updated_at=? WHERE id=? AND archived_at IS NULL`,
+      recurrence_days=?,recurrence_months=CASE WHEN recurrence_days=? THEN recurrence_months ELSE 0 END,
+      due_date=?,updated_at=? WHERE id=? AND archived_at IS NULL`,
       title, input.description.trim(), input.category, input.priority,
-      input.asset_id, input.recurrence_days, input.due_date, now, existingId);
+      input.asset_id, input.recurrence_days, input.recurrence_days, input.due_date, now, existingId);
     if (result.changes !== 1) throw new Error('Atividade excluída ou desatualizada. Atualize a tela.');
   } else {
     await db.runAsync(`INSERT INTO work_orders
@@ -467,10 +484,13 @@ export async function restoreDatabaseRows(data: BackupData, filenames: Map<strin
     for (const o of data.work_orders) {
       await tx.runAsync(`INSERT INTO work_orders
         (id,title,description,category,priority,asset_id,recurrence_days,due_date,status,created_at,updated_at,
-          block_reason,blocked_at,partial_reason,partial_at,archived_at,archive_reason)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
+          block_reason,blocked_at,partial_reason,partial_at,archived_at,archive_reason,
+          mp_code,source_os_number,source_asset_label,planned_minutes,recurrence_months)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.id,o.title,o.description,o.category,o.priority,o.asset_id,
         o.recurrence_days,o.due_date,o.status,o.created_at,o.updated_at, o.block_reason ?? '', o.blocked_at ?? null,
-        o.partial_reason ?? '', o.partial_at ?? null, o.archived_at ?? null,o.archive_reason ?? '');
+        o.partial_reason ?? '', o.partial_at ?? null, o.archived_at ?? null,o.archive_reason ?? '',
+        o.mp_code ?? null,o.source_os_number ?? '',o.source_asset_label ?? '',
+        o.planned_minutes ?? null,o.recurrence_months ?? 0);
     }
     const legacyIndex=buildLegacyAssetIndex(data.assets);
     for (const e of data.executions) {

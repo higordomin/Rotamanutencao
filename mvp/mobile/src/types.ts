@@ -33,6 +33,16 @@ export type WorkOrder = {
   asset_code: string | null;
   asset_area: string | null;
   recurrence_days: number;
+  /** Calendário real para frequência reconhecida no título, 0 = intervalo em dias. */
+  recurrence_months?: number;
+  /** MP de origem; não representa o número da OS em execução. */
+  mp_code?: string | null;
+  /** Última OS do relatório Maximo, apenas referência histórica. */
+  source_os_number?: string;
+  /** Descrição do ativo, sem cadastro obrigatório. */
+  source_asset_label?: string;
+  /** Duração planejada pelo Maximo, em minutos. */
+  planned_minutes?: number | null;
   due_date: string;
   status: OrderStatus;
   archived_at: string | null;
@@ -76,7 +86,7 @@ export type OrderDraft = Pick<WorkOrder,
 
 export type BackupData = {
   format: 'rotamanutencao-offline';
-  version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+  version: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
   exported_at: string;
   assets: Asset[];
   work_orders: Omit<WorkOrder, 'asset_name' | 'asset_code' | 'asset_area'>[];

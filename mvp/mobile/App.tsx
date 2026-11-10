@@ -34,6 +34,7 @@ import {AssetPicker} from './src/AssetPicker';
 import {createActionGuard} from './src/actionGuard';
 import {MoreMenu} from './src/MoreMenu';
 import {FirstUseGuide} from './src/FirstUseGuide';
+import {MpImportPanel} from './src/MpImportPanel';
 import {shouldShowFirstUseGuide} from './src/firstUse34';
 import {bottomTabs,visibleTab,morePage,type AppTab} from './src/navigation31';
 import {INDUSTRIAL as THEME,INTERACTION,SPACING,TYPE,RADII} from './src/design31';
@@ -128,6 +129,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [mpImportOpen,setMpImportOpen] = useState(false);
   const [dialog, setDialog] = useState<ModalType>(null);
   // Hardware Back regressa das ferramentas ao menu Mais sem perder a tela atual.
   useEffect(()=>{
@@ -242,7 +244,7 @@ export default function App() {
       if (orderFilter === 'Impedidas' && state !== 'blocked') return false;
       if (orderFilter === 'Prioritárias' && !needsPriorityAttention(order)) return false;
       if (orderFilter === 'Concluídas' || orderFilter === 'Arquivadas') return false; // A aba Concluídas mostra execuções históricas, não estados de OS.
-      return !term || [order.title, order.description, order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason, order.partial_reason]
+      return !term || [order.title, order.description, order.mp_code || '', order.source_os_number || '', order.source_asset_label || '', order.asset_name || '', order.asset_code || '', order.asset_area || '', order.category, order.block_reason, order.partial_reason]
         .some(value => value.toLocaleLowerCase('pt-BR').includes(term));
     });
   }, [orders, search, orderFilter, today, assetFilterId]);
@@ -379,8 +381,9 @@ export default function App() {
     return <View key={order.id} style={styles.card}>
       <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
         <View style={{flex: 1}}>
+          {!!order.mp_code&&<Text style={{fontSize:11,fontWeight:'800',color:COLORS.accent,marginBottom:4}}>{order.mp_code}{order.source_os_number?' · Última OS ref. '+order.source_os_number:''}</Text>}
           <Text style={styles.cardTitle}>{order.title}</Text>
-          <Text style={styles.detail}>{[order.asset_code, order.asset_name].filter(Boolean).join(' · ') || 'Sem equipamento'} · {order.category}</Text>
+          <Text style={styles.detail}>{[order.asset_code, order.asset_name].filter(Boolean).join(' · ') || order.source_asset_label || 'Sem equipamento cadastrado'} · {order.category}</Text>
         </View>
         <Pill text={archived ? 'Arquivada' : done ? 'Concluída' : isBlocked ? 'Impedida' : isPartial ? 'Parcial' : overdueOrder ? 'Atrasada' : order.due_date === today ? 'Hoje' : 'Programada'}
           tone={done ? 'green' : isBlocked || overdueOrder ? 'red' : isPartial || order.due_date === today ? 'yellow' : 'blue'}/>
@@ -398,7 +401,8 @@ export default function App() {
       {isBlocked && <View style={styles.blockAlert}><Text style={{color: COLORS.yellow, fontWeight: '800'}}>⚠ IMPEDIMENTO</Text><Text style={{color: COLORS.text, marginTop: 4}}>{order.block_reason}</Text></View>}
       <View style={styles.chips}>
         <Pill text={`📅 ${order.due_date}`}/>
-        <Pill text={order.recurrence_days === 0 ? 'Avulsa' : `A cada ${order.recurrence_days} dias`}/>
+        <Pill text={(order.recurrence_months??0)>0?'A cada '+order.recurrence_months+' mês(es)':order.recurrence_days===0?'Avulsa':'A cada '+order.recurrence_days+' dias'}/>
+        {order.planned_minutes!==null&&order.planned_minutes!==undefined&&<Pill text={'⏱ '+order.planned_minutes+' min previstos'}/>}
         <Pill text={`Prioridade ${order.priority}`} tone={order.priority === 'Alta' ? 'red' : 'blue'}/>
       </View>
       <View style={styles.cardActions}>
@@ -756,6 +760,9 @@ export default function App() {
                 ?`${archivedVisible.length} OS arquivada(s)`
                 :`${orders.length} ativas • ${archivedOrders.length} arquivadas`}</Text></View>
               <Action label="+ Nova" onPress={() => openOrder()}/></View>
+            <View style={{flexDirection:'row',marginBottom:11}}>
+              <Action label="↓ Importar MPs (Excel/CSV)" secondary onPress={()=>setMpImportOpen(true)}/>
+            </View>
             <TextInput accessibilityLabel="Buscar atividades" placeholder="Buscar por TAG, equipamento ou atividade..."
               placeholderTextColor={COLORS.muted} value={search} onChangeText={setSearch} style={styles.searchField}/>
             <View style={styles.filters}>
@@ -944,6 +951,7 @@ export default function App() {
         </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
+    <MpImportPanel visible={mpImportOpen} onClose={()=>setMpImportOpen(false)} onImported={refresh}/>
   </SafeAreaView>;
 }
 
