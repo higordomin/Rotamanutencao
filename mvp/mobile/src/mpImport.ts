@@ -25,8 +25,9 @@ const normalize = (value: MpCell): string => text(value).normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 function parseDate(value: MpCell): string | null {
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 20000 && value <= 73050) {
-    const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 20000 && value <= 73050) {
+    // Pode vir como data+hora serial do Excel: ignorar somente a fração de hora.
+    const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000);
     return date.toISOString().slice(0, 10);
   }
   const s = text(value);
@@ -63,8 +64,10 @@ function categoryFromTitle(title: string): ImportedMp['category'] {
   return 'Lubrificação';
 }
 function durationInMinutes(value: MpCell): number | null {
-  if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 24)
-    return Math.round(value * 60); // Excel pode fornecer fração de hora
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1)
+    return Math.round(value * 1440); // Excel armazena hora como fração de um dia.
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 168)
+    return Math.round(value * 60);
   const match = /^(\d{1,3}):([0-5]\d)$/.exec(text(value));
   if (!match) return null;
   const result=Number(match[1])*60+Number(match[2]);
